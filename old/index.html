@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Drawing Thingy</title>
+		
+		<style>
+			html,body {
+				margin: 0; padding: 0;
+				touch-action: none; overflow: hidden;
+			}
+			
+			canvas {
+				position: absolute;
+				top: 100;
+				left: 0;
+			}
+			
+			#guide {
+				pointer-events: none;
+				mix-blend-mode: difference;
+			}
+			
+			#color {
+				z-index: 99;
+			}
+		</style>
+		
+		<script src="https://code.jquery.com/jquery-3.7.1.js" integrity="sha256-eKhayi8LEQwp4NKxN+CfCh+3qOVUtJn3QNZ0TciWLP4=" crossorigin="anonymous"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jscolor/2.5.2/jscolor.min.js" crossorigin="anonymous"></script>
+	</head>
+	
+	<body>
+		<p>
+			Pen color: <input data-jscolor="{ onChange: 'update(this)', value:'000' }" />
+		</p>
+		
+		<canvas id="canvas" width="100" height="100" background="transparent"></canvas>
+		<canvas id="guide" width="100" height="100" background="transparent"></canvas>
+		
+		<script src="script.js"></script>
+	</body>
+</html>
