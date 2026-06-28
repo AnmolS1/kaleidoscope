@@ -16,8 +16,17 @@
     "PUBLIC_BASE_URL": "https://kaleidoscope.ponderance.dev",
     "GOOGLE_REDIRECT_URI": "https://kaleidoscope.ponderance.dev/api/auth/callback",
     "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
-  }
-  // D1 / R2 / KV bindings are added in Phase 4 after `wrangler ... create`
-  // prints their IDs. TURNSTILE_SITE_KEY above is the Cloudflare test key until
-  // a real widget is provisioned.
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "kaleidoscope", "database_id": "eaf8e82a-2a74-40b0-a70c-e7144ff1e339" }
+  ],
+  "r2_buckets": [{ "binding": "ART", "bucket_name": "kaleidoscope-art" }],
+  "kv_namespaces": [
+    { "binding": "SESSIONS", "id": "b26e47e5f0364eceb83edaf7ddcc5d84" },
+    { "binding": "OAUTH", "id": "05e08ac3e45e415cb314da70bfbe60a5" },
+    { "binding": "RATELIMIT", "id": "f33fc50443a0445c8f0a1afe73214969" },
+    { "binding": "JWKS", "id": "52139b21c8e64a0a945bef2fefce373d" }
+  ]
+  // TURNSTILE_SITE_KEY above is the Cloudflare test key until a real widget is
+  // provisioned (Phase 4 / turnstile-spin).
 }
