@@ -20,10 +20,27 @@ async function gzip(data: string): Promise<ArrayBuffer> {
   return new Response(stream).arrayBuffer();
 }
 
+// Store gzipped bytes as opaque (no contentEncoding metadata) so R2/runtime
+// never auto-(de)compresses; we decompress explicitly on serve. This avoids the
+// Content-Encoding header being dropped and handing the client raw gzip.
 export async function putVectorGz(env: Env, id: string, json: string): Promise<void> {
   const gz = await gzip(json);
   await env.ART.put(keys.vector(id), gz, {
-    httpMetadata: { contentType: "application/json", contentEncoding: "gzip" },
+    httpMetadata: { contentType: "application/octet-stream" },
+  });
+}
+
+/** Serve the gzipped vector as decompressed JSON. */
+export async function serveVectorJson(env: Env, key: string): Promise<Response | null> {
+  const obj = await env.ART.get(key);
+  if (!obj) return null;
+  const stream = obj.body.pipeThrough(new DecompressionStream("gzip"));
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": IMMUTABLE_CACHE,
+      ETag: obj.httpEtag,
+    },
   });
 }
 

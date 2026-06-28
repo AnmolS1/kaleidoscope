@@ -45,6 +45,19 @@ export function Canvas() {
       effect(() => scene.setShowGuides(S.showGuides.value)),
     ];
 
+    // If we arrived here via "Remix", load that drawing and sync the toolbar.
+    const remix = S.pendingRemix.value;
+    if (remix) {
+      S.bg.value = remix.bg;
+      S.segments.value = remix.sym.segments;
+      S.mirror.value = remix.sym.mirror;
+      scene.loadDrawing(remix);
+      S.pendingRemix.value = null;
+    } else {
+      // Fresh studio session — don't carry a stale remix parent.
+      S.remixOf.value = null;
+    }
+
     return () => {
       disposers.forEach((d) => d());
       scene.destroy();

@@ -4,8 +4,8 @@
 
 import { signal } from "@preact/signals";
 import type { Scene } from "./engine/scene";
-import type { Background, BrushTool } from "./engine/strokes";
-import type { SessionUser } from "./api";
+import type { Background, BrushTool, Drawing } from "./engine/strokes";
+import { type SessionUser, fetchMe } from "./api";
 
 // --- tool state ---
 export const tool = signal<BrushTool>("solid");
@@ -26,6 +26,20 @@ export const strokeCount = signal<number>(0);
 // --- auth ---
 export const me = signal<SessionUser | null>(null);
 export const authLoaded = signal<boolean>(false);
+
+export async function initAuth(): Promise<void> {
+  try {
+    me.value = await fetchMe();
+  } catch {
+    me.value = null;
+  } finally {
+    authLoaded.value = true;
+  }
+}
+
+// --- remix: a drawing to load into the studio + the parent id to record ---
+export const pendingRemix = signal<Drawing | null>(null);
+export const remixOf = signal<string | null>(null);
 
 // --- UI ---
 export const helpOpen = signal<boolean>(false);

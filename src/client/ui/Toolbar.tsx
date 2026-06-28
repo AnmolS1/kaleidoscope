@@ -12,6 +12,7 @@ import {
   RedoIcon,
   ClearIcon,
   DownloadIcon,
+  SaveIcon,
   MirrorIcon,
   GuidesIcon,
   GlowIcon,
@@ -19,7 +20,10 @@ import {
   HelpIcon,
   SunIcon,
   MoonIcon,
+  GalleryIcon,
 } from "./Icons";
+import { AuthButton } from "./AuthButton";
+import { Link } from "./Link";
 
 const STAMP = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 
@@ -217,9 +221,20 @@ export function Toolbar() {
         </div>
       </details>
 
+      {/* save */}
+      <button class="btn btn-primary" aria-label="Save to gallery" onClick={() => (S.saveOpen.value = true)}>
+        <SaveIcon /> <span class="btn-text">Save</span>
+      </button>
+
+      <Link href="/gallery" class="icon-btn" aria-label="Gallery">
+        <GalleryIcon />
+      </Link>
+
       <button class="icon-btn" aria-label="Keyboard shortcuts & help" onClick={() => (S.helpOpen.value = true)}>
         <HelpIcon />
       </button>
+
+      <AuthButton />
     </header>
   );
 }

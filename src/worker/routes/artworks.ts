@@ -19,7 +19,7 @@ import {
   updateArtwork,
   incrementLikes,
 } from "../lib/db";
-import { keys, putVectorGz, putWebp, serveObject, deleteArtworkObjects } from "../lib/r2";
+import { keys, putVectorGz, putWebp, serveObject, serveVectorJson, deleteArtworkObjects } from "../lib/r2";
 import type { Artwork } from "../types";
 
 export const artworks = new Hono<AppEnv>();
@@ -157,7 +157,11 @@ async function proxy(c: Context<AppEnv>, kind: "image" | "thumb" | "vector") {
   const art = await getArtwork(c.env, id);
   if (!art) return c.json({ error: "not_found" }, 404);
   if (!canView(art, c.get("user")?.id)) return c.json({ error: "not_found" }, 404);
-  const key = kind === "image" ? art.image_key : kind === "thumb" ? art.thumb_key : art.vector_key;
+  if (kind === "vector") {
+    const res = await serveVectorJson(c.env, art.vector_key);
+    return res ?? c.json({ error: "not_found" }, 404);
+  }
+  const key = kind === "image" ? art.image_key : art.thumb_key;
   const res = await serveObject(c.env, key);
   return res ?? c.json({ error: "not_found" }, 404);
 }

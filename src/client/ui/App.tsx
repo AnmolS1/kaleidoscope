@@ -4,6 +4,9 @@ import * as S from "../state";
 import { Canvas } from "./Canvas";
 import { Toolbar } from "./Toolbar";
 import { HelpOverlay } from "./HelpOverlay";
+import { SaveDialog } from "./SaveDialog";
+import { Gallery } from "./Gallery";
+import { ArtworkPage } from "./ArtworkPage";
 
 function isTypingTarget(t: EventTarget | null): boolean {
   const el = t as HTMLElement | null;
@@ -94,6 +97,7 @@ function Studio() {
     <div class="studio">
       <Toolbar />
       <Canvas />
+      <SaveDialog />
     </div>
   );
 }
@@ -101,15 +105,19 @@ function Studio() {
 export function App() {
   useGlobalKeys();
   useTheme();
+  useEffect(() => {
+    void S.initAuth();
+  }, []);
 
   const path = S.route.value;
 
   let view;
-  if (path === "/" || path === "") {
-    view = <Studio />;
-  } else if (path.startsWith("/p/") || path === "/gallery" || path === "/me") {
-    // Routed pages arrive in Phase 6; for now fall back to the Studio.
-    view = <Studio />;
+  if (path.startsWith("/p/")) {
+    view = <ArtworkPage id={path.slice(3)} key={path} />;
+  } else if (path === "/gallery") {
+    view = <Gallery mine={false} />;
+  } else if (path === "/me") {
+    view = <Gallery mine={true} />;
   } else {
     view = <Studio />;
   }

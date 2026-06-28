@@ -46,11 +46,22 @@ export async function exportThumb(drawing: Drawing, size = 512): Promise<Blob> {
   return canvas.convertToBlob({ type: "image/webp", quality: 0.85 });
 }
 
-/** Full-size WebP render (source for the stored image + OG). */
+/** Full-size WebP render (source for the stored image). */
 export async function exportWebP(drawing: Drawing, size = PNG_BASE): Promise<Blob> {
   const { canvas, ctx } = makeOffscreen(size);
   renderSquare(ctx, drawing, size);
   return canvas.convertToBlob({ type: "image/webp", quality: 0.92 });
+}
+
+/** 1200×630 OG/share card — mandala centered on the themed background. */
+export async function exportOG(drawing: Drawing, w = 1200, h = 630): Promise<Blob> {
+  const canvas = new OffscreenCanvas(w, h);
+  const ctx = canvas.getContext("2d") as OffCtx;
+  ctx.fillStyle = BG_COLORS[drawing.bg];
+  ctx.fillRect(0, 0, w, h);
+  const half = (h / 2) * 0.82;
+  paintStrokes(ctx, drawing.strokes, w, h, half, drawing.sym);
+  return canvas.convertToBlob({ type: "image/webp", quality: 0.9 });
 }
 
 /**

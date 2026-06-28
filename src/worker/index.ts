@@ -32,7 +32,11 @@ app.get("/api/me", (c) => {
         flagged: !!user.flagged,
       }
     : null;
-  return c.json({ user: out, csrf: session?.data.csrf ?? null });
+  return c.json({
+    user: out,
+    csrf: session?.data.csrf ?? null,
+    turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+  });
 });
 
 app.route("/api/auth", auth);

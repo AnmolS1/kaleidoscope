@@ -213,6 +213,7 @@ export class Scene {
 
   // ---- committed art ----
   private renderArt(): void {
+    this.actx.clearRect(0, 0, this.cssW, this.cssH);
     paintStrokes(this.actx, this.history.strokes, this.cssW, this.cssH, this.half, this.state);
   }
 
@@ -417,7 +418,8 @@ export function paintStrokes(
   half: number,
   sym: { segments: number; mirror: boolean },
 ): void {
-  ctx.clearRect(0, 0, width, height);
+  // Note: callers clear (live/art canvases) or fill a background (exports)
+  // before calling this — we do not clear here, so an export's bg survives.
   const cx = width / 2;
   const cy = height / 2;
   for (const stroke of strokes) {
