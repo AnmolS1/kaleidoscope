@@ -1,0 +1,306 @@
+/* Studio layout + controls. Leans on tokens.css; aims for the ponderance
+   blueprint / origami-workshop feel: graph-paper canvas, crease-blue accents,
+   crane-orange highlights. */
+
+.studio {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.canvas-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* ---- toolbar ---- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--color-graph-card) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-crease-line-bold);
+  z-index: 10;
+}
+
+.tb-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+  color: var(--color-graphite);
+  padding-right: 6px;
+}
+.tb-mark {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background:
+    conic-gradient(from 0deg, var(--color-crane), var(--color-sax), #1d9e75, var(--color-orbit), var(--color-crane));
+  box-shadow: inset 0 0 0 3px var(--color-graph-card);
+}
+
+.tb-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-left: 1px solid var(--color-crease-line);
+}
+.tb-group:first-of-type {
+  border-left: none;
+}
+.tb-spacer {
+  flex: 1 1 auto;
+}
+
+/* ---- swatches ---- */
+.swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--color-inset);
+  box-shadow: 0 0 0 1px var(--color-crease-line-bold);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.08s ease;
+}
+.swatch:hover {
+  transform: scale(1.1);
+}
+.swatch.is-active {
+  box-shadow: 0 0 0 2px var(--color-crane);
+}
+.swatch-spectrum {
+  background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+}
+.swatch-picker {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-inset);
+  display: grid;
+  place-items: center;
+}
+.swatch-picker::after {
+  content: "+";
+  color: var(--color-graphite-60);
+  font-size: 16px;
+  line-height: 1;
+}
+.swatch-picker input {
+  position: absolute;
+  inset: -6px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* ---- buttons ---- */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-graphite-60);
+  cursor: pointer;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--color-crease-line);
+  color: var(--color-graphite);
+}
+.icon-btn.is-active {
+  background: color-mix(in srgb, var(--color-crane) 16%, transparent);
+  color: var(--color-crane);
+  border-color: color-mix(in srgb, var(--color-crane) 35%, transparent);
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--color-crease-line-bold);
+  background: var(--color-inset);
+  color: var(--color-graphite);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn:hover {
+  border-color: var(--color-crease);
+}
+.btn-ghost {
+  background: transparent;
+}
+.btn-primary {
+  background: var(--color-crane);
+  border-color: var(--color-crane);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--color-crane-dark);
+}
+.btn-text {
+  font-size: 13px;
+}
+
+/* ---- sliders ---- */
+.slider {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 96px;
+}
+.slider-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-graphite-40);
+}
+.slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--color-crane);
+}
+
+/* ---- download menu ---- */
+.menu {
+  position: relative;
+}
+.menu > summary {
+  list-style: none;
+}
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  display: grid;
+  gap: 2px;
+  min-width: 160px;
+  padding: 6px;
+  background: var(--color-graph-card);
+  border: 1px solid var(--color-crease-line-bold);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-card);
+  z-index: 20;
+}
+.menu-panel button {
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--color-graphite);
+  font-size: 13px;
+  cursor: pointer;
+}
+.menu-panel button:hover:not(:disabled) {
+  background: var(--color-crease-line);
+}
+.menu-panel button:disabled {
+  opacity: 0.4;
+}
+
+/* ---- overlay / dialog ---- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(11, 18, 23, 0.5);
+  backdrop-filter: blur(3px);
+  z-index: 100;
+}
+.overlay-card {
+  width: min(460px, 100%);
+  background: var(--color-graph-card);
+  border: 1px solid var(--color-crease-line-bold);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  padding: 20px 22px;
+}
+.overlay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.overlay-head h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  margin: 0;
+}
+.shortcuts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.shortcut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.shortcut dt {
+  margin: 0;
+}
+.shortcut dd {
+  margin: 0;
+  color: var(--color-graphite-60);
+  font-size: 13px;
+}
+kbd {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--color-inset);
+  border: 1px solid var(--color-crease-line-bold);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--color-graphite);
+  white-space: nowrap;
+}
+.overlay-foot {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-graphite-60);
+}
+
+@media (max-width: 720px) {
+  .btn-text,
+  .slider-label {
+    display: none;
+  }
+  .slider {
+    min-width: 64px;
+  }
+  .tb-brand {
+    display: none;
+  }
+}

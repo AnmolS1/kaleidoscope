@@ -1,10 +1,123 @@
-// Placeholder shell — replaced by the full Studio + router in Phase 2.
-export function App() {
+import { useEffect } from "preact/hooks";
+import { effect } from "@preact/signals";
+import * as S from "../state";
+import { Canvas } from "./Canvas";
+import { Toolbar } from "./Toolbar";
+import { HelpOverlay } from "./HelpOverlay";
+
+function isTypingTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+}
+
+function useGlobalKeys() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      const mod = e.metaKey || e.ctrlKey;
+      const scene = S.scene.value;
+
+      if (mod && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) scene?.redo();
+        else scene?.undo();
+        return;
+      }
+      if (mod) return; // leave other mod-combos to the browser
+
+      switch (e.key) {
+        case "c":
+        case "C":
+          scene?.clear();
+          break;
+        case "g":
+        case "G":
+          S.showGuides.value = !S.showGuides.value;
+          break;
+        case "m":
+        case "M":
+          S.mirror.value = !S.mirror.value;
+          break;
+        case "[":
+          S.size.value = Math.max(1, S.size.value - 1);
+          break;
+        case "]":
+          S.size.value = Math.min(40, S.size.value + 1);
+          break;
+        case ",":
+          S.segments.value = Math.max(3, S.segments.value - 1);
+          break;
+        case ".":
+          S.segments.value = Math.min(24, S.segments.value + 1);
+          break;
+        case "?":
+          S.helpOpen.value = true;
+          break;
+        case "d":
+        case "D": {
+          const menu = document.getElementById("download-menu") as HTMLDetailsElement | null;
+          if (menu) menu.open = !menu.open;
+          break;
+        }
+        case "s":
+        case "S":
+          e.preventDefault();
+          S.saveOpen.value = true;
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+}
+
+function useTheme() {
+  // Initialize canvas/page theme from the OS preference once, then mirror the
+  // `bg` signal onto <html data-theme> so design tokens switch with the canvas.
+  useEffect(() => {
+    if (typeof matchMedia !== "undefined" && matchMedia("(prefers-color-scheme: dark)").matches) {
+      S.bg.value = "dark";
+    }
+    // Sync <html data-theme> to the bg signal synchronously on every change.
+    // A signals effect (not useEffect) subscribes to bg.value directly, so it
+    // fires even though App never reads bg in its render body.
+    return effect(() => {
+      document.documentElement.dataset.theme = S.bg.value;
+    });
+  }, []);
+}
+
+function Studio() {
   return (
-    <main style={{ display: "grid", placeItems: "center", height: "100dvh" }}>
-      <p style={{ fontFamily: "var(--font-mono)", color: "var(--color-graphite-60)" }}>
-        Kaleidoscope — scaffolding…
-      </p>
-    </main>
+    <div class="studio">
+      <Toolbar />
+      <Canvas />
+    </div>
+  );
+}
+
+export function App() {
+  useGlobalKeys();
+  useTheme();
+
+  const path = S.route.value;
+
+  let view;
+  if (path === "/" || path === "") {
+    view = <Studio />;
+  } else if (path.startsWith("/p/") || path === "/gallery" || path === "/me") {
+    // Routed pages arrive in Phase 6; for now fall back to the Studio.
+    view = <Studio />;
+  } else {
+    view = <Studio />;
+  }
+
+  return (
+    <>
+      {view}
+      <HelpOverlay />
+    </>
   );
 }

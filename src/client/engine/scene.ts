@@ -42,11 +42,22 @@ export interface SceneCallbacks {
 const MAX_DPR = 3;
 const DEFAULT_PRESSURE = 0.5;
 
-function readVar(name: string, fallback: string): string {
-  if (typeof getComputedStyle === "undefined") return fallback;
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || fallback;
-}
+// Self-contained canvas palette (mirrors tokens.css) so the engine never depends
+// on <html data-theme> being applied first.
+const THEME: Record<Background, { bg: string; fine: string; bold: string; guide: string }> = {
+  light: {
+    bg: "#EEF0EC",
+    fine: "rgba(46,94,140,.07)",
+    bold: "rgba(46,94,140,.13)",
+    guide: "rgba(46,94,140,.28)",
+  },
+  dark: {
+    bg: "#13202A",
+    fine: "rgba(130,169,206,.08)",
+    bold: "rgba(130,169,206,.16)",
+    guide: "rgba(130,169,206,.30)",
+  },
+};
 
 export class Scene {
   private host: HTMLElement;
@@ -137,13 +148,13 @@ export class Scene {
     const h = this.cssH;
     ctx.clearRect(0, 0, w, h);
 
-    const bg = readVar("--color-graph", this.state.bg === "dark" ? "#13202A" : "#EEF0EC");
-    ctx.fillStyle = bg;
+    const theme = THEME[this.state.bg];
+    ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, w, h);
 
     // graph-paper grid
-    const fine = readVar("--color-grid-line", "rgba(46,94,140,.07)");
-    const bold = readVar("--color-crease-line", "rgba(46,94,140,.13)");
+    const fine = theme.fine;
+    const bold = theme.bold;
     const step = 24;
     ctx.lineWidth = 1;
     ctx.strokeStyle = fine;
@@ -176,7 +187,7 @@ export class Scene {
     const ctx = this.gctx;
     const n = this.state.segments;
     const r = Math.max(this.cssW, this.cssH);
-    const color = readVar("--color-crease-line-bold", "rgba(46,94,140,.28)");
+    const color = THEME[this.state.bg].guide;
     ctx.save();
     ctx.translate(this.cssW / 2, this.cssH / 2);
     ctx.strokeStyle = color;
@@ -241,7 +252,11 @@ export class Scene {
     if (this.activePointer !== null) return;
     e.preventDefault();
     this.activePointer = e.pointerId;
-    this.live.setPointerCapture(e.pointerId);
+    try {
+      this.live.setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic events / unsupported */
+    }
     this.drawingStroke = {
       tool: this.state.tool,
       color: this.state.color,
