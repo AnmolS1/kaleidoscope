@@ -1,0 +1,71 @@
+/* Ponderance "blueprint / origami workshop" design tokens (ported from the
+   ponderance global.css, including dark mode). Fonts are self-hosted woff2. */
+
+:root {
+  --color-graph: #eef0ec;
+  --color-graph-card: #f6f7f4;
+  --color-inset: #ffffff;
+  --color-graphite: #1b2a33;
+  --color-graphite-60: rgba(27, 42, 51, 0.72);
+  --color-graphite-40: rgba(27, 42, 51, 0.4);
+  --color-crease: #2e5e8c;
+  --color-crease-line: rgba(46, 94, 140, 0.13);
+  --color-crease-line-bold: rgba(46, 94, 140, 0.28);
+  --color-grid-line: rgba(46, 94, 140, 0.07);
+  --color-crane: #e84a27;
+  --color-crane-dark: #c23a1c;
+  --color-sax: #d9a521;
+  --color-orbit: #2a2a6e;
+
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* spacing + radii */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --shadow-card: 0 1px 2px rgba(27, 42, 51, 0.06), 0 8px 24px rgba(27, 42, 51, 0.08);
+}
+
+[data-theme="dark"] {
+  --color-graph: #13202a;
+  --color-graph-card: #182530;
+  --color-inset: #1d2c38;
+  --color-graphite: #e9ece7;
+  --color-graphite-60: rgba(233, 236, 231, 0.66);
+  --color-graphite-40: rgba(233, 236, 231, 0.5);
+  --color-crease: #82a9ce;
+  --color-crease-line: rgba(130, 169, 206, 0.16);
+  --color-crease-line-bold: rgba(130, 169, 206, 0.3);
+  --color-grid-line: rgba(130, 169, 206, 0.08);
+  --color-crane: #f5613c;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Self-hosted fonts (woff2 added under public/fonts in Phase 2). Declarations are
+   resilient if a file is missing — the stack falls back to system fonts. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/fonts/BricolageGrotesque-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Hanken Grotesk";
+  src: url("/fonts/HankenGrotesk-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Hanken Grotesk";
+  src: url("/fonts/HankenGrotesk-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/fonts/IBMPlexMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}

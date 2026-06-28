@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "kaleidoscope",
+  "main": "./src/worker/index.ts",
+  "compatibility_date": "2026-06-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/og/*"]
+  },
+  "observability": { "enabled": true },
+  "routes": [{ "pattern": "kaleidoscope.ponderance.dev", "custom_domain": true }],
+  "vars": {
+    "PUBLIC_BASE_URL": "https://kaleidoscope.ponderance.dev",
+    "GOOGLE_REDIRECT_URI": "https://kaleidoscope.ponderance.dev/api/auth/callback",
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
+  }
+  // D1 / R2 / KV bindings are added in Phase 4 after `wrangler ... create`
+  // prints their IDs. TURNSTILE_SITE_KEY above is the Cloudflare test key until
+  // a real widget is provisioned.
+}
