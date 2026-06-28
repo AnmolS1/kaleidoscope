@@ -16,6 +16,8 @@ export interface Env {
   PUBLIC_BASE_URL: string; // var
   GOOGLE_REDIRECT_URI: string; // var
   TURNSTILE_SITE_KEY: string; // var (public)
+  // Dev/test only: enables /api/auth/test-login. NEVER set in production secrets/vars.
+  ALLOW_TEST_LOGIN?: string;
 }
 
 export type Visibility = "public" | "unlisted" | "private";
