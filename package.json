@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vite build && wrangler deploy",
+    "deploy": "vite build && wrangler deploy -c dist/kaleidoscope/wrangler.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
