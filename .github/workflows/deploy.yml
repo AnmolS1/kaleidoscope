@@ -1,0 +1,39 @@
+name: Deploy
+
+# Deploys on push to prod. Requires repo secrets:
+#   CLOUDFLARE_API_TOKEN  (Workers Scripts + D1 + KV + R2 edit)
+#   CLOUDFLARE_ACCOUNT_ID
+on:
+  push:
+    branches: [prod]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Apply D1 migrations
+        # cloudflare/wrangler-action v3.15.0 (pinned to commit SHA)
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply kaleidoscope --remote
+
+      - name: Deploy Worker
+        # cloudflare/wrangler-action v3.15.0 (pinned to commit SHA)
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy -c dist/kaleidoscope/wrangler.json
