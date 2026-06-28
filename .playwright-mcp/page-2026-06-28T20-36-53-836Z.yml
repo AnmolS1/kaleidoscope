@@ -1,0 +1,48 @@
+- generic [ref=e3]:
+  - toolbar "Drawing tools" [ref=e4]:
+    - generic [ref=e5]: Kaleidoscope
+    - group "Color" [ref=e7]:
+      - button "Crane" [pressed] [ref=e8] [cursor=pointer]
+      - button "Saffron" [ref=e9] [cursor=pointer]
+      - button "Teal" [ref=e10] [cursor=pointer]
+      - button "Orbit" [ref=e11] [cursor=pointer]
+      - button "Graphite" [ref=e12] [cursor=pointer]
+      - button "Spectrum (rainbow by angle)" [ref=e13] [cursor=pointer]
+      - generic "Custom color" [ref=e14] [cursor=pointer]:
+        - textbox "Custom color" [ref=e15]: "#e84a27"
+        - text: +
+    - group "Brush" [ref=e16]:
+      - button "Solid brush" [pressed] [ref=e17] [cursor=pointer]:
+        - img [ref=e18]
+      - button "Glow brush" [ref=e21] [cursor=pointer]:
+        - img [ref=e22]
+      - generic "Brush size" [ref=e25]:
+        - generic [ref=e26]: Size
+        - slider "Brush size" [ref=e27]: "6"
+      - generic "Opacity" [ref=e28]:
+        - generic [ref=e29]: Opacity
+        - slider "Opacity" [ref=e30]: "1"
+    - group "Symmetry" [ref=e31]:
+      - generic "Symmetry segments" [ref=e32]:
+        - generic [ref=e33]: Segments 12
+        - slider "Symmetry segments" [ref=e34]: "12"
+      - button "Mirror (dihedral symmetry)" [pressed] [ref=e35] [cursor=pointer]:
+        - img [ref=e36]
+      - button "Toggle guide axes" [pressed] [ref=e39] [cursor=pointer]:
+        - img [ref=e40]
+    - group "Edit" [ref=e43]:
+      - button "Undo" [disabled] [ref=e44]:
+        - img [ref=e45]
+      - button "Redo" [disabled] [ref=e48]:
+        - img [ref=e49]
+      - button "Clear canvas" [disabled] [ref=e52]:
+        - img [ref=e53]
+    - button "Switch to dark canvas" [ref=e56] [cursor=pointer]:
+      - img [ref=e57]
+    - group [ref=e59]:
+      - generic "Download" [ref=e60] [cursor=pointer]:
+        - img [ref=e61]
+        - generic [ref=e63]: Download
+    - button "Keyboard shortcuts & help" [ref=e64] [cursor=pointer]:
+      - img [ref=e65]
+  - img "Drawing canvas" [ref=e68]

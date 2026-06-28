@@ -1,0 +1,12 @@
+# Security headers for edge-served static assets (the Worker handles /api + /og).
+# Note: style-src allows 'unsafe-inline' — the app uses inline style attributes
+# for dynamic swatch colors and art previews; inline-style injection risk is
+# negligible and we control all rendered styles. connect-src includes
+# cloudflareinsights.com for the cookieless Web Analytics beacon.
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' https://challenges.cloudflare.com https://static.cloudflareinsights.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com https://cloudflareinsights.com; form-action 'self'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+  X-Frame-Options: DENY
