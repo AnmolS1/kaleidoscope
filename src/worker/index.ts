@@ -7,6 +7,7 @@ import { artworks } from "./routes/artworks";
 import { gallery } from "./routes/gallery";
 import { admin } from "./routes/admin";
 import { og } from "./routes/og";
+import { permalink } from "./routes/permalink";
 import type { SessionUser } from "./types";
 
 // The Worker runs only for routes matched by `run_worker_first` (/api/*, /og/*);
@@ -44,6 +45,7 @@ app.route("/api/artworks", artworks);
 app.route("/api", gallery); // /api/gallery, /api/users/me/artworks
 app.route("/api/admin", admin);
 app.route("/og", og);
+app.route("/", permalink); // /p/:id (OG injection) + /sitemap.xml
 
 // Unknown API routes → JSON 404 (not the SPA shell).
 app.all("/api/*", (c) => c.json({ error: "not_found" }, 404));

@@ -173,6 +173,15 @@ export async function incrementLikes(env: Env, id: string): Promise<number> {
   return row?.likes ?? 0;
 }
 
+export async function listPublicIds(env: Env, limit = 1000): Promise<{ id: string; created_at: number }[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT id, created_at FROM artworks WHERE visibility = 'public' ORDER BY created_at DESC LIMIT ?",
+  )
+    .bind(limit)
+    .all<{ id: string; created_at: number }>();
+  return results ?? [];
+}
+
 export async function setUserAdminFlag(
   env: Env,
   google_sub: string,

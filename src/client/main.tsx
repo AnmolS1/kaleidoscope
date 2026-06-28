@@ -10,3 +10,10 @@ if (root) {
   root.replaceChildren();
   render(<App />, root);
 }
+
+// Register the service worker in production for offline drawing (PWA).
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
