@@ -3,7 +3,8 @@ import type { AppEnv } from "../middleware";
 import { requireCsrf } from "../middleware";
 import { buildAuthUrl, createPkce, exchangeCode, verifyIdToken } from "../lib/oauth";
 import { randomToken } from "../lib/ids";
-import { upsertUser } from "../lib/db";
+import { upsertUser, setUserAvatar } from "../lib/db";
+import { cacheRemoteAvatar } from "../lib/r2";
 import { createSession, destroySession, writeSessionCookie } from "../lib/session";
 
 const OAUTH_TTL = 600; // 10 min
@@ -55,8 +56,21 @@ auth.get("/callback", async (c) => {
       google_sub: claims.sub,
       email: claims.email ?? null,
       name: claims.name ?? null,
-      avatar_url: claims.picture ?? null,
+      avatar_url: null,
     });
+
+    // Cache Google's avatar server-side and store our own same-origin path
+    // (the raw googleusercontent.com URL would be blocked by our img-src CSP).
+    // Best-effort: wrapped so a cache/DB hiccup here can never block login.
+    try {
+      let avatarPath: string | null = null;
+      if (claims.picture && (await cacheRemoteAvatar(c.env, user.id, claims.picture))) {
+        avatarPath = `/api/users/${user.id}/avatar`;
+      }
+      await setUserAvatar(c.env, user.id, avatarPath);
+    } catch {
+      /* avatar is best-effort; never block login */
+    }
 
     const { id } = await createSession(c.env, user.id);
     writeSessionCookie(c, id);

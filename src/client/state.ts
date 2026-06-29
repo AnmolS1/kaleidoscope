@@ -45,6 +45,22 @@ export const remixOf = signal<string | null>(null);
 export const helpOpen = signal<boolean>(false);
 export const saveOpen = signal<boolean>(false);
 
+// --- responsive ---
+// The toolbar renders structurally different DOM per breakpoint (desktop keeps
+// the full row; tablet/phone collapse sliders into popovers). This is a
+// client-only SPA — no SSR — so matchMedia().matches is truthful on the first
+// render and there's no hydration flash.
+export type Breakpoint = "desktop" | "tablet" | "phone";
+
+function computeBreakpoint(): Breakpoint {
+  if (typeof matchMedia === "undefined") return "desktop";
+  if (matchMedia("(min-width: 1024px)").matches) return "desktop";
+  if (matchMedia("(min-width: 641px)").matches) return "tablet";
+  return "phone";
+}
+
+export const breakpoint = signal<Breakpoint>(computeBreakpoint());
+
 // --- routing ---
 export const route = signal<string>(typeof location !== "undefined" ? location.pathname : "/");
 
@@ -58,6 +74,14 @@ if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
     route.value = location.pathname;
   });
+
+  // Two width queries cover all three buckets; they also fire on
+  // orientationchange because the viewport width changes.
+  const onBp = () => {
+    breakpoint.value = computeBreakpoint();
+  };
+  matchMedia("(min-width: 1024px)").addEventListener("change", onBp);
+  matchMedia("(min-width: 641px)").addEventListener("change", onBp);
 }
 
 export const PALETTE = [

@@ -62,7 +62,7 @@
   column-count: 4;
   column-gap: 14px;
 }
-@media (max-width: 900px) {
+@media (max-width: 1023px) {
   .masonry {
     column-count: 3;
   }
@@ -101,6 +101,38 @@
 .art-meta {
   font-size: 12px;
   color: var(--color-graphite-60);
+}
+.art-author {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---- author avatars ---- */
+.avatar-img {
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+  background: var(--color-inset);
+}
+/* Initials fallback rendered inline beside an author name (scoped so the
+   AuthButton avatar fallback keeps its own styling). */
+.art-author .avatar-fallback,
+.artwork-author .avatar-fallback {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-crease-line);
+  font-size: 11px;
+  line-height: 1;
+}
+.artwork-author .avatar-fallback {
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
 }
 .art-controls {
   display: flex;
@@ -153,6 +185,9 @@
   margin: 0 0 4px;
 }
 .artwork-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--color-graphite-60);
   margin: 0 0 12px;
 }
@@ -269,4 +304,58 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* The signed-out label collapses to just "Sign in" on very narrow widths. */
+@media (max-width: 480px) {
+  .signin-tail {
+    display: none;
+  }
+}
+
+/* ===== mobile pages / nav (desktop unchanged) ===== */
+
+/* Let the page nav condense rather than overflow on small screens. */
+@media (max-width: 560px) {
+  .page-nav {
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .page-nav-links {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 640px) {
+  /* "My pieces" controls were crushed in a ~150px column — stack them. */
+  .art-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .art-controls select {
+    width: 100%;
+  }
+  .art-controls .link-danger {
+    width: 100%;
+    text-align: center;
+    padding: 8px 0;
+    border: 1px solid var(--color-crease-line-bold);
+    border-radius: var(--r-sm);
+  }
+
+  /* Artwork: make the primary actions + downloads fill the width for easy taps. */
+  .artwork-actions .btn {
+    flex: 1;
+  }
+  .artwork-downloads {
+    width: 100%;
+  }
+}
+
+/* Touch: keep the visibility select a comfortable target. */
+@media (pointer: coarse) {
+  .art-controls select {
+    min-height: 40px;
+  }
 }

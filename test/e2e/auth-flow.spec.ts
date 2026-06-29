@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { drawOnCanvas } from "./helpers";
+import { drawOnCanvas, submitSavePiece } from "./helpers";
 
 test("save → permalink → gallery → remix → delete", async ({ page }) => {
   await page.goto("/");
@@ -16,11 +16,8 @@ test("save → permalink → gallery → remix → delete", async ({ page }) => 
   await expect(page.getByRole("dialog", { name: "Save to gallery" })).toBeVisible();
   await page.getByLabel("Title").fill("E2E Mandala");
 
-  // Turnstile test key auto-issues a token; give it a moment, then save
-  await page.waitForTimeout(2500);
-  await page.getByRole("button", { name: "Save piece" }).click();
-
-  await page.waitForURL(/\/p\/[A-Za-z0-9]+/);
+  // Turnstile test key auto-issues a token; save once it's ready (robust to timing).
+  await submitSavePiece(page);
   const id = page.url().split("/p/")[1];
   await expect(page).toHaveTitle(/E2E Mandala — Kaleidoscope/);
   await expect(page.locator(".artwork-frame img")).toBeVisible();

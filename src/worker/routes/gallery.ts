@@ -2,10 +2,17 @@ import { Hono } from "hono";
 import type { AppEnv } from "../middleware";
 import { requireAuth } from "../middleware";
 import { listPublic, listByUser, encodeCursor } from "../lib/db";
+import { serveAvatar } from "../lib/r2";
 
 export const gallery = new Hono<AppEnv>();
 
 const PAGE = 24;
+
+// Public: a user's cached avatar, served same-origin (CSP img-src 'self').
+// 404 when none stored — the client falls back to initials.
+gallery.get("/users/:id/avatar", async (c) => {
+  return (await serveAvatar(c.env, c.req.param("id"))) ?? c.body(null, 404);
+});
 
 // Public wall, newest first, keyset paginated.
 gallery.get("/gallery", async (c) => {
