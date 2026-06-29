@@ -19,6 +19,21 @@ test("mobile: docked toolbar, bottom-sheet save, gallery 2-col + brand, initials
   );
   expect(overflow).toBeLessThanOrEqual(1);
 
+  // Dock popovers must paint ABOVE the canvas (regression: the opaque canvas,
+  // later in DOM, hid the upward-opening panel). toBeVisible() can't catch this
+  // — hit-test that the panel's control is the topmost element at its position.
+  const brushSummary = page.locator('.dock summary[aria-label="Brush settings"]');
+  await brushSummary.click();
+  const sizeInput = page.locator('.dock details[open] .menu-panel input[aria-label="Brush size"]');
+  await expect(sizeInput).toBeVisible();
+  const onTop = await sizeInput.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+    return !!hit && (el === hit || el.contains(hit) || hit.contains(el));
+  });
+  expect(onTop).toBe(true);
+  await brushSummary.click(); // close before drawing
+
   // Draw, then open Save — it docks as a bottom sheet with the action in view
   // (the bug this fixes pushed Save/Cancel off-screen).
   await drawOnCanvas(page);
