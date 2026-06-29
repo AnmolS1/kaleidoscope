@@ -45,6 +45,11 @@ export function getUserById(env: Env, id: string): Promise<User | null> {
   return env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<User>();
 }
 
+/** Point a user's avatar_url at our cached path (or clear it). */
+export async function setUserAvatar(env: Env, id: string, path: string | null): Promise<void> {
+  await env.DB.prepare("UPDATE users SET avatar_url=? WHERE id=?").bind(path, id).run();
+}
+
 export interface NewArtwork {
   id: string;
   user_id: string;

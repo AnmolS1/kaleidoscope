@@ -107,3 +107,23 @@ export const GalleryIcon = (p: P) => (
     <rect x="14" y="14" width="7" height="7" rx="1" />
   </Svg>
 );
+export const MoreIcon = (p: P) => (
+  <Svg {...p}>
+    <circle cx="5" cy="12" r="1.4" />
+    <circle cx="12" cy="12" r="1.4" />
+    <circle cx="19" cy="12" r="1.4" />
+  </Svg>
+);
+export const SymmetryIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 2v20M4 7l16 10M20 7 4 17" />
+  </Svg>
+);
+export const ColorIcon = (p: P) => (
+  <Svg {...p}>
+    <circle cx="13.5" cy="6.5" r="2.5" />
+    <circle cx="17.5" cy="12.5" r="2.5" />
+    <circle cx="6.5" cy="8.5" r="2.5" />
+    <path d="M12 22a10 10 0 1 1 0-20c4 0 6 2.5 6 5 0 2-1.8 3-3.4 3H13a2.4 2.4 0 0 0-1 4.6c.7.4 1 1 1 1.8A2 2 0 0 1 12 22Z" />
+  </Svg>
+);

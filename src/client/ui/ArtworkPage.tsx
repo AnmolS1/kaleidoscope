@@ -9,6 +9,7 @@ import {
 import { deserialize, type Drawing } from "../engine/strokes";
 import { exportPNG, exportSVG, downloadBlob } from "../engine/export";
 import { PageNav } from "./PageNav";
+import { Avatar } from "./Avatar";
 import { Link } from "./Link";
 
 function setMeta(property: string, content: string) {
@@ -94,7 +95,12 @@ export function ArtworkPage({ id }: { id: string }) {
         </div>
         <div class="artwork-side">
           <h1>{meta?.title ?? "…"}</h1>
-          {meta?.author?.name && <p class="artwork-author">by {meta.author.name}</p>}
+          {meta?.author?.name && (
+            <p class="artwork-author">
+              <Avatar src={meta.author.avatar} name={meta.author.name} size={24} />
+              by {meta.author.name}
+            </p>
+          )}
           {meta && (
             <p class="artwork-meta">
               {meta.segments}-fold {meta.mirror ? "mirror" : "rotational"} symmetry

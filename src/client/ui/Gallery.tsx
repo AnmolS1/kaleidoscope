@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import * as S from "../state";
 import { getGallery, getMyArtworks, deleteArtwork, patchArtwork, type GalleryItem } from "../api";
 import { PageNav } from "./PageNav";
+import { Avatar } from "./Avatar";
 import { Link } from "./Link";
 
 export function Gallery({ mine }: { mine: boolean }) {
@@ -82,7 +83,12 @@ export function Gallery({ mine }: { mine: boolean }) {
                       </button>
                     </span>
                   ) : (
-                    it.author?.name && <span class="art-author">by {it.author.name}</span>
+                    it.author?.name && (
+                      <span class="art-author">
+                        <Avatar src={it.author.avatar} name={it.author.name} size={20} />
+                        by {it.author.name}
+                      </span>
+                    )
                   )}
                 </figcaption>
               </figure>

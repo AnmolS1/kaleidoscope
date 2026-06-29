@@ -145,6 +145,7 @@
   color: var(--color-graphite);
   font-size: 13px;
   font-weight: 500;
+  text-decoration: none;
   cursor: pointer;
 }
 .btn:hover {
@@ -208,7 +209,9 @@
   box-shadow: var(--shadow-card);
   z-index: 20;
 }
-.menu-panel button {
+.menu-panel button,
+.menu-panel a {
+  display: block;
   text-align: left;
   padding: 8px 10px;
   border: none;
@@ -216,9 +219,11 @@
   border-radius: var(--r-sm);
   color: var(--color-graphite);
   font-size: 13px;
+  text-decoration: none;
   cursor: pointer;
 }
-.menu-panel button:hover:not(:disabled) {
+.menu-panel button:hover:not(:disabled),
+.menu-panel a:hover {
   background: var(--color-crease-line);
 }
 .menu-panel button:disabled {
@@ -243,6 +248,48 @@
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-card);
   padding: 20px 22px;
+  /* Never let the card (or the keyboard) push its buttons off-screen. */
+  max-height: min(88dvh, 720px);
+  overflow: auto;
+}
+
+/* Phone: dock dialogs as a bottom sheet so actions stay thumb-reachable with
+   the on-screen keyboard up. */
+@media (max-width: 640px) {
+  .overlay {
+    place-items: end stretch;
+    padding: 0;
+  }
+  .overlay-card {
+    width: 100%;
+    max-width: none;
+    border-radius: 16px 16px 0 0;
+    max-height: 90dvh;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+  /* Grab-handle affordance (CSS-only; no dialog markup change). */
+  .overlay-card::before {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: 0 auto 12px;
+    border-radius: 2px;
+    background: var(--color-crease-line-bold);
+  }
+}
+@media (max-width: 640px) and (prefers-reduced-motion: no-preference) {
+  .overlay-card {
+    animation: sheet-up 0.22s ease;
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 .overlay-head {
   display: flex;
@@ -292,15 +339,124 @@ kbd {
   color: var(--color-graphite-60);
 }
 
-@media (max-width: 720px) {
-  .btn-text,
-  .slider-label {
-    display: none;
+/* ===== responsive toolbar (tablet + phone) =====
+   Desktop (≥1024) renders the original .toolbar above, untouched. The compact
+   branches add their own classes; all rules here are scoped so they never reach
+   the desktop path. */
+
+/* Tablet + phone share a single non-wrapping row / bar. */
+.toolbar-compact,
+.toolbar-phone-top {
+  flex-wrap: nowrap;
+  overflow: visible; /* never clip the absolute popovers */
+}
+/* Keep the compact tablet row narrow enough to fit at 641px: icon-only buttons. */
+.toolbar-compact .btn-text {
+  display: none;
+}
+
+/* Popover triggers/panels reuse the existing .menu pattern. Give slider panels
+   a sensible width and a column layout. */
+.pop > summary {
+  list-style: none;
+}
+.pop > summary::-webkit-details-marker {
+  display: none;
+}
+.pop-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 200px;
+  left: 0;
+  right: auto;
+}
+.pop-panel .slider {
+  min-width: 0;
+  width: 100%;
+}
+.pop-row {
+  display: flex;
+  gap: 4px;
+}
+.pop-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 168px;
+}
+
+/* Phone: slim top bar + a bottom tool dock placed in the studio grid. */
+.dock-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--color-graphite);
+}
+.dock {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 4px;
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--color-graph-card) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--color-crease-line-bold);
+}
+/* Popovers in the bottom dock open upward and anchor to their trigger. */
+.dock .menu-panel {
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 640px) {
+  /* Add a third row for the dock; pin the canvas to the stretch row so the dock
+     never collapses it. Desktop/tablet keep the base `auto 1fr` grid. */
+  .studio {
+    grid-template-rows: auto 1fr auto;
   }
-  .slider {
-    min-width: 64px;
+  .canvas-host {
+    grid-row: 2;
   }
-  .tb-brand {
-    display: none;
+  .dock {
+    grid-row: 3;
+  }
+  .toolbar-phone-top {
+    gap: 8px;
+    padding: 8px 12px;
+  }
+}
+
+/* Coarse pointers (touch): enforce comfortable ≥44px targets. */
+@media (pointer: coarse) {
+  .icon-btn,
+  .menu > summary.icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .btn,
+  .menu > summary.btn {
+    min-height: 44px;
+  }
+  .dock .swatch,
+  .pop-swatches .swatch {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* Honour reduced-motion: drop hover/transform transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn,
+  .swatch {
+    transition: none;
+  }
+  .swatch:hover {
+    transform: none;
   }
 }

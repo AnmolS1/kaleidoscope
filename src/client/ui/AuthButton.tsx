@@ -1,6 +1,36 @@
 import { useState } from "preact/hooks";
 import * as S from "../state";
 import { loginUrl, logout } from "../api";
+import { Avatar } from "./Avatar";
+
+async function doLogout() {
+  await logout().catch(() => {});
+  S.me.value = null;
+}
+
+// Flat menu items for embedding inside another popover (the compact toolbar's
+// ⋯ overflow). Signed-out → a sign-in link; signed-in → account actions. No
+// "Gallery" item here — the overflow panel already lists Gallery.
+export function AuthMenuItems() {
+  const user = S.me.value;
+  if (!user) {
+    return (
+      <a role="menuitem" href={loginUrl(location.pathname)}>
+        Sign in with Google
+      </a>
+    );
+  }
+  return (
+    <>
+      <button role="menuitem" onClick={() => S.navigate("/me")}>
+        My pieces
+      </button>
+      <button role="menuitem" onClick={doLogout}>
+        Sign out
+      </button>
+    </>
+  );
+}
 
 export function AuthButton() {
   const [open, setOpen] = useState(false);
@@ -13,19 +43,15 @@ export function AuthButton() {
   if (!user) {
     return (
       <a class="btn btn-primary" href={loginUrl(location.pathname)}>
-        Sign in with Google
+        Sign in<span class="signin-tail">with Google</span>
       </a>
     );
   }
 
-  const initial = (user.name ?? "?").trim().charAt(0).toUpperCase() || "?";
-
   return (
     <div class="auth-menu">
       <button class="avatar-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} aria-label="Account menu">
-        {/* Initials only — the strict CSP (img-src 'self') deliberately excludes
-            third-party avatar hosts like googleusercontent.com. */}
-        <span class="avatar-fallback">{initial}</span>
+        <Avatar src={user.avatar} name={user.name} size={36} />
       </button>
       {open && (
         <div class="menu-panel auth-panel" role="menu" onMouseLeave={() => setOpen(false)}>
@@ -39,9 +65,8 @@ export function AuthButton() {
           <button
             role="menuitem"
             onClick={async () => {
-              await logout().catch(() => {});
-              S.me.value = null;
               setOpen(false);
+              await doLogout();
             }}
           >
             Sign out
