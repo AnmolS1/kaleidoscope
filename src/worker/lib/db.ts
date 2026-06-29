@@ -135,6 +135,21 @@ export async function listPublic(env: Env, page: Page): Promise<ArtworkWithAutho
   return results ?? [];
 }
 
+// A random sample of public artworks (with author), for the iOS widget's batch fetch.
+// TODO: ORDER BY RANDOM() is fine at this scale; switch to a random-offset strategy if the
+// artworks table ever gets huge.
+export async function randomPublic(env: Env, limit: number): Promise<ArtworkWithAuthor[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT a.*, u.name AS author_name, u.avatar_url AS author_avatar
+     FROM artworks a JOIN users u ON u.id = a.user_id
+     WHERE a.visibility = 'public'
+     ORDER BY RANDOM() LIMIT ?`,
+  )
+    .bind(limit)
+    .all<ArtworkWithAuthor>();
+  return results ?? [];
+}
+
 export async function listByUser(env: Env, userId: string, page: Page): Promise<Artwork[]> {
   const c = decodeCursor(page.cursor);
   const sql = c

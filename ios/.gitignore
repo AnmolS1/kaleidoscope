@@ -1,0 +1,6 @@
+# XcodeGen generates the project from project.yml — regenerate with `xcodegen generate`.
+*.xcodeproj
+# Build output / derived data
+build/
+DerivedData/
+.DS_Store
