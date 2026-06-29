@@ -115,6 +115,18 @@
   flex: none;
   background: var(--color-inset);
 }
+/* Size author-line avatars explicitly. Needed because `.art-card img`
+   (the thumbnail rule) otherwise matches the in-card author image and
+   blows it up to 100% width; this scoped selector out-specifies it. */
+.art-author .avatar-img,
+.artwork-author .avatar-img {
+  width: 20px;
+  height: 20px;
+}
+.artwork-author .avatar-img {
+  width: 24px;
+  height: 24px;
+}
 /* Initials fallback rendered inline beside an author name (scoped so the
    AuthButton avatar fallback keeps its own styling). */
 .art-author .avatar-fallback,
