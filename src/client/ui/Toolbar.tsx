@@ -27,6 +27,7 @@ import {
 } from "./Icons";
 import { AuthButton, AuthMenuItems } from "./AuthButton";
 import { Link } from "./Link";
+import { PonderanceBacklink } from "./PonderanceBacklink";
 
 const STAMP = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 
@@ -242,6 +243,7 @@ export function Toolbar() {
         </button>
 
         <AuthButton />
+        <PonderanceBacklink />
       </header>
     );
   }
@@ -462,6 +464,7 @@ export function Toolbar() {
             <AuthMenuItems />
           </div>
         </details>
+        <PonderanceBacklink />
       </header>
     );
   }
@@ -498,6 +501,7 @@ export function Toolbar() {
             <AuthMenuItems />
           </div>
         </details>
+        <PonderanceBacklink />
       </header>
 
       <nav class="dock" aria-label="Drawing tools">

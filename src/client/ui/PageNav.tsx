@@ -1,5 +1,6 @@
 import { Link } from "./Link";
 import { AuthButton } from "./AuthButton";
+import { PonderanceBacklink } from "./PonderanceBacklink";
 
 export function PageNav() {
   return (
@@ -15,6 +16,7 @@ export function PageNav() {
           Gallery
         </Link>
         <AuthButton />
+        <PonderanceBacklink />
       </nav>
     </header>
   );

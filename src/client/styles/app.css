@@ -42,3 +42,75 @@ button {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ── Ponderance backlink ──────────────────────────────────────────────────
+   Parent-site link shown at the right edge of both top bars (studio Toolbar +
+   PageNav). A crease-blue "double barline" divides the app's own controls from
+   the parent brand; collapses to just the mark on phones. */
+.pdr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  margin-left: 2px;
+  padding: 4px 2px 4px 10px;
+  border-radius: var(--r-sm);
+  text-decoration: none;
+  white-space: nowrap;
+  color: var(--color-graphite);
+  -webkit-tap-highlight-color: transparent;
+  transition: color 160ms ease;
+}
+.pdr-bars {
+  display: inline-flex;
+  gap: 2.5px;
+  transition: gap 160ms ease;
+}
+.pdr-bars i {
+  width: 1.5px;
+  height: 16px;
+  border-radius: 1px;
+  background: var(--color-crease);
+}
+.pdr-mark {
+  display: block;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+.pdr-word {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  color: inherit;
+}
+.pdr-link:hover {
+  color: var(--color-crease);
+}
+.pdr-link:hover .pdr-bars {
+  gap: 4px;
+}
+.pdr-link:focus-visible {
+  outline: 2px solid var(--color-crease);
+  outline-offset: 2px;
+}
+
+/* The studio toolbar is dense (tools + edit + export controls fill the row) at
+   every width, so there we show only the mark + barline — never the wordmark.
+   The full "ponderance" wordmark lives on the roomier PageNav (content pages). */
+.toolbar .pdr-word {
+  display: none;
+}
+
+/* PageNav on phones: collapse to the mark + barline too. */
+@media (max-width: 640px) {
+  .page-nav .pdr-word {
+    display: none;
+  }
+  .pdr-link {
+    gap: 7px;
+    padding-left: 8px;
+  }
+}
