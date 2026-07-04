@@ -17,7 +17,5 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "types": ["vite/client", "vitest/globals"]
   },
-  "include": ["src/client", "test"],
-  "comment": "avatar.test.ts and gallery-random.test.ts import worker source (Cloudflare types); they run under vitest and the worker source is typechecked by tsconfig.worker.json, so they're excluded from this DOM project's typecheck.",
-  "exclude": ["test/unit/avatar.test.ts", "test/unit/gallery-random.test.ts"]
+  "include": ["src/client", "test/unit", "test/e2e"]
 }
