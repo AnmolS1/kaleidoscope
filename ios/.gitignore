@@ -4,6 +4,7 @@
 build/
 DerivedData/
 .DS_Store
-# SwiftPM (KaleidoEngine package) build artifacts
+# SwiftPM (KaleidoEngine package) build artifacts + per-user Xcode state
 .build/
 Package.resolved
+.swiftpm/
