@@ -47,23 +47,46 @@ struct StudioView: View {
 
     // MARK: Controls
 
+    @ViewBuilder
     private var controls: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                colorRow
-                sliderRow(title: "Size", accessibilityLabel: "Brush size",
-                          value: $model.size, range: 2...60) { "\(Int($0.rounded())) points" }
-                sliderRow(title: "Opacity", accessibilityLabel: "Opacity",
-                          value: $model.opacity, range: 0.1...1) { "\(Int(($0 * 100).rounded())) percent" }
-                segmentsRow
-                togglesRow
-                actionRow
+        if dynamicTypeSize.isAccessibilitySize {
+            // Accessibility sizes: the panel is height-capped, so the action row
+            // would fall below the scroll fold. Pin it as an always-visible bar
+            // below the scroll so Undo/Redo/Clear/Download/Save stay reachable
+            // without scrolling; the canvas keeps the same height.
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 16) { adjustmentRows }
+                        .padding(16)
+                }
+                Divider()
+                pinnedActionBar
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
             }
-            .padding(16)
+            .background(controlsBackground)
+        } else {
+            ScrollView {
+                VStack(spacing: 16) {
+                    adjustmentRows
+                    actionRow
+                }
+                .padding(16)
+            }
+            .background(controlsBackground)
         }
-        // Reduce Transparency: swap the blur for a solid graph-card surface so
-        // the controls stay legible without translucency.
-        .background(controlsBackground)
+    }
+
+    /// The scrollable adjustment controls (everything except the action row).
+    @ViewBuilder
+    private var adjustmentRows: some View {
+        colorRow
+        sliderRow(title: "Size", accessibilityLabel: "Brush size",
+                  value: $model.size, range: 2...60) { "\(Int($0.rounded())) points" }
+        sliderRow(title: "Opacity", accessibilityLabel: "Opacity",
+                  value: $model.opacity, range: 0.1...1) { "\(Int(($0 * 100).rounded())) percent" }
+        segmentsRow
+        togglesRow
     }
 
     @ViewBuilder
@@ -227,34 +250,63 @@ struct StudioView: View {
         .font(.caption)
     }
 
+    // Default (one row): undo/redo/clear, spacer, download, save.
     private var actionRow: some View {
         HStack(spacing: 14) {
-            iconButton("arrow.uturn.backward", label: "Undo", enabled: model.canUndo) { model.undo() }
-            iconButton("arrow.uturn.forward", label: "Redo", enabled: model.canRedo) { model.redo() }
-            iconButton("trash", label: "Clear canvas", enabled: !model.isEmpty) { model.clear() }
+            editButtons
             Spacer()
-            Button {
-                download()
-            } label: {
-                Label("PNG", systemImage: "square.and.arrow.down")
-            }
-            .buttonStyle(.bordered)
-            .tint(Blueprint.crease)
-            .disabled(model.isEmpty)
-            .accessibilityLabel("Download PNG")
-            .accessibilityHint("Exports the drawing as an image to share or save")
-
-            Button {
-                onSave()
-            } label: {
-                Label("Save", systemImage: "sparkles")
-                    .foregroundStyle(.white) // pin white so the label isn't system-picked
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Blueprint.craneButton)
-            .disabled(model.isEmpty)
-            .accessibilityHint("Saves the piece to the gallery")
+            downloadButton
+            saveButton
         }
+    }
+
+    /// Accessibility sizes: two rows so all five controls fit (a single row
+    /// overflows and pushes Save off-screen). Undo/redo/clear on top, then
+    /// Download + Save full-width. Used pinned below the scroll in `controls`.
+    private var pinnedActionBar: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 14) { editButtons; Spacer() }
+            HStack(spacing: 14) {
+                downloadButton.frame(maxWidth: .infinity)
+                saveButton.frame(maxWidth: .infinity)
+            }
+            // Keep the two full-width labels on one line, scaling if needed.
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+        }
+    }
+
+    @ViewBuilder
+    private var editButtons: some View {
+        iconButton("arrow.uturn.backward", label: "Undo", enabled: model.canUndo) { model.undo() }
+        iconButton("arrow.uturn.forward", label: "Redo", enabled: model.canRedo) { model.redo() }
+        iconButton("trash", label: "Clear canvas", enabled: !model.isEmpty) { model.clear() }
+    }
+
+    private var downloadButton: some View {
+        Button {
+            download()
+        } label: {
+            Label("PNG", systemImage: "square.and.arrow.down")
+        }
+        .buttonStyle(.bordered)
+        .tint(Blueprint.crease)
+        .disabled(model.isEmpty)
+        .accessibilityLabel("Download PNG")
+        .accessibilityHint("Exports the drawing as an image to share or save")
+    }
+
+    private var saveButton: some View {
+        Button {
+            onSave()
+        } label: {
+            Label("Save", systemImage: "sparkles")
+                .foregroundStyle(.white) // pin white so the label isn't system-picked
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(Blueprint.craneButton)
+        .disabled(model.isEmpty)
+        .accessibilityHint("Saves the piece to the gallery")
     }
 
     private func iconButton(_ system: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {

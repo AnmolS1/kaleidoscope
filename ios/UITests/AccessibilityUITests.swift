@@ -144,6 +144,21 @@ final class AccessibilityUITests: XCTestCase {
     /// "frendalist" (shows "by Anmol Saxena" — the owner's own name, fine to
     /// display) rather than an arbitrary other-user piece. Same .accessibility3
     /// launch arg. Used to replace 04-artwork-detail with a privacy-safe shot.
+    /// Focused .accessibility3 capture of the Studio (default + a swatch selected)
+    /// — used to refresh 01/02 after the controls-panel reflow without disturbing
+    /// the network-backed screens.
+    func testAccessibility3StudioReflow() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName",
+                                "UICTContentSizeCategoryAccessibilityXL"]
+        app.launchEnvironment["KALEIDO_DEMO"] = "1"
+        app.launch()
+        XCTAssertTrue(app.otherElements["Drawing canvas"].waitForExistence(timeout: 15))
+        snap(app, "01-studio-default")
+        if app.buttons["teal"].exists { app.buttons["teal"].tap() }
+        snap(app, "02-studio-active")
+    }
+
     /// Focused .accessibility3 capture of the About screen (text-heavy), separate
     /// so a flaky navigation in the main walk can't drop it.
     func testAccessibility3About() {

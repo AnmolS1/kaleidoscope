@@ -9,6 +9,7 @@ struct ArtworkView: View {
     @EnvironmentObject var studio: StudioModel
     @EnvironmentObject var router: AppRouter
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var detail: ArtworkDetail?
     @State private var likes = 0
@@ -61,39 +62,60 @@ struct ArtworkView: View {
         .padding()
     }
 
+    @ViewBuilder
     private func actionRow(_ d: ArtworkDetail) -> some View {
-        HStack(spacing: 12) {
-            Button { Task { await like() } } label: {
-                Label("\(likes)", systemImage: "heart")
+        if dynamicTypeSize.isAccessibilitySize {
+            // Accessibility sizes: stack full-width so the like count, Remix, and
+            // Share all stay fully visible (the horizontal row squeezes them).
+            VStack(spacing: 12) {
+                likeButton.frame(maxWidth: .infinity)
+                remixButton.frame(maxWidth: .infinity)
+                shareButton(d).frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
-            .tint(Blueprint.craneText) // crane-as-text token: 4.5:1+ label in both themes
-            .disabled(busy)
-            .accessibilityLabel("Like")
-            .accessibilityValue(likes == 1 ? "1 like" : "\(likes) likes")
-
-            Button { Task { await remix() } } label: {
-                Label("Remix", systemImage: "arrow.triangle.branch")
-                    .foregroundStyle(.white) // pin white so the label isn't system-picked
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6) // scale down at large text instead of wrapping mid-word
+        } else {
+            HStack(spacing: 12) {
+                likeButton
+                remixButton
+                shareButton(d)
+                Spacer()
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Blueprint.creaseButton)
-            // Claim label width before the row's Spacer absorbs it, so the label
-            // reads "Remix" (not "Re…") at large text instead of compressing.
-            .layoutPriority(1)
-            .disabled(busy)
-            .accessibilityHint("Loads this piece into the studio to edit")
-
-            Button { Task { await share(d) } } label: {
-                Image(systemName: "square.and.arrow.up")
-            }
-            .buttonStyle(.bordered)
-            .tint(Blueprint.graphite)
-            .accessibilityLabel("Share")
-            Spacer()
         }
+    }
+
+    private var likeButton: some View {
+        Button { Task { await like() } } label: {
+            Label("\(likes)", systemImage: "heart")
+        }
+        .buttonStyle(.bordered)
+        .tint(Blueprint.craneText) // crane-as-text token: 4.5:1+ label in both themes
+        .disabled(busy)
+        .accessibilityLabel("Like")
+        .accessibilityValue(likes == 1 ? "1 like" : "\(likes) likes")
+    }
+
+    private var remixButton: some View {
+        Button { Task { await remix() } } label: {
+            Label("Remix", systemImage: "arrow.triangle.branch")
+                .foregroundStyle(.white) // pin white so the label isn't system-picked
+                .lineLimit(1)
+                .minimumScaleFactor(0.6) // scale down at large text instead of wrapping mid-word
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(Blueprint.creaseButton)
+        // Claim label width before the row's Spacer absorbs it, so the label
+        // reads "Remix" (not "Re…") at large text instead of compressing.
+        .layoutPriority(1)
+        .disabled(busy)
+        .accessibilityHint("Loads this piece into the studio to edit")
+    }
+
+    private func shareButton(_ d: ArtworkDetail) -> some View {
+        Button { Task { await share(d) } } label: {
+            Image(systemName: "square.and.arrow.up")
+        }
+        .buttonStyle(.bordered)
+        .tint(Blueprint.graphite)
+        .accessibilityLabel("Share")
     }
 
     @ViewBuilder
