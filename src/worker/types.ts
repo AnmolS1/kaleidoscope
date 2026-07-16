@@ -54,6 +54,7 @@ export interface Artwork {
   remix_of: string | null;
   likes: number;
   created_at: number;
+  alt_text: string | null;
 }
 
 // Public-facing user shape returned by /api/me.

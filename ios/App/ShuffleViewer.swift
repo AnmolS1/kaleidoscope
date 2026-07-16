@@ -47,6 +47,16 @@ struct ShuffleViewer: View {
     @Binding var focusId: String?
     @StateObject private var model = ShuffleModel()
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Advance to the next piece, animating only when Reduce Motion is off.
+    private func advance() {
+        if reduceMotion {
+            model.next()
+        } else {
+            withAnimation { model.next() }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -88,7 +98,11 @@ struct ShuffleViewer: View {
             .background(Blueprint.graph)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Blueprint.crease.opacity(0.4)))
-            .onTapGesture { withAnimation { model.next() } }
+            .onTapGesture { advance() }
+            .accessibilityElement()
+            .accessibilityLabel(accessibleAltText(item.altText, title: item.title))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Shows the next piece")
 
             VStack(spacing: 2) {
                 Text(item.title).font(.headline).foregroundStyle(Blueprint.graphite)
@@ -98,11 +112,12 @@ struct ShuffleViewer: View {
             }
 
             HStack(spacing: 12) {
-                Button { withAnimation { model.next() } } label: {
+                Button { advance() } label: {
                     Label("Shuffle", systemImage: "shuffle")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Blueprint.crane)
+                .accessibilityHint("Shows the next piece")
 
                 if let url = URL(string: item.permalink) {
                     Button { openURL(url) } label: {
@@ -118,7 +133,7 @@ struct ShuffleViewer: View {
                 .foregroundStyle(Blueprint.crease)
         }
         .padding()
-        .gesture(DragGesture(minimumDistance: 30).onEnded { _ in withAnimation { model.next() } })
+        .gesture(DragGesture(minimumDistance: 30).onEnded { _ in advance() })
     }
 
     private var emptyState: some View {

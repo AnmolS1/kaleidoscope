@@ -32,6 +32,36 @@ enum Blueprint {
     static let crease = Color(light: "#2E5E8C", dark: "#82A9CE")
     static let crane = Color(light: "#E84A27", dark: "#F5613C")
     static let sax = Color(hex: "#D9A521")
+
+    /// Accessible sax variant for *text* on the graph background. Plain sax
+    /// (#D9A521) only reaches ~1.96:1 on the light theme — a WCAG fail for the
+    /// small AI-name chip captions in SaveSheet. This darkened gold clears 4.5:1
+    /// in light while staying the familiar sax in dark (already ~7.4:1). See
+    /// ios/ACCESSIBILITY_CONTRAST.md.
+    static let saxText = Color(light: "#7A5A0F", dark: "#D9A521")
+
+    /// Solid, opaque surface used in place of `.ultraThinMaterial` when the user
+    /// has Reduce Transparency on — a slightly-raised "graph card" tone so the
+    /// studio controls panel stays legible without a blur.
+    static let card = Color(light: "#E3E6E0", dark: "#1A2A35")
+
+    /// Human-readable name for a palette swatch, mirroring the backend's color
+    /// vocabulary, so VoiceOver never reads a bare hex string. Falls back to a
+    /// spoken hex ("hex E 8 4 A 2 7") for any custom / off-palette color.
+    static func colorName(forHex hex: String) -> String {
+        switch hex.uppercased() {
+        case "#E84A27": return "crane orange"
+        case "#2E5E8C": return "teal"
+        case "#D9A521": return "sax gold"
+        case "#1B2A33": return "graphite"
+        case "#3FA34D": return "green"
+        case "#8E44AD": return "purple"
+        case "#EAEAEA": return "light gray"
+        default:
+            let digits = hex.uppercased().drop { $0 == "#" }
+            return "hex " + digits.map { String($0) }.joined(separator: " ")
+        }
+    }
 }
 
 // MARK: - Rotating-rosette mark (static version of public/favicon.svg)

@@ -3,6 +3,7 @@ import type { AppEnv } from "../middleware";
 import { requireAuth } from "../middleware";
 import { listPublic, listByUser, randomPublic, encodeCursor } from "../lib/db";
 import { serveAvatar } from "../lib/r2";
+import { templateAlt } from "../lib/alttext";
 
 export const gallery = new Hono<AppEnv>();
 
@@ -28,6 +29,7 @@ gallery.get("/gallery", async (c) => {
       title: a.title,
       author: { name: a.author_name, avatar: a.author_avatar },
       thumb: `/api/artworks/${a.id}/thumb`,
+      altText: a.alt_text ?? templateAlt(a),
       likes: a.likes,
       createdAt: a.created_at,
     })),
@@ -47,6 +49,7 @@ gallery.get("/gallery/random", async (c) => {
     id: a.id,
     title: a.title,
     author: a.author_name,
+    altText: a.alt_text ?? templateAlt(a),
     imageUrl: `${base}/api/artworks/${a.id}/image`,
     permalink: `${base}/p/${a.id}`,
   }));
@@ -77,6 +80,7 @@ gallery.get("/users/me/artworks", requireAuth, async (c) => {
       title: a.title,
       visibility: a.visibility,
       thumb: `/api/artworks/${a.id}/thumb`,
+      altText: a.alt_text ?? templateAlt(a),
       likes: a.likes,
       createdAt: a.created_at,
     })),

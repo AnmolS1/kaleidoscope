@@ -7,13 +7,20 @@
   --color-inset: #ffffff;
   --color-graphite: #1b2a33;
   --color-graphite-60: rgba(27, 42, 51, 0.72);
-  --color-graphite-40: rgba(27, 42, 51, 0.4);
+  /* Bumped 0.40 → 0.70: at 0.40 the small mono labels sat at 2.30:1 (fail).
+     0.70 clears WCAG AA (≈5.2:1 on --color-graph). See ACCESSIBILITY_CONTRAST.md. */
+  --color-graphite-40: rgba(27, 42, 51, 0.7);
   --color-crease: #2e5e8c;
   --color-crease-line: rgba(46, 94, 140, 0.13);
   --color-crease-line-bold: rgba(46, 94, 140, 0.28);
   --color-grid-line: rgba(46, 94, 140, 0.07);
   --color-crane: #e84a27;
   --color-crane-dark: #c23a1c;
+  /* Accessible crane for use as TEXT / small foreground marks. Base crane
+     (#e84a27) only reaches ~3.4:1 on the page background — this darker light-mode
+     value clears WCAG AA (≥4.5:1). Kept distinct from --color-crane (still used
+     for fills, rings and 3:1 non-text marks). See ACCESSIBILITY_CONTRAST.md. */
+  --color-crane-strong: #c23a1c;
   --color-sax: #d9a521;
   --color-orbit: #2a2a6e;
 
@@ -34,12 +41,16 @@
   --color-inset: #1d2c38;
   --color-graphite: #e9ece7;
   --color-graphite-60: rgba(233, 236, 231, 0.66);
-  --color-graphite-40: rgba(233, 236, 231, 0.5);
+  /* Bumped 0.50 → 0.62: at 0.50 labels sat at ~4.35:1 (just under AA);
+     0.62 clears AA (≈6.1:1 on --color-graph). See ACCESSIBILITY_CONTRAST.md. */
+  --color-graphite-40: rgba(233, 236, 231, 0.62);
   --color-crease: #82a9ce;
   --color-crease-line: rgba(130, 169, 206, 0.16);
   --color-crease-line-bold: rgba(130, 169, 206, 0.3);
   --color-grid-line: rgba(130, 169, 206, 0.08);
   --color-crane: #f5613c;
+  /* On the dark page, the lighter crane already clears AA as text (≈5.2:1). */
+  --color-crane-strong: #f5613c;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
@@ -68,4 +79,23 @@
   src: url("/fonts/IBMPlexMono-Regular.woff2") format("woff2");
   font-weight: 400;
   font-display: swap;
+}
+
+/* Users who ask the OS for more contrast get full-strength text and bolder
+   hairlines. Applies to both themes via the same token overrides. */
+@media (prefers-contrast: more) {
+  :root,
+  [data-theme="dark"] {
+    --color-graphite-60: var(--color-graphite);
+    --color-graphite-40: var(--color-graphite);
+    --color-crease-line: var(--color-crease-line-bold);
+  }
+  :root {
+    --color-crease-line-bold: rgba(46, 94, 140, 0.55);
+    --color-grid-line: rgba(46, 94, 140, 0.18);
+  }
+  [data-theme="dark"] {
+    --color-crease-line-bold: rgba(130, 169, 206, 0.6);
+    --color-grid-line: rgba(130, 169, 206, 0.2);
+  }
 }

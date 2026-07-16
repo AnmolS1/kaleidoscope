@@ -20,6 +20,7 @@ function SaveDialogInner() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const tsRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const close = () => (S.saveOpen.value = false);
 
@@ -27,6 +28,43 @@ function SaveDialogInner() {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Focus management (patterned on HelpOverlay): move focus into the dialog on
+  // open, keep Tab within it, and restore focus to the opener on close.
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const card = cardRef.current;
+    const focusables = () =>
+      Array.from(
+        card?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+    // Focus the first control (title input when signed in, sign-in link otherwise);
+    // fall back to the card itself so focus never sits behind the backdrop.
+    (focusables()[0] ?? card)?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    card?.addEventListener("keydown", onKey);
+    return () => {
+      card?.removeEventListener("keydown", onKey);
+      opener?.focus();
+    };
   }, []);
 
   // render Turnstile when signed in
@@ -74,21 +112,31 @@ function SaveDialogInner() {
       });
       S.saveOpen.value = false;
       S.remixOf.value = null;
+      S.announce("Saved — opening your piece");
       S.navigate(`/p/${id}`);
     } catch (e) {
       const code = e instanceof ApiError ? e.code : "error";
-      setError(
+      const msg =
         code === "rate_limited"
           ? "You're saving very fast — try again in a bit."
-          : "Couldn't save. Please try again.",
-      );
+          : "Couldn't save. Please try again.";
+      setError(msg);
+      S.announce(msg);
       setBusy(false);
     }
   }
 
   return (
     <div class="overlay" onClick={close}>
-      <div class="overlay-card" role="dialog" aria-modal="true" aria-label="Save to gallery" onClick={(e) => e.stopPropagation()}>
+      <div
+        class="overlay-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Save to gallery"
+        tabIndex={-1}
+        ref={cardRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <header class="overlay-head">
           <h2>Save to gallery</h2>
           <button class="icon-btn" aria-label="Close" onClick={close}>✕</button>

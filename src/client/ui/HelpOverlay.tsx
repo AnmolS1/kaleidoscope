@@ -59,6 +59,12 @@ export function HelpOverlay() {
           Scribble and the canvas mirrors your strokes into a mandala. Download as PNG, SVG, or an
           animated replay — free, no account needed.
         </p>
+        <p class="overlay-foot">
+          <strong>Accessibility note:</strong> freehand drawing needs a pointer — mouse, touch, or
+          stylus — and isn&rsquo;t available from the keyboard yet. Everything else has a keyboard
+          shortcut: undo (⌘/Ctrl + Z), redo, clear (C), mirror (M), guides (G), brush size ([ / ]),
+          segments (, / .), download (D), and save (S).
+        </p>
       </div>
     </div>
   );

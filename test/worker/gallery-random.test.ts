@@ -54,16 +54,19 @@ describe("GET /api/gallery/random", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
 
-    const body = (await res.json()) as { items: { id: string; title: string; author: string; imageUrl: string; permalink: string }[] };
+    const body = (await res.json()) as { items: { id: string; title: string; author: string; altText: string; imageUrl: string; permalink: string }[] };
     expect(body.items).toHaveLength(3);
     expect(db.calls.at(-1)?.limit).toBe(3);
     expect(body.items[0]).toEqual({
       id: "id0",
       title: "T0",
       author: "A0",
+      altText: expect.any(String),
       imageUrl: `${BASE}/api/artworks/id0/image`,
       permalink: `${BASE}/p/id0`,
     });
+    // Contract: altText is always a non-empty string (template fallback).
+    expect(body.items[0].altText.length).toBeGreaterThan(0);
   });
 
   it("returns 200 {items:[]} for an empty gallery", async () => {

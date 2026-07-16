@@ -15,6 +15,7 @@ export function makeD1(opts: { foreignKeys?: boolean } = {}) {
   const db = new DatabaseSync(":memory:");
   db.exec(migration("0001_init.sql"));
   db.exec(migration("0002_apple_auth.sql"));
+  db.exec(migration("0003_alt_text.sql"));
   if (opts.foreignKeys) db.exec("PRAGMA foreign_keys = ON;");
 
   function prepare(sql: string) {

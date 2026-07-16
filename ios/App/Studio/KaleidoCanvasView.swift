@@ -22,12 +22,22 @@ final class KaleidoCanvasView: UIView {
     /// Minimum normalized move to record a point (keeps payloads small).
     private var minMoveNorm: CGFloat { 1.1 / max(1, half) }
 
+    /// Revision last spoken via a VoiceOver announcement + the time it was made,
+    /// so we announce committed-content changes once and throttle bursts.
+    private var lastAnnouncedRevision = 0
+    private var lastAnnouncement = Date.distantPast
+    private let announceMinInterval: TimeInterval = 0.6
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         isMultipleTouchEnabled = false // palm rejection: one active touch at a time
         backgroundColor = .clear
         contentMode = .redraw
         isOpaque = true
+        // Accessibility: one element the user can still finger-draw on directly.
+        isAccessibilityElement = true
+        accessibilityLabel = "Drawing canvas"
+        accessibilityTraits.insert(.allowsDirectInteraction)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
@@ -35,7 +45,69 @@ final class KaleidoCanvasView: UIView {
     private var half: CGFloat { min(bounds.width, bounds.height) / 2 }
 
     /// Called from the SwiftUI representable whenever the model changes.
-    func refresh() { setNeedsDisplay() }
+    func refresh() {
+        setNeedsDisplay()
+        guard let model else { return }
+        if model.revision != lastAnnouncedRevision {
+            lastAnnouncedRevision = model.revision
+            announceStateChange(model: model)
+        }
+    }
+
+    // ---- accessibility --------------------------------------------------
+
+    /// e.g. "12-fold mirror symmetry, 3 strokes" — recomputed on each read so it
+    /// always reflects the live model state.
+    override var accessibilityValue: String? {
+        get { model.map { m in MainActor.assumeIsolated { stateDescription(m) } } }
+        set {}
+    }
+
+    override var accessibilityCustomActions: [UIAccessibilityCustomAction]? {
+        get { buildCustomActions() }
+        set {}
+    }
+
+    private func stateDescription(_ model: StudioModel) -> String {
+        let symmetry = model.mirror ? "\(model.segments)-fold mirror symmetry" : "\(model.segments)-fold rotational symmetry"
+        let count = model.strokes.count
+        let strokes = count == 1 ? "1 stroke" : "\(count) strokes"
+        return "\(symmetry), \(strokes)"
+    }
+
+    private func buildCustomActions() -> [UIAccessibilityCustomAction] {
+        guard let model else { return [] }
+        return MainActor.assumeIsolated {
+            var actions: [UIAccessibilityCustomAction] = []
+            if model.canUndo { actions.append(customAction("Undo") { $0.undo() }) }
+            if model.canRedo { actions.append(customAction("Redo") { $0.redo() }) }
+            if !model.isEmpty { actions.append(customAction("Clear canvas") { $0.clear() }) }
+            actions.append(customAction(model.mirror ? "Turn off mirror symmetry" : "Turn on mirror symmetry") {
+                $0.mirror.toggle()
+            })
+            return actions
+        }
+    }
+
+    private func customAction(_ name: String, _ perform: @escaping (StudioModel) -> Void) -> UIAccessibilityCustomAction {
+        UIAccessibilityCustomAction(name: name) { [weak self] _ in
+            guard let self, let model = self.model else { return false }
+            MainActor.assumeIsolated { perform(model) }
+            self.refresh()
+            return true
+        }
+    }
+
+    /// Announce committed-content changes (commit / undo / redo / clear) to
+    /// VoiceOver, throttled so a burst doesn't flood the user.
+    private func announceStateChange(model: StudioModel) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastAnnouncement) >= announceMinInterval else { return }
+        lastAnnouncement = now
+        let message = model.isEmpty ? "Canvas cleared" : stateDescription(model)
+        UIAccessibility.post(notification: .announcement, argument: message)
+    }
 
     // ---- touch handling -------------------------------------------------
 

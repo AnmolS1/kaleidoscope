@@ -81,6 +81,7 @@ export async function logout(): Promise<void> {
 export interface ArtworkMeta {
   id: string;
   title: string;
+  altText: string;
   visibility: "public" | "unlisted" | "private";
   author: { name: string | null; avatar: string | null };
   isOwner: boolean;
@@ -98,6 +99,7 @@ export interface ArtworkMeta {
 export interface GalleryItem {
   id: string;
   title: string;
+  altText: string;
   author?: { name: string | null; avatar: string | null };
   visibility?: string;
   thumb: string;

@@ -78,7 +78,20 @@ targets:
       - package: KaleidoEngine
     # Shared scheme so `xcodebuild -scheme Kaleidoscope` works in CI / headless.
     scheme:
-      testTargets: []
+      testTargets:
+        - KaleidoscopeUITests
+  # XCUITest target: asserts key VoiceOver labels exist on each screen.
+  KaleidoscopeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ponderance.kaleidoscope.uitests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Kaleidoscope
   RandomWidget:
     type: app-extension
     platform: iOS

@@ -44,6 +44,7 @@ struct ArtworkView: View {
                 Rectangle().fill(Blueprint.crease.opacity(0.12)).aspectRatio(1, contentMode: .fit)
             }
             .clipShape(RoundedRectangle(cornerRadius: 16))
+            .accessibilityLabel(accessibleAltText(d.altText, title: d.title))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(d.title).font(.title2.bold()).foregroundStyle(Blueprint.graphite)
@@ -68,6 +69,8 @@ struct ArtworkView: View {
             .buttonStyle(.bordered)
             .tint(Blueprint.crane)
             .disabled(busy)
+            .accessibilityLabel("Like")
+            .accessibilityValue(likes == 1 ? "1 like" : "\(likes) likes")
 
             Button { Task { await remix() } } label: {
                 Label("Remix", systemImage: "arrow.triangle.branch")
@@ -75,12 +78,14 @@ struct ArtworkView: View {
             .buttonStyle(.borderedProminent)
             .tint(Blueprint.crease)
             .disabled(busy)
+            .accessibilityHint("Loads this piece into the studio to edit")
 
             Button { Task { await share(d) } } label: {
                 Image(systemName: "square.and.arrow.up")
             }
             .buttonStyle(.bordered)
             .tint(Blueprint.graphite)
+            .accessibilityLabel("Share")
             Spacer()
         }
     }
@@ -98,11 +103,15 @@ struct ArtworkView: View {
                 Label("Visibility: \(d.visibility.capitalized)", systemImage: "eye")
             }
             .tint(Blueprint.crease)
+            .accessibilityLabel("Visibility")
+            .accessibilityValue(d.visibility.capitalized)
+            .accessibilityHint("Changes who can see this piece")
 
             Button(role: .destructive) { Task { await deletePiece() } } label: {
                 Label("Delete piece", systemImage: "trash")
             }
             .disabled(busy)
+            .accessibilityHint("Permanently removes this piece")
         }
     }
 

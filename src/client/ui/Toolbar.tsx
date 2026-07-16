@@ -97,6 +97,7 @@ export function Toolbar() {
           <label class="swatch swatch-picker" aria-label="Custom color">
             <input
               type="color"
+              aria-label="Custom color"
               value={S.color.value.startsWith("#") ? S.color.value : "#1B2A33"}
               onInput={(e) => (S.color.value = (e.target as HTMLInputElement).value.toUpperCase())}
             />
@@ -131,6 +132,7 @@ export function Toolbar() {
               value={S.size.value}
               onInput={(e) => (S.size.value = +(e.target as HTMLInputElement).value)}
               aria-label="Brush size"
+              aria-valuetext={`size ${S.size.value}`}
             />
           </label>
           <label class="slider" title="Opacity">
@@ -143,6 +145,7 @@ export function Toolbar() {
               value={S.opacity.value}
               onInput={(e) => (S.opacity.value = +(e.target as HTMLInputElement).value)}
               aria-label="Opacity"
+              aria-valuetext={`${Math.round(S.opacity.value * 100)} percent`}
             />
           </label>
         </div>
@@ -159,6 +162,7 @@ export function Toolbar() {
               value={S.segments.value}
               onInput={(e) => (S.segments.value = +(e.target as HTMLInputElement).value)}
               aria-label="Symmetry segments"
+              aria-valuetext={`${S.segments.value} segments`}
             />
           </label>
           <button
@@ -270,6 +274,7 @@ export function Toolbar() {
       <label class="swatch swatch-picker" aria-label="Custom color">
         <input
           type="color"
+          aria-label="Custom color"
           value={S.color.value.startsWith("#") ? S.color.value : "#1B2A33"}
           onInput={(e) => (S.color.value = (e.target as HTMLInputElement).value.toUpperCase())}
         />
@@ -322,6 +327,7 @@ export function Toolbar() {
             value={S.size.value}
             onInput={(e) => (S.size.value = +(e.target as HTMLInputElement).value)}
             aria-label="Brush size"
+            aria-valuetext={`size ${S.size.value}`}
           />
         </label>
         <label class="slider" title="Opacity">
@@ -334,6 +340,7 @@ export function Toolbar() {
             value={S.opacity.value}
             onInput={(e) => (S.opacity.value = +(e.target as HTMLInputElement).value)}
             aria-label="Opacity"
+            aria-valuetext={`${Math.round(S.opacity.value * 100)} percent`}
           />
         </label>
       </div>
@@ -356,6 +363,7 @@ export function Toolbar() {
             value={S.segments.value}
             onInput={(e) => (S.segments.value = +(e.target as HTMLInputElement).value)}
             aria-label="Symmetry segments"
+            aria-valuetext={`${S.segments.value} segments`}
           />
         </label>
         <div class="pop-row">

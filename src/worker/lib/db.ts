@@ -156,23 +156,40 @@ export interface NewArtwork {
   palette: string | null;
   remix_of: string | null;
   created_at: number;
+  alt_text: string;
 }
 
 export async function insertArtwork(env: Env, a: NewArtwork): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO artworks
-      (id, user_id, title, visibility, image_key, thumb_key, vector_key, width, height, segments, mirror, palette, remix_of, likes, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+      (id, user_id, title, visibility, image_key, thumb_key, vector_key, width, height, segments, mirror, palette, remix_of, likes, created_at, alt_text)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
   )
     .bind(
       a.id, a.user_id, a.title, a.visibility, a.image_key, a.thumb_key, a.vector_key,
-      a.width, a.height, a.segments, a.mirror, a.palette, a.remix_of, a.created_at,
+      a.width, a.height, a.segments, a.mirror, a.palette, a.remix_of, a.created_at, a.alt_text,
     )
     .run();
 }
 
 export function getArtwork(env: Env, id: string): Promise<Artwork | null> {
   return env.DB.prepare("SELECT * FROM artworks WHERE id = ?").bind(id).first<Artwork>();
+}
+
+/** Set an artwork's alt text. Idempotent per-row; used by the save-time AI
+ *  upgrade and the admin backfill. */
+export async function setArtworkAlt(env: Env, id: string, alt: string): Promise<void> {
+  await env.DB.prepare("UPDATE artworks SET alt_text = ? WHERE id = ?").bind(alt, id).run();
+}
+
+/** Rows still missing alt text (legacy pre-migration artworks), for backfill. */
+export async function listArtworksMissingAlt(env: Env, limit: number): Promise<Artwork[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT * FROM artworks WHERE alt_text IS NULL ORDER BY created_at DESC LIMIT ?",
+  )
+    .bind(limit)
+    .all<Artwork>();
+  return results ?? [];
 }
 
 export interface ArtworkWithAuthor extends Artwork {

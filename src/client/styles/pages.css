@@ -51,7 +51,7 @@
 .link-danger {
   background: none;
   border: none;
-  color: var(--color-crane);
+  color: var(--color-crane-strong);
   cursor: pointer;
   font-size: 12px;
   padding: 0;
@@ -309,7 +309,7 @@
 }
 .form-error {
   margin: 0;
-  color: var(--color-crane);
+  color: var(--color-crane-strong);
   font-size: 13px;
 }
 .save-actions {

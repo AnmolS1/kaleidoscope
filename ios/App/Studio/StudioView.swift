@@ -13,6 +13,14 @@ struct StudioView: View {
     @State private var showColorPicker = false
     @State private var customColor = Color(hex: "#E84A27")
 
+    // Accessibility system settings.
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Swatch diameter, scaled with Dynamic Type so the palette grows with text.
+    @ScaledMetric(relativeTo: .body) private var swatchSize: CGFloat = 30
+
     private let palette = ["#E84A27", "#2E5E8C", "#D9A521", "#1B2A33", "#3FA34D", "#8E44AD", "#EAEAEA"]
 
     var body: some View {
@@ -43,77 +51,138 @@ struct StudioView: View {
         ScrollView {
             VStack(spacing: 16) {
                 colorRow
-                sliderRow(title: "Size", value: $model.size, range: 2...60)
-                sliderRow(title: "Opacity", value: $model.opacity, range: 0.1...1)
+                sliderRow(title: "Size", accessibilityLabel: "Brush size",
+                          value: $model.size, range: 2...60) { "\(Int($0.rounded())) points" }
+                sliderRow(title: "Opacity", accessibilityLabel: "Opacity",
+                          value: $model.opacity, range: 0.1...1) { "\(Int(($0 * 100).rounded())) percent" }
                 segmentsRow
                 togglesRow
                 actionRow
             }
             .padding(16)
         }
-        .background(.ultraThinMaterial)
+        // Reduce Transparency: swap the blur for a solid graph-card surface so
+        // the controls stay legible without translucency.
+        .background(controlsBackground)
+    }
+
+    @ViewBuilder
+    private var controlsBackground: some View {
+        if reduceTransparency {
+            Blueprint.card
+        } else {
+            Color.clear.background(.ultraThinMaterial)
+        }
     }
 
     private var colorRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                label("Color")
-                Spacer()
-                Toggle("Spectrum", isOn: $model.useSpectrum)
-                    .toggleStyle(.button)
-                    .font(.caption)
-                    .tint(Blueprint.crane)
+            // Default: label + toggle on one line. At accessibility Dynamic Type
+            // sizes the toggle would clip off the right edge, so stack them.
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    label("Color")
+                    spectrumToggle
+                }
+            } else {
+                HStack {
+                    label("Color")
+                    Spacer()
+                    spectrumToggle
+                }
             }
-            HStack(spacing: 10) {
-                ForEach(palette, id: \.self) { hex in
-                    Circle()
-                        .fill(Color(hex: hex))
-                        .frame(width: 30, height: 30)
-                        .overlay(Circle().stroke(Blueprint.graphite.opacity(0.25), lineWidth: 1))
-                        .overlay(selectionRing(for: hex))
-                        .onTapGesture {
-                            model.color = hex
+            // Horizontal scroll so the 44pt-hit-target swatches + ColorPicker
+            // never clip — at default width or at large Dynamic Type sizes.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(palette, id: \.self) { hex in swatch(hex) }
+                    ColorPicker("", selection: $customColor, supportsOpacity: false)
+                        .labelsHidden()
+                        .onChange(of: customColor) { _, newValue in
+                            model.color = newValue.hexRGB
                             model.useSpectrum = false
                         }
+                        .accessibilityLabel("Custom color picker")
                 }
-                ColorPicker("", selection: $customColor, supportsOpacity: false)
-                    .labelsHidden()
-                    .onChange(of: customColor) { _, newValue in
-                        model.color = newValue.hexRGB
-                        model.useSpectrum = false
-                    }
+                .padding(.vertical, 2)
+                .opacity(model.useSpectrum ? 0.45 : 1)
             }
-            .opacity(model.useSpectrum ? 0.45 : 1)
         }
+    }
+
+    private var spectrumToggle: some View {
+        Toggle("Spectrum", isOn: $model.useSpectrum)
+            .toggleStyle(.button)
+            .font(.caption)
+            .tint(Blueprint.crane)
+            .accessibilityLabel("Rainbow spectrum brush")
+            .accessibilityHint("Cycles through colors as you draw")
+    }
+
+    private func swatch(_ hex: String) -> some View {
+        let isSelected = !model.useSpectrum && model.color.caseInsensitiveCompare(hex) == .orderedSame
+        return Circle()
+            .fill(Color(hex: hex))
+            .frame(width: swatchSize, height: swatchSize)
+            .overlay(Circle().stroke(Blueprint.graphite.opacity(0.25), lineWidth: 1))
+            .overlay(selectionRing(isSelected: isSelected))
+            // Keep the 30pt visual but give at least a 44pt tappable/focusable area.
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Circle())
+            .onTapGesture {
+                model.color = hex
+                model.useSpectrum = false
+            }
+            .accessibilityElement()
+            .accessibilityLabel(Blueprint.colorName(forHex: hex))
+            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityHint("Sets the brush color")
     }
 
     @ViewBuilder
-    private func selectionRing(for hex: String) -> some View {
-        if !model.useSpectrum && model.color.caseInsensitiveCompare(hex) == .orderedSame {
-            Circle().stroke(Blueprint.crane, lineWidth: 3).padding(-3)
+    private func selectionRing(isSelected: Bool) -> some View {
+        if isSelected {
+            ZStack {
+                Circle().stroke(Blueprint.crane, lineWidth: 3).padding(-3)
+                // Differentiate Without Color: a checkmark so selection reads
+                // without relying on the crane-colored glow.
+                if differentiateWithoutColor {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: swatchSize * 0.45, weight: .bold))
+                        .foregroundStyle(.white)
+                        .shadow(radius: 1)
+                }
+            }
         }
     }
 
-    private func sliderRow(title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
+    private func sliderRow(title: String, accessibilityLabel: String, value: Binding<Double>,
+                           range: ClosedRange<Double>, spoken: @escaping (Double) -> String) -> some View {
         HStack {
-            label(title).frame(width: 70, alignment: .leading)
-            Slider(value: value, in: range).tint(Blueprint.crease)
+            label(title).frame(width: 70, alignment: .leading).accessibilityHidden(true)
+            Slider(value: value, in: range)
+                .tint(Blueprint.crease)
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityValue(spoken(value.wrappedValue))
         }
     }
 
     private var segmentsRow: some View {
         HStack {
-            label("Segments").frame(width: 70, alignment: .leading)
+            label("Segments").frame(width: 70, alignment: .leading).accessibilityHidden(true)
             Slider(
                 value: Binding(get: { Double(model.segments) }, set: { model.segments = Int($0.rounded()) }),
                 in: Double(MIN_SEGMENTS)...Double(MAX_SEGMENTS),
                 step: 1
             )
             .tint(Blueprint.crease)
+            .accessibilityLabel("Symmetry segments")
+            .accessibilityValue("\(model.segments)")
             Text("\(model.segments)")
                 .font(.caption.monospacedDigit())
                 .frame(width: 24)
                 .foregroundStyle(Blueprint.graphite)
+                .accessibilityHidden(true)
         }
     }
 
@@ -125,14 +194,36 @@ struct StudioView: View {
             ))
             .toggleStyle(.button)
             .tint(Blueprint.sax)
-            Toggle("Mirror", isOn: $model.mirror).toggleStyle(.button).tint(Blueprint.crease)
-            Toggle("Guides", isOn: $model.showGuides).toggleStyle(.button).tint(Blueprint.crease)
+            .accessibilityLabel("Glow brush")
+            .accessibilityHint("Draws with a soft luminous halo")
+
+            // Mirror on = dihedral (reflection); off = rotation only. Under
+            // Differentiate Without Color, an icon conveys the mode by shape,
+            // not just the selected tint.
+            Toggle(isOn: $model.mirror) {
+                if differentiateWithoutColor {
+                    Label("Mirror", systemImage: model.mirror ? "circle.lefthalf.filled" : "arrow.triangle.2.circlepath")
+                } else {
+                    Text("Mirror")
+                }
+            }
+            .toggleStyle(.button)
+            .tint(Blueprint.crease)
+            .accessibilityLabel("Mirror symmetry")
+            .accessibilityHint(model.mirror ? "On: reflected wedges" : "Off: rotation only")
+
+            Toggle("Guides", isOn: $model.showGuides)
+                .toggleStyle(.button).tint(Blueprint.crease)
+                .accessibilityLabel("Symmetry guides")
+                .accessibilityHint("Shows faint wedge guide lines")
             Toggle("Dark", isOn: Binding(
                 get: { model.background == .dark },
                 set: { model.background = $0 ? .dark : .light }
             ))
             .toggleStyle(.button)
             .tint(Blueprint.graphite)
+            .accessibilityLabel("Dark canvas")
+            .accessibilityHint("Switches the canvas background between light and dark")
             Spacer()
         }
         .font(.caption)
@@ -140,9 +231,9 @@ struct StudioView: View {
 
     private var actionRow: some View {
         HStack(spacing: 14) {
-            iconButton("arrow.uturn.backward", enabled: model.canUndo) { model.undo() }
-            iconButton("arrow.uturn.forward", enabled: model.canRedo) { model.redo() }
-            iconButton("trash", enabled: !model.isEmpty) { model.clear() }
+            iconButton("arrow.uturn.backward", label: "Undo", enabled: model.canUndo) { model.undo() }
+            iconButton("arrow.uturn.forward", label: "Redo", enabled: model.canRedo) { model.redo() }
+            iconButton("trash", label: "Clear canvas", enabled: !model.isEmpty) { model.clear() }
             Spacer()
             Button {
                 download()
@@ -152,6 +243,8 @@ struct StudioView: View {
             .buttonStyle(.bordered)
             .tint(Blueprint.crease)
             .disabled(model.isEmpty)
+            .accessibilityLabel("Download PNG")
+            .accessibilityHint("Exports the drawing as an image to share or save")
 
             Button {
                 onSave()
@@ -161,16 +254,18 @@ struct StudioView: View {
             .buttonStyle(.borderedProminent)
             .tint(Blueprint.crane)
             .disabled(model.isEmpty)
+            .accessibilityHint("Saves the piece to the gallery")
         }
     }
 
-    private func iconButton(_ system: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ system: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: system).font(.title3)
         }
         .buttonStyle(.bordered)
         .tint(Blueprint.graphite)
         .disabled(!enabled)
+        .accessibilityLabel(label)
     }
 
     private func label(_ text: String) -> some View {

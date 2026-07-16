@@ -29,9 +29,17 @@ struct RandomWidgetView: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
+                .accessibilityLabel(imageLabel)
         } else {
             Blueprint.graph
         }
+    }
+
+    /// Alt text for the widget's art image; falls back to a title label when the
+    /// backend hasn't supplied AI alt text yet.
+    private var imageLabel: Text {
+        let item = entry.item
+        return Text(accessibleAltText(item?.altText, title: item?.title ?? ""))
     }
 
     @ViewBuilder private var content: some View {
@@ -79,12 +87,13 @@ struct RandomWidgetView: View {
                 RosetteMark(lineWidth: 2).frame(width: 26, height: 26)
             }
             Button(intent: ShuffleIntent()) {
-                Image(systemName: "shuffle").font(.system(size: 14, weight: .semibold))
+                Image(systemName: "shuffle").font(.footnote.weight(.semibold))
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white)
             .padding(8)
             .background(.ultraThinMaterial, in: Circle())
+            .accessibilityLabel("Shuffle to another piece")
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

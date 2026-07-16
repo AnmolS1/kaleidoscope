@@ -9,6 +9,14 @@
   overflow: hidden;
 }
 
+/* The <main> landmark wraps the canvas and takes the stretch (1fr) grid row;
+   the canvas host fills it. min-height:0 stops the canvas from blowing the row. */
+.studio-main {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .canvas-host {
   position: relative;
   width: 100%;
@@ -125,7 +133,8 @@
 }
 .icon-btn.is-active {
   background: color-mix(in srgb, var(--color-crane) 16%, transparent);
-  color: var(--color-crane);
+  /* crane-strong lifts the active icon well past the 3:1 non-text minimum. */
+  color: var(--color-crane-strong);
   border-color: color-mix(in srgb, var(--color-crane) 35%, transparent);
 }
 .icon-btn:disabled {
@@ -155,12 +164,15 @@
   background: transparent;
 }
 .btn-primary {
-  background: var(--color-crane);
-  border-color: var(--color-crane);
+  /* crane-dark (not base crane) so white label text clears WCAG AA (5.36:1) in
+     both themes — base crane gives only 3.86:1 (light) / 3.15:1 (dark). */
+  background: var(--color-crane-dark);
+  border-color: var(--color-crane-dark);
   color: #fff;
 }
 .btn-primary:hover {
-  background: var(--color-crane-dark);
+  background: color-mix(in srgb, var(--color-crane-dark) 88%, #000);
+  border-color: color-mix(in srgb, var(--color-crane-dark) 88%, #000);
 }
 .btn-text {
   font-size: 13px;
@@ -423,7 +435,7 @@ kbd {
   .studio {
     grid-template-rows: auto 1fr auto;
   }
-  .canvas-host {
+  .studio-main {
     grid-row: 2;
   }
   .dock {
@@ -461,5 +473,26 @@ kbd {
   }
   .swatch:hover {
     transform: none;
+  }
+}
+
+/* Forced colors (Windows High Contrast): the pressed/active toolbar states lean
+   on background + border color, which this mode flattens — so the "on" state
+   would vanish. Re-express active/pressed with a system-color outline that
+   survives the mode, and keep the active swatch ring visible. */
+@media (forced-colors: active) {
+  .icon-btn.is-active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .swatch.is-active {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+  }
+  .icon-btn:disabled,
+  .menu-panel button:disabled,
+  .btn:disabled {
+    /* forced-colors ignores opacity for conveying state; use GrayText. */
+    color: GrayText;
   }
 }

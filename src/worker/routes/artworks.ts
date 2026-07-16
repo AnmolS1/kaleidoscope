@@ -20,6 +20,8 @@ import {
   incrementLikes,
 } from "../lib/db";
 import { keys, putVectorGz, putWebp, serveObject, serveVectorJson, deleteArtworkObjects } from "../lib/r2";
+import { templateAlt } from "../lib/alttext";
+import { generateAlt } from "../lib/genalt";
 import type { Artwork } from "../types";
 
 export const artworks = new Hono<AppEnv>();
@@ -106,9 +108,11 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
   const width = clampDim(form.get("width"));
   const height = clampDim(form.get("height"));
 
-  // store source-of-truth vector + renders
+  // store source-of-truth vector + renders. Keep the image bytes in hand so the
+  // deferred alt-text upgrade can reuse them without re-reading R2.
+  const imageBytes = await image.arrayBuffer();
   await putVectorGz(c.env, id, drawing);
-  await putWebp(c.env, keys.image(id), await image.arrayBuffer());
+  await putWebp(c.env, keys.image(id), imageBytes);
   await putWebp(c.env, keys.thumb(id), await thumb.arrayBuffer());
   if (og && og.size <= CAPS.ogBytes) {
     await putWebp(c.env, keys.og(id), await og.arrayBuffer());
@@ -129,7 +133,17 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
     palette: meta.palette,
     remix_of: remixOf,
     created_at: Date.now(),
+    // Deterministic fallback — guarantees altText is never null. Upgraded async below.
+    alt_text: templateAlt(meta),
   });
+
+  // Best-effort AI upgrade after the response. c.executionCtx is absent in unit
+  // tests (no 4th arg to app.request); the template value already stands in.
+  try {
+    c.executionCtx.waitUntil(generateAlt(c.env, id, imageBytes, meta));
+  } catch {
+    /* no ExecutionContext (tests) — skip the deferred upgrade */
+  }
 
   return c.json({ id, url: `${c.env.PUBLIC_BASE_URL}/p/${id}` }, 201);
 });
@@ -252,6 +266,7 @@ artworks.get("/:id", async (c) => {
     width: art.width,
     height: art.height,
     palette: art.palette ? (JSON.parse(art.palette) as string[]) : [],
+    altText: art.alt_text ?? templateAlt(art),
     remixOf: art.remix_of,
     likes: art.likes,
     createdAt: art.created_at,

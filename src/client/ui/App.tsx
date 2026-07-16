@@ -76,6 +76,24 @@ function useGlobalKeys() {
   }, []);
 }
 
+function useCanvasAnnouncer() {
+  // Turn engine stroke-count changes into polite screen-reader announcements.
+  // We derive the event from the delta: +1 (or more) is a new/redone stroke,
+  // exactly −1 is an undo, and a larger drop to zero is a clear.
+  useEffect(() => {
+    let prev = S.strokeCount.peek();
+    return effect(() => {
+      const count = S.strokeCount.value;
+      const delta = count - prev;
+      prev = count;
+      if (delta === 0) return;
+      if (delta > 0) S.announceCanvas("Stroke added");
+      else if (delta === -1) S.announceCanvas("Stroke undone");
+      else S.announceCanvas("Canvas cleared");
+    });
+  }, []);
+}
+
 function useTheme() {
   // Initialize canvas/page theme from the OS preference once, then mirror the
   // `bg` signal onto <html data-theme> so design tokens switch with the canvas.
@@ -96,7 +114,10 @@ function Studio() {
   return (
     <div class="studio">
       <Toolbar />
-      <Canvas />
+      <main id="main-content" class="studio-main">
+        <h1 class="visually-hidden">Kaleidoscope drawing studio</h1>
+        <Canvas />
+      </main>
       <SaveDialog />
     </div>
   );
@@ -105,6 +126,7 @@ function Studio() {
 export function App() {
   useGlobalKeys();
   useTheme();
+  useCanvasAnnouncer();
   useEffect(() => {
     void S.initAuth();
   }, []);
@@ -124,8 +146,15 @@ export function App() {
 
   return (
     <>
+      <a class="skip-link" href="#main-content">
+        Skip to content
+      </a>
       {view}
       <HelpOverlay />
+      {/* One shared polite live region for the whole app. */}
+      <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {S.announcement.value}
+      </div>
     </>
   );
 }

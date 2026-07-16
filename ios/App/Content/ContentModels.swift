@@ -13,6 +13,10 @@ struct GalleryCard: Codable, Identifiable, Equatable {
     let thumb: String
     let likes: Int
     let createdAt: Double
+    /// AI alt text for the artwork image (VoiceOver). Optional so responses
+    /// predating the alt-text backend still decode; `accessibleAltText` supplies
+    /// a synthesized fallback at the call site.
+    let altText: String?
 }
 
 struct GalleryPage: Codable {
@@ -28,6 +32,7 @@ struct MyArtwork: Codable, Identifiable, Equatable {
     let thumb: String
     let likes: Int
     let createdAt: Double
+    let altText: String?
 }
 
 struct MyArtworksPage: Codable {
@@ -51,6 +56,7 @@ struct ArtworkDetail: Codable, Identifiable {
     let likes: Int
     let createdAt: Double
     let urls: ArtworkURLs
+    let altText: String?
 }
 
 struct ArtworkURLs: Codable {

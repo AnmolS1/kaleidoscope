@@ -19,6 +19,9 @@ export function Gallery({ mine }: { mine: boolean }) {
       setItems((prev) => (reset ? res.items : [...prev, ...res.items]));
       setCursor(res.nextCursor);
       setDone(!res.nextCursor);
+      if (!reset && res.items.length > 0) {
+        S.announce(`${res.items.length} more piece${res.items.length === 1 ? "" : "s"} loaded`);
+      }
     } catch {
       setDone(true);
     } finally {
@@ -47,7 +50,7 @@ export function Gallery({ mine }: { mine: boolean }) {
   return (
     <div class="page">
       <PageNav />
-      <main class="page-body">
+      <main id="main-content" class="page-body">
         <div class="page-head">
           <h1>{mine ? "My pieces" : "Gallery"}</h1>
           {mine && !S.me.value && <p>Sign in to see your saved pieces.</p>}
@@ -63,7 +66,7 @@ export function Gallery({ mine }: { mine: boolean }) {
             {items.map((it) => (
               <figure class="art-card" key={it.id}>
                 <Link href={`/p/${it.id}`} aria-label={it.title}>
-                  <img src={it.thumb} alt={it.title} loading="lazy" />
+                  <img src={it.thumb} alt={it.altText ?? it.title} loading="lazy" />
                 </Link>
                 <figcaption>
                   <span class="art-title">{it.title}</span>

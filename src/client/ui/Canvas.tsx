@@ -65,5 +65,12 @@ export function Canvas() {
     };
   }, []);
 
-  return <div ref={host} class="canvas-host" aria-label="Drawing canvas" role="img" />;
+  // Reading these signals in the render body subscribes the component, so the
+  // label re-computes whenever symmetry or the stroke count changes.
+  const n = S.strokeCount.value;
+  const label =
+    `Drawing canvas: ${S.segments.value}-fold ${S.mirror.value ? "mirror" : "rotational"} symmetry, ` +
+    `${n} ${n === 1 ? "stroke" : "strokes"}`;
+
+  return <div ref={host} class="canvas-host" aria-label={label} role="img" />;
 }

@@ -35,6 +35,8 @@ struct GalleryView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showShuffle = true } label: { Image(systemName: "shuffle") }
+                        .accessibilityLabel("Shuffle")
+                        .accessibilityHint("Browse random pieces full screen")
                 }
             }
             .refreshable { await loadFirst(reset: true) }
@@ -101,6 +103,7 @@ struct GalleryThumb: View {
             }
             .aspectRatio(1, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityLabel(accessibleAltText(card.altText, title: card.title))
             Text(card.title)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Blueprint.graphite)
@@ -109,5 +112,7 @@ struct GalleryThumb: View {
                 Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
         }
+        // One VoiceOver element per card: alt text, then title, then author.
+        .accessibilityElement(children: .combine)
     }
 }

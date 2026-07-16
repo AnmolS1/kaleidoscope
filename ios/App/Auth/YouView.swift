@@ -9,6 +9,9 @@ struct YouView: View {
     @State private var confirmDelete = false
     @State private var confirmSignOut = false
 
+    /// Avatar/rosette diameter, scaled with Dynamic Type.
+    @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 48
+
     var body: some View {
         NavigationStack {
             List {
@@ -33,6 +36,7 @@ struct YouView: View {
                         Button(role: .destructive) { confirmDelete = true } label: {
                             Label("Delete account", systemImage: "trash")
                         }
+                        .accessibilityHint("Permanently deletes your account and all saved artwork")
                     } footer: {
                         Text("Permanently deletes your account and all your saved artwork. This can't be undone.")
                     }
@@ -95,10 +99,12 @@ struct YouView: View {
             } placeholder: {
                 Circle().fill(Blueprint.crease.opacity(0.2))
             }
-            .frame(width: 48, height: 48)
+            .frame(width: avatarSize, height: avatarSize)
             .clipShape(Circle())
+            .accessibilityHidden(true)
         } else {
-            RosetteMark(lineWidth: 2).frame(width: 48, height: 48)
+            RosetteMark(lineWidth: 2).frame(width: avatarSize, height: avatarSize)
+                .accessibilityHidden(true)
         }
     }
 

@@ -45,6 +45,31 @@ export const remixOf = signal<string | null>(null);
 export const helpOpen = signal<boolean>(false);
 export const saveOpen = signal<boolean>(false);
 
+// --- live-region announcements (screen readers) ---
+// A single polite aria-live region in App reads this signal. Callers push a
+// message via announce(); we clear-then-set on a microtask so repeating the same
+// message (e.g. two "Stroke added" in a row) is still spoken.
+export const announcement = signal<string>("");
+
+let announceTimer: ReturnType<typeof setTimeout> | undefined;
+export function announce(msg: string): void {
+  announcement.value = "";
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => {
+    announcement.value = msg;
+  }, 60);
+}
+
+// Canvas events (stroke/undo/clear) can fire in quick succession while drawing,
+// so throttle them to avoid flooding the live region during rapid strokes.
+let lastCanvasAnnounce = 0;
+export function announceCanvas(msg: string): void {
+  const now = Date.now();
+  if (now - lastCanvasAnnounce < 700) return;
+  lastCanvasAnnounce = now;
+  announce(msg);
+}
+
 // --- responsive ---
 // The toolbar renders structurally different DOM per breakpoint (desktop keeps
 // the full row; tablet/phone collapse sliders into popovers). This is a

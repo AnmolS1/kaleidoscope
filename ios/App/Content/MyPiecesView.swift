@@ -43,6 +43,7 @@ struct MyPiecesView: View {
                 }
                 .aspectRatio(1, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                .accessibilityLabel(accessibleAltText(piece.altText, title: piece.title))
                 HStack(spacing: 6) {
                     Text(piece.title).font(.subheadline.weight(.medium)).lineLimit(1)
                         .foregroundStyle(Blueprint.graphite)
@@ -50,6 +51,8 @@ struct MyPiecesView: View {
                     visibilityBadge(piece.visibility)
                 }
             }
+            // One element per card: alt text, title, and visibility (when not public).
+            .accessibilityElement(children: .combine)
         }
         .buttonStyle(.plain)
         .onAppear { if piece.id == items.last?.id { Task { await loadMore() } } }
@@ -61,6 +64,7 @@ struct MyPiecesView: View {
             Image(systemName: v == "private" ? "lock.fill" : "link")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .accessibilityLabel(v == "private" ? "Private" : "Unlisted")
         }
     }
 

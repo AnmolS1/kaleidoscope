@@ -36,14 +36,21 @@ struct AuthSheet: View {
     /// Optional context line, e.g. "Sign in to save your piece."
     var reason: String?
 
+    /// Sign-in button height, scaled with Dynamic Type so labels never clip.
+    @ScaledMetric(relativeTo: .body) private var buttonHeight: CGFloat = 50
+    @AccessibilityFocusState private var headingFocused: Bool
+
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
             RosetteMark(lineWidth: 3)
                 .frame(width: 64, height: 64)
+                .accessibilityHidden(true)
             Text("Sign in to Kaleidoscope")
                 .font(.title2.bold())
                 .foregroundStyle(Blueprint.graphite)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityFocused($headingFocused)
             Text(reason ?? "Save your work to the gallery, share links, and remix pieces. Drawing and PNG export are always free.")
                 .font(.subheadline)
                 .foregroundStyle(Blueprint.graphite.opacity(0.75))
@@ -55,8 +62,9 @@ struct AuthSheet: View {
                 AppleSignInButton(colorScheme: colorScheme) {
                     Task { await auth.signInWithApple(); dismissIfSignedIn() }
                 }
-                .frame(height: 50)
+                .frame(height: buttonHeight)
                 .frame(maxWidth: .infinity)
+                .accessibilityLabel("Sign in with Apple")
 
                 Button {
                     Task { await auth.signInWithGoogle(); dismissIfSignedIn() }
@@ -66,10 +74,11 @@ struct AuthSheet: View {
                         Text("Continue with Google").fontWeight(.medium)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                    .frame(height: buttonHeight)
                 }
                 .buttonStyle(.bordered)
                 .tint(Blueprint.graphite)
+                .accessibilityLabel("Continue with Google")
             }
             .padding(.horizontal)
             .disabled(auth.isBusy)
@@ -83,9 +92,12 @@ struct AuthSheet: View {
                 .font(.footnote)
                 .tint(Blueprint.crease)
                 .padding(.bottom)
+                .accessibilityHint("Dismiss without signing in")
         }
         .padding()
         .background(Blueprint.graph.ignoresSafeArea())
+        // Land VoiceOver on the heading (with sign-in context) when the sheet opens.
+        .onAppear { headingFocused = true }
     }
 
     private func dismissIfSignedIn() {

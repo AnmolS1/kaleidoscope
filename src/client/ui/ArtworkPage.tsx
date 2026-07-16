@@ -66,6 +66,7 @@ export function ArtworkPage({ id }: { id: string }) {
     try {
       const r = await likeArtwork(id);
       setLikes(r.likes);
+      S.announce(`Liked. ${r.likes} like${r.likes === 1 ? "" : "s"}`);
     } catch {
       /* ignore */
     }
@@ -77,7 +78,7 @@ export function ArtworkPage({ id }: { id: string }) {
     return (
       <div class="page">
         <PageNav />
-        <main class="page-body">
+        <main id="main-content" class="page-body">
           <p class="empty">
             This piece isn't available. <Link href="/gallery" class="link">Browse the gallery</Link>.
           </p>
@@ -89,9 +90,9 @@ export function ArtworkPage({ id }: { id: string }) {
   return (
     <div class="page">
       <PageNav />
-      <main class="page-body artwork">
+      <main id="main-content" class="page-body artwork">
         <div class="artwork-frame">
-          <img src={`/api/artworks/${id}/image`} alt={meta?.title ?? "Artwork"} />
+          <img src={`/api/artworks/${id}/image`} alt={meta?.altText ?? meta?.title ?? "Artwork"} />
         </div>
         <div class="artwork-side">
           <h1>{meta?.title ?? "…"}</h1>

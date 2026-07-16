@@ -17,6 +17,7 @@ struct SaveSheet: View {
     @State private var suggestions: [String] = []
     @State private var saving = false
     @State private var errorText: String?
+    @AccessibilityFocusState private var titleFocused: Bool
 
     private let client = AuthClient()
 
@@ -25,6 +26,8 @@ struct SaveSheet: View {
             Form {
                 Section("Title") {
                     TextField("Untitled", text: $title)
+                        .accessibilityLabel("Title")
+                        .accessibilityFocused($titleFocused)
                     if !suggestions.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -33,11 +36,14 @@ struct SaveSheet: View {
                                         Text(name).font(.caption).lineLimit(1)
                                     }
                                     .buttonStyle(.bordered)
-                                    .tint(Blueprint.sax)
+                                    .tint(Blueprint.saxText)
+                                    .accessibilityLabel("Suggested name: \(name)")
+                                    .accessibilityHint("Uses this as the title")
                                 }
                             }
                         }
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
+                        .accessibilityLabel("Suggested names")
                     }
                 }
 
@@ -46,6 +52,7 @@ struct SaveSheet: View {
                         ForEach(Visibility.allCases) { v in Text(v.label).tag(v) }
                     }
                     .pickerStyle(.segmented)
+                    .accessibilityLabel("Visibility")
                     Text(visibility.caption).font(.caption).foregroundStyle(.secondary)
                 }
 
@@ -67,6 +74,8 @@ struct SaveSheet: View {
             }
             .overlay { if saving { ProgressView("Saving…").padding().background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12)) } }
             .task { await loadSuggestions() }
+            // Move VoiceOver focus to the title field when the sheet opens.
+            .onAppear { titleFocused = true }
         }
     }
 
