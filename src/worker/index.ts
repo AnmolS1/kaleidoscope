@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./middleware";
-import { loadAuth } from "./middleware";
+import { loadAuth, requireAuth, requireCsrf } from "./middleware";
 import { securityHeaders, originCheck } from "./security";
 import { auth } from "./routes/auth";
 import { artworks } from "./routes/artworks";
@@ -8,6 +8,9 @@ import { gallery } from "./routes/gallery";
 import { admin } from "./routes/admin";
 import { og } from "./routes/og";
 import { permalink } from "./routes/permalink";
+import { listArtworkIdsByUser, deleteUser } from "./lib/db";
+import { deleteArtworkObjects, keys } from "./lib/r2";
+import { destroySession } from "./lib/session";
 import type { SessionUser } from "./types";
 
 // The Worker runs only for routes matched by `run_worker_first` (/api/*, /og/*);
@@ -38,6 +41,27 @@ app.get("/api/me", (c) => {
     csrf: session?.data.csrf ?? null,
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
   });
+});
+
+// Account deletion (App Store Guideline 5.1.1(v)). Removes the user's artwork
+// blobs + avatar from R2, then the user row (artwork rows cascade via FK), then
+// the current session. We deliberately do NOT try to enumerate the user's other
+// KV sessions — KV isn't queryable by value, and deleting the user row already
+// neuters every session (loadAuth → getUserById → null → logged out); any
+// stragglers simply TTL-expire.
+app.delete("/api/me", requireAuth, requireCsrf, async (c) => {
+  const user = c.get("user")!;
+
+  const ids = await listArtworkIdsByUser(c.env, user.id);
+  for (const id of ids) await deleteArtworkObjects(c.env, id);
+  await c.env.ART.delete(keys.avatar(user.id));
+
+  await deleteUser(c.env, user.id); // cascades artwork rows
+
+  const session = c.get("session");
+  if (session) await destroySession(c, session.id);
+
+  return c.json({ ok: true });
 });
 
 app.route("/api/auth", auth);

@@ -22,10 +22,18 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>dev.ponderance.kaleidoscope</string>
+			<string>dev.ponderance.kaleidoscope.widget</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>kaleidoscopewidget</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>dev.ponderance.kaleidoscope.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kaleidoscope</string>
 			</array>
 		</dict>
 	</array>

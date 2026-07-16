@@ -15,8 +15,10 @@
   "vars": {
     "PUBLIC_BASE_URL": "https://kaleidoscope.ponderance.dev",
     "GOOGLE_REDIRECT_URI": "https://kaleidoscope.ponderance.dev/api/auth/callback",
-    "TURNSTILE_SITE_KEY": "0x4AAAAAADsdEltLI2PUUeiE"
+    "TURNSTILE_SITE_KEY": "0x4AAAAAADsdEltLI2PUUeiE",
+    "APPLE_BUNDLE_ID": "dev.ponderance.kaleidoscope"
   },
+  "ai": { "binding": "AI" },
   "d1_databases": [
     { "binding": "DB", "database_name": "kaleidoscope", "database_id": "eaf8e82a-2a74-40b0-a70c-e7144ff1e339" }
   ],

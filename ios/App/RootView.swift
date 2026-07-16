@@ -1,21 +1,68 @@
 import SwiftUI
 
-/// The app is more than a widget wrapper: a full random-piece browser, a "add the widget"
-/// walkthrough, and a short About. That standalone value is what clears App Review 4.2.
+/// The app is a native drawing studio first: draw kaleidoscope mandalas, browse
+/// the public gallery, and sign in (in "You") to save + remix.
 struct RootView: View {
     @Binding var focusId: String?
+    @EnvironmentObject var auth: AuthModel
+    @EnvironmentObject var studio: StudioModel
+    @EnvironmentObject var router: AppRouter
 
     var body: some View {
-        TabView {
-            ShuffleViewer(focusId: $focusId)
-                .tabItem { Label("Discover", systemImage: "sparkles") }
-            AddWidgetHelp()
-                .tabItem { Label("Widget", systemImage: "rectangle.3.group") }
-            AboutView()
-                .tabItem { Label("About", systemImage: "info.circle") }
+        TabView(selection: $router.tab) {
+            StudioTab(model: studio)
+                .tabItem { Label("Draw", systemImage: "paintbrush.pointed") }
+                .tag(AppRouter.drawTab)
+            GalleryView(focusId: $focusId)
+                .tabItem { Label("Gallery", systemImage: "sparkles") }
+                .tag(AppRouter.galleryTab)
+            YouView()
+                .tabItem { Label("You", systemImage: "person.crop.circle") }
+                .tag(AppRouter.youTab)
         }
         .tint(Blueprint.crane)
     }
+}
+
+/// Hosts the studio. Save requires sign-in — tapping it presents the auth sheet
+/// when signed out, otherwise the save sheet; a successful save opens the piece.
+struct StudioTab: View {
+    @ObservedObject var model: StudioModel
+    @EnvironmentObject var auth: AuthModel
+    @State private var showAuth = false
+    @State private var showSave = false
+    @State private var savedPiece: SavedPiece?
+
+    var body: some View {
+        StudioView(model: model, onSave: handleSave)
+            .onAppear { if StudioModel.demoRequested && model.isEmpty { model.loadDemo() } }
+            .sheet(isPresented: $showAuth) {
+                AuthSheet(reason: "Sign in to save your piece to the gallery.")
+                    .environmentObject(auth)
+            }
+            .sheet(isPresented: $showSave) {
+                SaveSheet(drawing: model.currentDrawing(), remixOf: model.remixSourceId) { id in
+                    savedPiece = SavedPiece(id: id)
+                }
+                .environmentObject(auth)
+            }
+            .sheet(item: $savedPiece) { piece in
+                NavigationStack {
+                    ArtworkView(id: piece.id)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) { Button("Done") { savedPiece = nil } }
+                        }
+                }
+            }
+    }
+
+    private func handleSave() {
+        if auth.isSignedIn { showSave = true } else { showAuth = true }
+    }
+}
+
+struct SavedPiece: Identifiable {
+    let id: String
 }
 
 struct AboutView: View {

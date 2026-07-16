@@ -2,17 +2,35 @@ import { Hono } from "hono";
 import type { AppEnv } from "../middleware";
 import { requireCsrf } from "../middleware";
 import { buildAuthUrl, createPkce, exchangeCode, verifyIdToken } from "../lib/oauth";
+import { verifyAppleIdentityToken } from "../lib/apple";
 import { randomToken } from "../lib/ids";
-import { upsertUser, setUserAvatar } from "../lib/db";
+import {
+  upsertUser,
+  setUserAvatar,
+  upsertAppleUser,
+  linkAppleToUser,
+  getUserByAppleSub,
+  getUserByEmail,
+} from "../lib/db";
 import { cacheRemoteAvatar } from "../lib/r2";
 import { createSession, destroySession, writeSessionCookie } from "../lib/session";
+import type { SessionUser, User } from "../types";
 
 const OAUTH_TTL = 600; // 10 min
+
+// Native (iOS) clients can't receive the httpOnly cookie, so the Google flow
+// hands the session back via a custom-scheme redirect instead.
+const APP_SCHEME = "kaleidoscope";
 
 interface OAuthState {
   nonce: string;
   verifier: string;
   returnTo: string;
+  client?: string; // "ios" → hand the session to the app via APP_SCHEME redirect
+}
+
+function sessionUser(u: User): SessionUser {
+  return { id: u.id, name: u.name, avatar: u.avatar_url, role: u.role, flagged: !!u.flagged };
 }
 
 /** Only allow same-site path redirects (no protocol-relative // or absolute). */
@@ -29,8 +47,9 @@ auth.get("/login", async (c) => {
   const state = randomToken(24);
   const nonce = randomToken(24);
   const returnTo = safeReturnTo(c.req.query("returnTo"));
+  const client = c.req.query("client") === "ios" ? "ios" : undefined;
 
-  const payload: OAuthState = { nonce, verifier, returnTo };
+  const payload: OAuthState = { nonce, verifier, returnTo, client };
   await c.env.OAUTH.put(state, JSON.stringify(payload), { expirationTtl: OAUTH_TTL });
 
   return c.redirect(buildAuthUrl(c.env, { state, nonce, challenge }), 302);
@@ -72,12 +91,70 @@ auth.get("/callback", async (c) => {
       /* avatar is best-effort; never block login */
     }
 
-    const { id } = await createSession(c.env, user.id);
+    const { id, csrf } = await createSession(c.env, user.id);
+
+    // Native clients can't receive the httpOnly cookie — hand the session to the
+    // app via its custom scheme. Token/csrf go in the URL *fragment* (never sent
+    // to a server, kept out of referrer logs), not the query string.
+    if (stored.client === "ios") {
+      const frag = `token=${encodeURIComponent(id)}&csrf=${encodeURIComponent(csrf)}`;
+      return c.redirect(`${APP_SCHEME}://auth-callback#${frag}`, 302);
+    }
+
     writeSessionCookie(c, id);
     return c.redirect(`${home}${stored.returnTo}`, 302);
   } catch {
     return c.redirect(`${home}/?auth_error=verify`, 302);
   }
+});
+
+// Sign in with Apple (native). The app does the Apple auth and posts us the
+// identity token + the raw nonce it committed to; we verify against Apple's JWKS
+// and mint a session, returned as JSON (no cookie — native uses Bearer).
+auth.post("/apple", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    identityToken?: string;
+    rawNonce?: string;
+    name?: string;
+    email?: string;
+  };
+  if (!body.identityToken || !body.rawNonce) {
+    return c.json({ error: "missing_token" }, 400);
+  }
+
+  let identity;
+  try {
+    identity = await verifyAppleIdentityToken(c.env, body.identityToken, body.rawNonce);
+  } catch {
+    return c.json({ error: "apple_verify_failed" }, 401);
+  }
+
+  // Only the token's OWN verified email may drive account linking or backfill —
+  // never a client-supplied value. Otherwise a caller could link their Apple id
+  // onto a victim's account by posting the victim's email with a token that has
+  // no email claim. body.email is trusted only to seed a brand-new account's
+  // display email on first sign-in (no victim exists to hijack).
+  const linkEmail = identity.email_verified ? (identity.email ?? null) : null;
+  const name = body.name ?? null;
+
+  // Resolve: by apple_sub → by verified email (link to existing user) → create.
+  let user = await getUserByAppleSub(c.env, identity.sub);
+  if (user) {
+    // Returning user: refresh last_seen, backfill only from the verified token.
+    user = await upsertAppleUser(c.env, { apple_sub: identity.sub, email: linkEmail, name });
+  } else {
+    const existingByEmail = linkEmail ? await getUserByEmail(c.env, linkEmail) : null;
+    if (existingByEmail) {
+      user = await linkAppleToUser(c.env, existingByEmail.id, identity.sub, { email: linkEmail, name });
+    } else {
+      // Brand-new account — safe to seed display email from client input here.
+      const createEmail = identity.email ?? body.email ?? null;
+      user = await upsertAppleUser(c.env, { apple_sub: identity.sub, email: createEmail, name });
+    }
+  }
+
+  const { id, csrf } = await createSession(c.env, user.id);
+  return c.json({ token: id, csrf, user: sessionUser(user) });
 });
 
 auth.post("/logout", requireCsrf, async (c) => {

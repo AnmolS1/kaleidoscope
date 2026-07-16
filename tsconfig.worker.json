@@ -13,7 +13,10 @@
     "noEmit": true,
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
-    "types": ["@cloudflare/workers-types"]
+    // node types cover the worker tests' use of node:sqlite / node:fs / node:crypto
+    // and import.meta.url. The worker runtime has nodejs_compat enabled, so node
+    // builtins are legitimately available at runtime too.
+    "types": ["@cloudflare/workers-types", "node"]
   },
   "include": ["src/worker", "test/worker"]
 }
