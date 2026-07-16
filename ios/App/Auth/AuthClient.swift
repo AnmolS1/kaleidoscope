@@ -8,16 +8,16 @@ struct AuthClient {
     var baseURL: URL = Config.baseURL
     var session: URLSession = .shared
 
-    private func url(_ path: String) -> URL { baseURL.appendingPathComponent(path) }
+    func url(_ path: String) -> URL { baseURL.appendingPathComponent(path) }
 
     /// Attach Bearer + CSRF to a mutating request. Native always sends both; the
     /// server skips the CSRF check for Bearer but honors it when present.
-    private func authorized(_ req: inout URLRequest, token: String, csrf: String?) {
+    func authorized(_ req: inout URLRequest, token: String, csrf: String?) {
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let csrf { req.setValue(csrf, forHTTPHeaderField: "X-CSRF-Token") }
     }
 
-    private func send(_ req: URLRequest) async throws -> Data {
+    func send(_ req: URLRequest) async throws -> Data {
         let (data, resp): (Data, URLResponse)
         do {
             (data, resp) = try await session.data(for: req)
@@ -68,7 +68,7 @@ struct AuthClient {
         _ = try await send(req)
     }
 
-    private func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {
+    func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {
         do { return try JSONDecoder().decode(T.self, from: data) }
         catch { throw AuthError.decoding }
     }

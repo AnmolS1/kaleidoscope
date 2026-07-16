@@ -13,6 +13,13 @@ struct YouView: View {
         NavigationStack {
             List {
                 accountSection
+                if auth.isSignedIn {
+                    Section {
+                        NavigationLink { MyPiecesView() } label: {
+                            Label("My pieces", systemImage: "square.on.square")
+                        }
+                    }
+                }
                 Section("Explore") {
                     NavigationLink { AddWidgetHelp() } label: {
                         Label("Add the widget", systemImage: "rectangle.3.group")

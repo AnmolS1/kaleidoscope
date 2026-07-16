@@ -5,43 +5,33 @@ import SwiftUI
 struct RootView: View {
     @Binding var focusId: String?
     @EnvironmentObject var auth: AuthModel
-    /// The studio state lives here so the in-progress drawing survives tab
-    /// switches and is reachable for remix (loading a gallery piece into it).
-    @StateObject private var studio = StudioModel()
-    /// Test hook: KALEIDO_TAB=draw|gallery|you selects the initial tab.
-    @State private var selection = Self.initialTab
+    @EnvironmentObject var studio: StudioModel
+    @EnvironmentObject var router: AppRouter
 
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: $router.tab) {
             StudioTab(model: studio)
                 .tabItem { Label("Draw", systemImage: "paintbrush.pointed") }
-                .tag(0)
-            ShuffleViewer(focusId: $focusId)
+                .tag(AppRouter.drawTab)
+            GalleryView(focusId: $focusId)
                 .tabItem { Label("Gallery", systemImage: "sparkles") }
-                .tag(1)
+                .tag(AppRouter.galleryTab)
             YouView()
                 .tabItem { Label("You", systemImage: "person.crop.circle") }
-                .tag(2)
+                .tag(AppRouter.youTab)
         }
         .tint(Blueprint.crane)
-    }
-
-    private static var initialTab: Int {
-        switch ProcessInfo.processInfo.environment["KALEIDO_TAB"] {
-        case "gallery": return 1
-        case "you": return 2
-        default: return 0
-        }
     }
 }
 
 /// Hosts the studio. Save requires sign-in — tapping it presents the auth sheet
-/// when signed out; the real save flow is wired in the save-flow phase.
+/// when signed out, otherwise the save sheet; a successful save opens the piece.
 struct StudioTab: View {
     @ObservedObject var model: StudioModel
     @EnvironmentObject var auth: AuthModel
     @State private var showAuth = false
-    @State private var showSaveNotice = false
+    @State private var showSave = false
+    @State private var savedPiece: SavedPiece?
 
     var body: some View {
         StudioView(model: model, onSave: handleSave)
@@ -50,16 +40,29 @@ struct StudioTab: View {
                 AuthSheet(reason: "Sign in to save your piece to the gallery.")
                     .environmentObject(auth)
             }
-            .alert("Saving is coming", isPresented: $showSaveNotice) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("The save flow lands in the next update. Drawing and PNG export are free right now.")
+            .sheet(isPresented: $showSave) {
+                SaveSheet(drawing: model.currentDrawing(), remixOf: model.remixSourceId) { id in
+                    savedPiece = SavedPiece(id: id)
+                }
+                .environmentObject(auth)
+            }
+            .sheet(item: $savedPiece) { piece in
+                NavigationStack {
+                    ArtworkView(id: piece.id)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) { Button("Done") { savedPiece = nil } }
+                        }
+                }
             }
     }
 
     private func handleSave() {
-        if auth.isSignedIn { showSaveNotice = true } else { showAuth = true }
+        if auth.isSignedIn { showSave = true } else { showAuth = true }
     }
+}
+
+struct SavedPiece: Identifiable {
+    let id: String
 }
 
 struct AboutView: View {
