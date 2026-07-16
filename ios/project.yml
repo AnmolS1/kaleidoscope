@@ -4,6 +4,10 @@ options:
     iOS: "17.0"
   bundleIdPrefix: dev.ponderance
   createIntermediateGroups: true
+packages:
+  # Local Swift package: the native drawing engine (byte-exact vector interop).
+  KaleidoEngine:
+    path: KaleidoEngine
 settings:
   base:
     # Simulator: ad-hoc sign ("-") — no Apple account needed, but (unlike disabling signing
@@ -45,16 +49,23 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        # Deep link target for the widget tap: kaleidoscopewidget://p/<id>
+        # Deep link targets: widget tap (kaleidoscopewidget://p/<id>) and the
+        # native Google auth callback (kaleidoscope://auth-callback#token&csrf).
         CFBundleURLTypes:
-          - CFBundleURLName: dev.ponderance.kaleidoscope
+          - CFBundleURLName: dev.ponderance.kaleidoscope.widget
             CFBundleURLSchemes: [kaleidoscopewidget]
+          - CFBundleURLName: dev.ponderance.kaleidoscope.auth
+            CFBundleURLSchemes: [kaleidoscope]
         # DEBUG/local only: lets the Simulator reach `wrangler dev --remote` over loopback.
         # Production image URLs stay HTTPS; never ship a broader ATS exception.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     dependencies:
       - target: RandomWidget
+      - package: KaleidoEngine
+    # Shared scheme so `xcodebuild -scheme Kaleidoscope` works in CI / headless.
+    scheme:
+      testTargets: []
   RandomWidget:
     type: app-extension
     platform: iOS
