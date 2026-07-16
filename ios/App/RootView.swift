@@ -29,6 +29,7 @@ struct RootView: View {
 struct StudioTab: View {
     @ObservedObject var model: StudioModel
     @EnvironmentObject var auth: AuthModel
+    @EnvironmentObject var router: AppRouter
     @State private var showAuth = false
     @State private var showSave = false
     @State private var savedPiece: SavedPiece?
@@ -43,6 +44,7 @@ struct StudioTab: View {
             .sheet(isPresented: $showSave) {
                 SaveSheet(drawing: model.currentDrawing(), remixOf: model.remixSourceId) { id in
                     savedPiece = SavedPiece(id: id)
+                    router.markSaved() // refresh the public gallery
                 }
                 .environmentObject(auth)
             }

@@ -4,6 +4,7 @@ import SwiftUI
 /// shuffle. Tapping a piece opens its artwork screen.
 struct GalleryView: View {
     @EnvironmentObject var auth: AuthModel
+    @EnvironmentObject var router: AppRouter
     @Binding var focusId: String?
 
     @State private var items: [GalleryCard] = []
@@ -47,7 +48,9 @@ struct GalleryView: View {
                 }
             }
         }
-        .task { if !loadedOnce { await loadFirst(reset: false) } }
+        // Loads on first appearance, and reloads whenever a piece is saved
+        // (gallerySaveToken changes) so a new public piece shows without relaunch.
+        .task(id: router.gallerySaveToken) { await loadFirst(reset: true) }
     }
 
     @ViewBuilder
