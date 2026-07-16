@@ -13,6 +13,9 @@
 **/.DS_Store
 **/*.md
 !README.md
+# Accessibility contrast tables are tracked deliverables (verifiable-claim artifacts)
+!ios/ACCESSIBILITY_CONTRAST.md
+!src/client/ACCESSIBILITY_CONTRAST.md
 .env.local
 .env.development.local
 .env.test.local
