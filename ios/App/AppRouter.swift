@@ -11,6 +11,12 @@ final class AppRouter: ObservableObject {
 
     @Published var tab: Int
 
+    /// Bumped whenever a piece is saved. The public gallery watches this and
+    /// reloads, so a newly-saved public piece shows without relaunching the app.
+    @Published private(set) var gallerySaveToken = 0
+
+    func markSaved() { gallerySaveToken += 1 }
+
     init() {
         switch ProcessInfo.processInfo.environment["KALEIDO_TAB"] {
         case "gallery": tab = Self.galleryTab
