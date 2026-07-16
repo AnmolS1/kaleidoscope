@@ -29,14 +29,32 @@ export async function createSession(env: Env, userId: string): Promise<{ id: str
   return { id, csrf };
 }
 
+/** How the request presented its session id. */
+export type AuthVia = "cookie" | "bearer";
+
 export interface ActiveSession {
   id: string;
   data: SessionData;
+  via: AuthVia;
 }
 
+/**
+ * Native clients can't send the httpOnly `__Host-` cookie, so they present the
+ * same opaque session id as `Authorization: Bearer <id>`. Cookie takes
+ * precedence when both are present. Same KV lookup, same rolling TTL for both.
+ */
 export async function readSession(c: Ctx): Promise<ActiveSession | null> {
-  const id = getCookie(c, COOKIE_NAME, "host");
+  let id = getCookie(c, COOKIE_NAME, "host");
+  let via: AuthVia = "cookie";
+  if (!id) {
+    const auth = c.req.header("Authorization");
+    if (auth && /^Bearer\s+/i.test(auth)) {
+      id = auth.replace(/^Bearer\s+/i, "").trim();
+      via = "bearer";
+    }
+  }
   if (!id) return null;
+
   const data = await c.env.SESSIONS.get<SessionData>(id, "json");
   if (!data) return null;
 
@@ -46,7 +64,7 @@ export async function readSession(c: Ctx): Promise<ActiveSession | null> {
       expirationTtl: TTL_SECONDS,
     });
   }
-  return { id, data };
+  return { id, data, via };
 }
 
 export function writeSessionCookie(c: Ctx, id: string): void {

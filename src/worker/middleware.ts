@@ -28,8 +28,15 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
 
 export const requireCsrf = createMiddleware<AppEnv>(async (c, next) => {
   const session = c.get("session");
+  if (!session) return c.json({ error: "bad_csrf" }, 403);
+  // Bearer auth carries no ambient credential a hostile page could forge, so the
+  // double-submit CSRF check doesn't apply. Cookie auth still requires it.
+  if (session.via === "bearer") {
+    await next();
+    return;
+  }
   const token = c.req.header("X-CSRF-Token");
-  if (!session || !token || token !== session.data.csrf) {
+  if (!token || token !== session.data.csrf) {
     return c.json({ error: "bad_csrf" }, 403);
   }
   await next();

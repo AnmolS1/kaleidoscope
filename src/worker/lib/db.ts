@@ -31,6 +31,7 @@ export async function upsertUser(
   return {
     id,
     google_sub: profile.google_sub,
+    apple_sub: null,
     email: profile.email ?? null,
     name: profile.name ?? null,
     avatar_url: profile.avatar_url ?? null,
@@ -43,6 +44,96 @@ export async function upsertUser(
 
 export function getUserById(env: Env, id: string): Promise<User | null> {
   return env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<User>();
+}
+
+export function getUserByAppleSub(env: Env, apple_sub: string): Promise<User | null> {
+  return env.DB.prepare("SELECT * FROM users WHERE apple_sub = ?").bind(apple_sub).first<User>();
+}
+
+/** Look up a user by (verified) email — used to link Apple to an existing Google
+ *  account instead of creating a duplicate. Case-insensitive. */
+export function getUserByEmail(env: Env, email: string): Promise<User | null> {
+  return env.DB.prepare("SELECT * FROM users WHERE email = ? COLLATE NOCASE").bind(email).first<User>();
+}
+
+/**
+ * Resolve an Apple sign-in to a user. Apple only sends name/email on the FIRST
+ * authorization, so we fill missing fields (COALESCE) but never overwrite an
+ * existing value with null on later sign-ins.
+ */
+export async function upsertAppleUser(
+  env: Env,
+  profile: { apple_sub: string; email?: string | null; name?: string | null },
+): Promise<User> {
+  const now = Date.now();
+  const existing = await getUserByAppleSub(env, profile.apple_sub);
+  if (existing) {
+    await env.DB.prepare(
+      "UPDATE users SET email=COALESCE(email, ?), name=COALESCE(name, ?), last_seen_at=? WHERE id=?",
+    )
+      .bind(profile.email ?? null, profile.name ?? null, now, existing.id)
+      .run();
+    return {
+      ...existing,
+      email: existing.email ?? profile.email ?? null,
+      name: existing.name ?? profile.name ?? null,
+      last_seen_at: now,
+    };
+  }
+
+  const id = newUserId();
+  await env.DB.prepare(
+    `INSERT INTO users (id, google_sub, apple_sub, email, name, avatar_url, role, flagged, created_at, last_seen_at)
+     VALUES (?, NULL, ?, ?, ?, NULL, 'user', 0, ?, ?)`,
+  )
+    .bind(id, profile.apple_sub, profile.email ?? null, profile.name ?? null, now, now)
+    .run();
+  return {
+    id,
+    google_sub: null,
+    apple_sub: profile.apple_sub,
+    email: profile.email ?? null,
+    name: profile.name ?? null,
+    avatar_url: null,
+    role: "user",
+    flagged: 0,
+    created_at: now,
+    last_seen_at: now,
+  };
+}
+
+/** Attach an Apple identity to an existing (e.g. Google) user, filling in any
+ *  missing name/email but never clobbering existing values. */
+export async function linkAppleToUser(
+  env: Env,
+  userId: string,
+  apple_sub: string,
+  extra: { email?: string | null; name?: string | null } = {},
+): Promise<User> {
+  const now = Date.now();
+  await env.DB.prepare(
+    "UPDATE users SET apple_sub=?, email=COALESCE(email, ?), name=COALESCE(name, ?), last_seen_at=? WHERE id=?",
+  )
+    .bind(apple_sub, extra.email ?? null, extra.name ?? null, now, userId)
+    .run();
+  const user = await getUserById(env, userId);
+  if (!user) throw new Error("user vanished during apple link");
+  return user;
+}
+
+/** All artwork ids owned by a user — used to clean up R2 blobs before the FK
+ *  cascade removes the rows on user deletion. */
+export async function listArtworkIdsByUser(env: Env, userId: string): Promise<string[]> {
+  const { results } = await env.DB.prepare("SELECT id FROM artworks WHERE user_id = ?")
+    .bind(userId)
+    .all<{ id: string }>();
+  return (results ?? []).map((r) => r.id);
+}
+
+/** Delete a user row. artworks rows cascade (FK ON DELETE CASCADE); R2 blobs and
+ *  KV sessions are handled by the caller. */
+export async function deleteUser(env: Env, id: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
 }
 
 /** Point a user's avatar_url at our cached path (or clear it). */
