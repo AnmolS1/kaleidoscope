@@ -115,6 +115,8 @@ struct ShuffleViewer: View {
                 Button { advance() } label: {
                     Label("Shuffle", systemImage: "shuffle")
                         .foregroundStyle(.white) // pin white so the label isn't system-picked
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6) // scale down at large text instead of wrapping mid-word
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Blueprint.craneButton)
@@ -123,6 +125,8 @@ struct ShuffleViewer: View {
                 if let url = URL(string: item.permalink) {
                     Button { openURL(url) } label: {
                         Label("Open on the web", systemImage: "safari")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                     }
                     .buttonStyle(.bordered)
                     .tint(Blueprint.crease)
@@ -144,7 +148,10 @@ struct ShuffleViewer: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Blueprint.graphite)
             Button { Task { await model.load() } } label: {
-                Text("Try again").foregroundStyle(.white) // pin white so the label isn't system-picked
+                Text("Try again")
+                    .foregroundStyle(.white) // pin white so the label isn't system-picked
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
             .buttonStyle(.borderedProminent)
             .tint(Blueprint.craneButton)

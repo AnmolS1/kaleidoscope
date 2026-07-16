@@ -72,6 +72,8 @@ struct AuthSheet: View {
                     HStack(spacing: 8) {
                         Image(systemName: "globe")
                         Text("Continue with Google").fontWeight(.medium)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6) // scale down at large text instead of truncating
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: buttonHeight)

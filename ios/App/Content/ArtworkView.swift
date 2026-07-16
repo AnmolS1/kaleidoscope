@@ -75,9 +75,14 @@ struct ArtworkView: View {
             Button { Task { await remix() } } label: {
                 Label("Remix", systemImage: "arrow.triangle.branch")
                     .foregroundStyle(.white) // pin white so the label isn't system-picked
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6) // scale down at large text instead of wrapping mid-word
             }
             .buttonStyle(.borderedProminent)
             .tint(Blueprint.creaseButton)
+            // Claim label width before the row's Spacer absorbs it, so the label
+            // reads "Remix" (not "Re…") at large text instead of compressing.
+            .layoutPriority(1)
             .disabled(busy)
             .accessibilityHint("Loads this piece into the studio to edit")
 

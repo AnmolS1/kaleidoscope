@@ -44,17 +44,22 @@ final class AccessibilityUITests: XCTestCase {
 
     // MARK: - accessibility3 screenshot walk
 
-    /// Captures every no-auth screen at the largest Dynamic Type size
-    /// (`AccessibilityExtraLarge` = .accessibility3) so a human can eyeball for
-    /// clipped/overlapping text. Screenshots are attached (kept always) and later
-    /// extracted from the .xcresult. Network-backed screens (Gallery cards,
-    /// Artwork, Shuffle) are captured only if the production backend responds;
-    /// otherwise they're skipped (attachment simply absent) — never faked.
+    /// Captures every no-auth screen at .accessibility3 (accessibilityExtraLarge)
+    /// so a human can eyeball for clipped/overlapping text. Screenshots are
+    /// attached (kept always) and later extracted from the .xcresult. Network-
+    /// backed screens (Gallery cards, Artwork, Shuffle) are captured only if the
+    /// production backend responds; otherwise skipped — never faked.
+    ///
+    /// The category string MUST be the short form `…AccessibilityXL`. The long
+    /// form `…AccessibilityExtraLarge` is NOT a valid UIContentSizeCategory raw
+    /// value and UIKit silently falls back to the default size (verified: it
+    /// renders byte-identical to no-arg, and `…AccessibilityXL` renders identical
+    /// to the OS global `accessibility-extra-large` setting).
     func testAccessibility3Screens() {
         let app = XCUIApplication()
         // Force .accessibility3 for this launch only (no global sim setting).
         app.launchArguments += ["-UIPreferredContentSizeCategoryName",
-                                "UICTContentSizeCategoryAccessibilityExtraLarge"]
+                                "UICTContentSizeCategoryAccessibilityXL"]
         app.launchEnvironment["KALEIDO_DEMO"] = "1" // give the studio content
         app.launch()
 
@@ -112,8 +117,13 @@ final class AccessibilityUITests: XCTestCase {
             if app.navigationBars.buttons.firstMatch.exists { app.navigationBars.buttons.firstMatch.tap() }
         }
 
-        // 8) About screen.
-        if app.buttons["About Kaleidoscope"].exists {
+        // 8) About screen. At large text the Explore rows sit below the fold —
+        // scroll to realize the row before tapping.
+        var aboutTries = 0
+        while !app.buttons["About Kaleidoscope"].exists && aboutTries < 6 {
+            app.swipeUp(); aboutTries += 1
+        }
+        if app.buttons["About Kaleidoscope"].waitForExistence(timeout: 8) {
             app.buttons["About Kaleidoscope"].tap()
             _ = app.navigationBars["About"].waitForExistence(timeout: 5)
             snap(app, "08-about")
@@ -134,10 +144,33 @@ final class AccessibilityUITests: XCTestCase {
     /// "frendalist" (shows "by Anmol Saxena" — the owner's own name, fine to
     /// display) rather than an arbitrary other-user piece. Same .accessibility3
     /// launch arg. Used to replace 04-artwork-detail with a privacy-safe shot.
+    /// Focused .accessibility3 capture of the About screen (text-heavy), separate
+    /// so a flaky navigation in the main walk can't drop it.
+    func testAccessibility3About() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName",
+                                "UICTContentSizeCategoryAccessibilityXL"]
+        app.launchEnvironment["KALEIDO_DEMO"] = "1"
+        app.launch()
+        app.tabBars.buttons["You"].tap()
+        // At .accessibility3 the Explore rows sit below the fold — scroll to
+        // realize the "About Kaleidoscope" row before tapping it.
+        let about = app.buttons["About Kaleidoscope"]
+        var tries = 0
+        while !about.exists && tries < 6 {
+            app.swipeUp()
+            tries += 1
+        }
+        XCTAssertTrue(about.waitForExistence(timeout: 5))
+        about.tap()
+        XCTAssertTrue(app.navigationBars["About"].waitForExistence(timeout: 8))
+        snap(app, "08-about")
+    }
+
     func testAccessibility3FrendalistArtwork() {
         let app = XCUIApplication()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName",
-                                "UICTContentSizeCategoryAccessibilityExtraLarge"]
+                                "UICTContentSizeCategoryAccessibilityXL"]
         app.launchEnvironment["KALEIDO_DEMO"] = "1"
         app.launch()
 
@@ -164,6 +197,35 @@ final class AccessibilityUITests: XCTestCase {
                       || app.staticTexts["frendalist"].exists,
                       "detail should be the frendalist piece")
         snap(app, "04-artwork-detail")
+    }
+
+    // MARK: - Dynamic Type string verification
+
+    /// Launches the Studio at a given content-size category (or none) and snaps
+    /// it, so we can compare the correct `…AccessibilityXL` string against the
+    /// (suspect) `…AccessibilityExtraLarge` string and the no-arg default, and
+    /// tell whether the committed set is truly .accessibility3.
+    private func captureStudio(category: String?, name: String) {
+        let app = XCUIApplication()
+        if let category {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", category]
+        }
+        app.launchEnvironment["KALEIDO_DEMO"] = "1"
+        app.launch()
+        XCTAssertTrue(app.otherElements["Drawing canvas"].waitForExistence(timeout: 15))
+        snap(app, name)
+    }
+
+    func testVerifyStudioXL() {
+        captureStudio(category: "UICTContentSizeCategoryAccessibilityXL", name: "verify-studio-XL")
+    }
+
+    func testVerifyStudioOldString() {
+        captureStudio(category: "UICTContentSizeCategoryAccessibilityExtraLarge", name: "verify-studio-OLD")
+    }
+
+    func testVerifyStudioDefault() {
+        captureStudio(category: nil, name: "verify-studio-DEFAULT")
     }
 
     /// Attach a full-screen screenshot, kept regardless of test outcome.
