@@ -130,6 +130,42 @@ final class AccessibilityUITests: XCTestCase {
         }
     }
 
+    /// Re-captures ONLY the artwork detail, opening the owner's own piece
+    /// "frendalist" (shows "by Anmol Saxena" — the owner's own name, fine to
+    /// display) rather than an arbitrary other-user piece. Same .accessibility3
+    /// launch arg. Used to replace 04-artwork-detail with a privacy-safe shot.
+    func testAccessibility3FrendalistArtwork() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName",
+                                "UICTContentSizeCategoryAccessibilityExtraLarge"]
+        app.launchEnvironment["KALEIDO_DEMO"] = "1"
+        app.launch()
+
+        app.tabBars.buttons["Gallery"].tap()
+        XCTAssertTrue(app.buttons["Shuffle"].waitForExistence(timeout: 15))
+
+        // The gallery cards are combined elements whose label contains the title;
+        // scroll until the "frendalist" card is realized, then open it.
+        let frendalist = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "frendalist")).firstMatch
+        var tries = 0
+        while !frendalist.exists && tries < 10 {
+            app.swipeUp()
+            tries += 1
+        }
+        XCTAssertTrue(frendalist.waitForExistence(timeout: 5),
+                      "frendalist card should be reachable in the gallery")
+        frendalist.tap()
+
+        XCTAssertTrue(app.buttons["Remix"].waitForExistence(timeout: 12),
+                      "artwork detail should load")
+        // Confirm we're on the frendalist detail before capturing.
+        XCTAssertTrue(app.navigationBars["frendalist"].waitForExistence(timeout: 5)
+                      || app.staticTexts["frendalist"].exists,
+                      "detail should be the frendalist piece")
+        snap(app, "04-artwork-detail")
+    }
+
     /// Attach a full-screen screenshot, kept regardless of test outcome.
     private func snap(_ app: XCUIApplication, _ name: String) {
         let shot = XCUIScreen.main.screenshot()
