@@ -19,6 +19,10 @@ final class StudioModel: ObservableObject {
     @Published var background: Background = .light
     @Published var showGuides: Bool = true
 
+    /// Set when the current drawing was loaded from an existing piece (remix), so
+    /// Save can record `remixOf`. Cleared when the canvas is reset/loaded fresh.
+    @Published var remixSourceId: String?
+
     // Strokes + history (snapshots; committed strokes are never mutated).
     @Published private(set) var strokes: [Stroke] = []
     private var undoStack: [[Stroke]] = []
@@ -72,15 +76,19 @@ final class StudioModel: ObservableObject {
         pushHistory()
         strokes = []
         redoStack.removeAll()
+        remixSourceId = nil
         revision += 1
     }
 
     /// Load a drawing (e.g. remix): replaces content + settings, resets history.
+    /// Clears any prior remix source; the caller sets `remixSourceId` after if this
+    /// load is itself a remix.
     func load(_ drawing: Drawing) {
         strokes = drawing.strokes
         background = drawing.bg
         segments = clampSegments(drawing.sym.segments)
         mirror = drawing.sym.mirror
+        remixSourceId = nil
         undoStack.removeAll()
         redoStack.removeAll()
         revision += 1

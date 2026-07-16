@@ -70,6 +70,18 @@ final class SerializeGoldenTests: XCTestCase {
         }
     }
 
+    /// A REAL piece created + serialized by the web app (fetched from production).
+    /// Deserializing it and re-serializing in Swift must reproduce the exact same
+    /// bytes — proving web→iOS interop on genuine data, not just synthetic cases.
+    func testRealProductionVectorRoundTripsByteForByte() throws {
+        let url = try XCTUnwrap(
+            Bundle.module.url(forResource: "prod-vector", withExtension: "json", subdirectory: "Fixtures")
+        )
+        let original = try String(contentsOf: url, encoding: .utf8)
+        let parsed = try deserialize(original)
+        XCTAssertEqual(serialize(parsed), original, "real production vector did not round-trip byte-for-byte")
+    }
+
     // ---- number formatting edge cases (documented parity with JS) ----
 
     func testNumberFormattingEdgeCases() {
