@@ -97,6 +97,29 @@ describe("POST /api/artworks — native (Bearer) save", () => {
   });
 });
 
+describe("POST /api/artworks/suggest-names — best-effort", () => {
+  it("returns {names:[]} (never throws) when the AI model errors", async () => {
+    const DB = makeD1();
+    const SESSIONS = makeKV();
+    const { sid } = seedUserSession(DB, SESSIONS);
+    const AI = { run: async () => { throw new Error("model unavailable"); } };
+    const env = makeEnv({ DB, SESSIONS, AI, RATELIMIT: makeKV() });
+
+    const fd = new FormData();
+    fd.set("thumb", new File([new Uint8Array([1, 2, 3])], "thumb.png", { type: "image/png" }));
+    fd.set("segments", "6");
+    fd.set("mirror", "1");
+
+    const res = await app.request(
+      "/api/artworks/suggest-names",
+      { method: "POST", headers: { Authorization: `Bearer ${sid}` }, body: fd },
+      env,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ names: [] });
+  });
+});
+
 describe("DELETE /api/me — account deletion", () => {
   it("removes artwork blobs + avatar + user row (cascading artworks) + session", async () => {
     const DB = makeD1({ foreignKeys: true });

@@ -129,24 +129,28 @@ auth.post("/apple", async (c) => {
     return c.json({ error: "apple_verify_failed" }, 401);
   }
 
-  // Apple sends name/email only on the FIRST authorization; prefer the verified
-  // token email, fall back to the (first-run only) posted email.
-  const email = identity.email ?? body.email ?? null;
+  // Only the token's OWN verified email may drive account linking or backfill —
+  // never a client-supplied value. Otherwise a caller could link their Apple id
+  // onto a victim's account by posting the victim's email with a token that has
+  // no email claim. body.email is trusted only to seed a brand-new account's
+  // display email on first sign-in (no victim exists to hijack).
+  const linkEmail = identity.email_verified ? (identity.email ?? null) : null;
   const name = body.name ?? null;
 
-  // Resolve: by apple_sub → by verified email (link to existing Google user) → create.
+  // Resolve: by apple_sub → by verified email (link to existing user) → create.
   let user = await getUserByAppleSub(c.env, identity.sub);
-  if (!user) {
-    const canLink = email && (identity.email_verified ?? false);
-    const existingByEmail = canLink ? await getUserByEmail(c.env, email) : null;
-    if (existingByEmail) {
-      user = await linkAppleToUser(c.env, existingByEmail.id, identity.sub, { email, name });
-    } else {
-      user = await upsertAppleUser(c.env, { apple_sub: identity.sub, email, name });
-    }
+  if (user) {
+    // Returning user: refresh last_seen, backfill only from the verified token.
+    user = await upsertAppleUser(c.env, { apple_sub: identity.sub, email: linkEmail, name });
   } else {
-    // Returning user — refresh last_seen and backfill any missing name/email.
-    user = await upsertAppleUser(c.env, { apple_sub: identity.sub, email, name });
+    const existingByEmail = linkEmail ? await getUserByEmail(c.env, linkEmail) : null;
+    if (existingByEmail) {
+      user = await linkAppleToUser(c.env, existingByEmail.id, identity.sub, { email: linkEmail, name });
+    } else {
+      // Brand-new account — safe to seed display email from client input here.
+      const createEmail = identity.email ?? body.email ?? null;
+      user = await upsertAppleUser(c.env, { apple_sub: identity.sub, email: createEmail, name });
+    }
   }
 
   const { id, csrf } = await createSession(c.env, user.id);

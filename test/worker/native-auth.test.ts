@@ -181,6 +181,45 @@ describe("POST /api/auth/apple", () => {
     expect(row.name).toBe("Google Name"); // existing name preserved, not clobbered
   });
 
+  it("does NOT link on a client-supplied email when the token carries no email (anti-takeover)", async () => {
+    const { privateKey } = await appleSetup();
+    const DB = makeD1();
+    const now = Date.now();
+    // A victim account owning victim@gmail.com.
+    DB._db
+      .prepare(
+        `INSERT INTO users (id, google_sub, apple_sub, email, name, avatar_url, role, flagged, created_at, last_seen_at)
+         VALUES ('victim','v-sub',NULL,'victim@gmail.com','Victim',NULL,'user',0,?,?)`,
+      )
+      .run(now, now);
+    const env = makeEnv({ DB, SESSIONS: makeKV(), JWKS: makeKV() });
+
+    // Attacker token: verified=true but NO email claim; posts the victim's email.
+    const identityToken = await signToken(privateKey, { sub: "attacker-sub", email_verified: true });
+    const res = await app.request(
+      "/api/auth/apple",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ identityToken, rawNonce, email: "victim@gmail.com" }),
+      },
+      env,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { user: { id: string } };
+    expect(body.user.id).not.toBe("victim"); // a NEW account, not the victim's
+
+    // Victim's account is untouched; a separate attacker row now exists.
+    const victim = DB._db.prepare("SELECT apple_sub FROM users WHERE id='victim'").get() as {
+      apple_sub: string | null;
+    };
+    expect(victim.apple_sub).toBeNull();
+    const attacker = DB._db.prepare("SELECT id FROM users WHERE apple_sub='attacker-sub'").get() as {
+      id: string;
+    };
+    expect(attacker.id).toBeTruthy();
+  });
+
   it("rejects a token with the wrong audience (401)", async () => {
     const { privateKey } = await appleSetup();
     const env = makeEnv({ DB: makeD1(), SESSIONS: makeKV(), JWKS: makeKV() });
