@@ -1,20 +1,42 @@
 import SwiftUI
 
-/// The app is more than a widget wrapper: a full random-piece browser, a "add the widget"
-/// walkthrough, and a short About. That standalone value is what clears App Review 4.2.
+/// The app is a native drawing studio first: draw kaleidoscope mandalas, browse
+/// the public gallery, add the widget, and (soon) sign in to save + remix.
 struct RootView: View {
     @Binding var focusId: String?
+    /// The studio state lives here so the in-progress drawing survives tab
+    /// switches and is reachable for remix (loading a gallery piece into it).
+    @StateObject private var studio = StudioModel()
 
     var body: some View {
         TabView {
+            StudioTab(model: studio)
+                .tabItem { Label("Draw", systemImage: "paintbrush.pointed") }
             ShuffleViewer(focusId: $focusId)
-                .tabItem { Label("Discover", systemImage: "sparkles") }
+                .tabItem { Label("Gallery", systemImage: "sparkles") }
             AddWidgetHelp()
                 .tabItem { Label("Widget", systemImage: "rectangle.3.group") }
             AboutView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .tint(Blueprint.crane)
+    }
+}
+
+/// Hosts the studio and (until the save flow is wired) surfaces a notice when
+/// Save is tapped.
+struct StudioTab: View {
+    @ObservedObject var model: StudioModel
+    @State private var showSaveNotice = false
+
+    var body: some View {
+        StudioView(model: model, onSave: { showSaveNotice = true })
+            .onAppear { if StudioModel.demoRequested && model.isEmpty { model.loadDemo() } }
+            .alert("Saving is coming", isPresented: $showSaveNotice) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Sign in to save your piece to the gallery — arriving in the next update. Drawing and PNG export are free right now.")
+            }
     }
 }
 
