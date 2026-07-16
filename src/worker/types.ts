@@ -9,6 +9,7 @@ export interface Env {
   OAUTH: KVNamespace;
   RATELIMIT: KVNamespace;
   JWKS: KVNamespace;
+  AI: Ai; // Workers AI binding (name suggestions)
   GOOGLE_CLIENT_ID: string; // secret
   GOOGLE_CLIENT_SECRET: string; // secret
   SESSION_SECRET: string; // secret
@@ -16,6 +17,7 @@ export interface Env {
   PUBLIC_BASE_URL: string; // var
   GOOGLE_REDIRECT_URI: string; // var
   TURNSTILE_SITE_KEY: string; // var (public)
+  APPLE_BUNDLE_ID: string; // var — audience for native Sign in with Apple tokens
   // Dev/test only: enables /api/auth/test-login. NEVER set in production secrets/vars.
   ALLOW_TEST_LOGIN?: string;
 }
@@ -25,7 +27,8 @@ export type Role = "user" | "admin";
 
 export interface User {
   id: string;
-  google_sub: string;
+  google_sub: string | null; // nullable since Apple-only users have no Google identity
+  apple_sub: string | null;
   email: string | null;
   name: string | null;
   avatar_url: string | null;
