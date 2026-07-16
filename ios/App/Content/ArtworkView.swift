@@ -67,16 +67,17 @@ struct ArtworkView: View {
                 Label("\(likes)", systemImage: "heart")
             }
             .buttonStyle(.bordered)
-            .tint(Blueprint.crane)
+            .tint(Blueprint.craneText) // crane-as-text token: 4.5:1+ label in both themes
             .disabled(busy)
             .accessibilityLabel("Like")
             .accessibilityValue(likes == 1 ? "1 like" : "\(likes) likes")
 
             Button { Task { await remix() } } label: {
                 Label("Remix", systemImage: "arrow.triangle.branch")
+                    .foregroundStyle(.white) // pin white so the label isn't system-picked
             }
             .buttonStyle(.borderedProminent)
-            .tint(Blueprint.crease)
+            .tint(Blueprint.creaseButton)
             .disabled(busy)
             .accessibilityHint("Loads this piece into the studio to edit")
 

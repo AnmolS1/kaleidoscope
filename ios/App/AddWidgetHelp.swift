@@ -20,6 +20,7 @@ struct AddWidgetHelp: View {
                                 .font(.title2)
                                 .foregroundStyle(Blueprint.crane)
                                 .frame(width: 34)
+                                .accessibilityHidden(true) // decorative; the step text carries the meaning
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Step \(idx + 1)")
                                     .font(.caption.bold())

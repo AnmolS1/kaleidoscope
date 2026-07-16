@@ -112,9 +112,8 @@ struct StudioView: View {
 
     private var spectrumToggle: some View {
         Toggle("Spectrum", isOn: $model.useSpectrum)
-            .toggleStyle(.button)
+            .toggleStyle(ContrastToggleStyle(onFill: Blueprint.craneButton, onLabel: .white))
             .font(.caption)
-            .tint(Blueprint.crane)
             .accessibilityLabel("Rainbow spectrum brush")
             .accessibilityHint("Cycles through colors as you draw")
     }
@@ -192,8 +191,7 @@ struct StudioView: View {
                 get: { model.tool == .glow },
                 set: { model.tool = $0 ? .glow : .solid }
             ))
-            .toggleStyle(.button)
-            .tint(Blueprint.sax)
+            .toggleStyle(ContrastToggleStyle(onFill: Blueprint.sax, onLabel: Blueprint.onSax))
             .accessibilityLabel("Glow brush")
             .accessibilityHint("Draws with a soft luminous halo")
 
@@ -207,21 +205,21 @@ struct StudioView: View {
                     Text("Mirror")
                 }
             }
-            .toggleStyle(.button)
-            .tint(Blueprint.crease)
+            .toggleStyle(ContrastToggleStyle(onFill: Blueprint.creaseButton, onLabel: .white))
             .accessibilityLabel("Mirror symmetry")
             .accessibilityHint(model.mirror ? "On: reflected wedges" : "Off: rotation only")
 
             Toggle("Guides", isOn: $model.showGuides)
-                .toggleStyle(.button).tint(Blueprint.crease)
+                .toggleStyle(ContrastToggleStyle(onFill: Blueprint.creaseButton, onLabel: .white))
                 .accessibilityLabel("Symmetry guides")
                 .accessibilityHint("Shows faint wedge guide lines")
             Toggle("Dark", isOn: Binding(
                 get: { model.background == .dark },
                 set: { model.background = $0 ? .dark : .light }
             ))
-            .toggleStyle(.button)
-            .tint(Blueprint.graphite)
+            // Fill = graphite ink, label = graph paper: both flip with the theme
+            // together, so the label stays ~13:1 in light and dark.
+            .toggleStyle(ContrastToggleStyle(onFill: Blueprint.graphite, onLabel: Blueprint.graph))
             .accessibilityLabel("Dark canvas")
             .accessibilityHint("Switches the canvas background between light and dark")
             Spacer()
@@ -250,9 +248,10 @@ struct StudioView: View {
                 onSave()
             } label: {
                 Label("Save", systemImage: "sparkles")
+                    .foregroundStyle(.white) // pin white so the label isn't system-picked
             }
             .buttonStyle(.borderedProminent)
-            .tint(Blueprint.crane)
+            .tint(Blueprint.craneButton)
             .disabled(model.isEmpty)
             .accessibilityHint("Saves the piece to the gallery")
         }
@@ -299,4 +298,45 @@ struct ShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// A button-style toggle whose **selected** state uses an explicit, WCAG-tuned
+/// fill + a pinned label color, so the label clears 4.5:1 against the fill in
+/// both themes. `.toggleStyle(.button)` instead fills the selected state with the
+/// raw tint and lets the *system* pick the label color, which is not statically
+/// verifiable and drops below 4.5:1 on light tints (white on gold `sax` ~1.6:1;
+/// white on `graphite` in dark mode). The **off** state renders the label in
+/// neutral `graphite` on a faint fill — also deterministic, and it fixes the old
+/// tinted-off labels (gold `sax` off-label was 1.96:1). See
+/// ios/ACCESSIBILITY_CONTRAST.md.
+struct ContrastToggleStyle: ToggleStyle {
+    /// Fill behind the label when selected (a dark-enough `*Button` token, or a
+    /// gold/graphite fill paired with a dark/flipping `onLabel`).
+    var onFill: Color
+    /// Label color when selected — pinned so it is never system-chosen.
+    var onLabel: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            configuration.label
+                .foregroundStyle(configuration.isOn ? onLabel : Blueprint.graphite)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background {
+                    let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    if configuration.isOn {
+                        shape.fill(onFill)
+                    } else {
+                        // Faint neutral fill echoes the unselected bordered look.
+                        shape.fill(Blueprint.graphite.opacity(0.10))
+                    }
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        // Preserve the "selected" trait the system button-toggle exposes when on.
+        .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+    }
 }

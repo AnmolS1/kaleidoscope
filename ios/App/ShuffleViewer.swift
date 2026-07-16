@@ -114,9 +114,10 @@ struct ShuffleViewer: View {
             HStack(spacing: 12) {
                 Button { advance() } label: {
                     Label("Shuffle", systemImage: "shuffle")
+                        .foregroundStyle(.white) // pin white so the label isn't system-picked
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Blueprint.crane)
+                .tint(Blueprint.craneButton)
                 .accessibilityHint("Shows the next piece")
 
                 if let url = URL(string: item.permalink) {
@@ -142,9 +143,11 @@ struct ShuffleViewer: View {
             Text(model.message ?? "Tap to load a piece.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Blueprint.graphite)
-            Button("Try again") { Task { await model.load() } }
-                .buttonStyle(.borderedProminent)
-                .tint(Blueprint.crane)
+            Button { Task { await model.load() } } label: {
+                Text("Try again").foregroundStyle(.white) // pin white so the label isn't system-picked
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Blueprint.craneButton)
         }
         .padding()
     }

@@ -45,6 +45,37 @@ enum Blueprint {
     /// studio controls panel stays legible without a blur.
     static let card = Color(light: "#E3E6E0", dark: "#1A2A35")
 
+    // MARK: Filled-button + accent-text tokens (WCAG-tuned)
+    //
+    // Plain `crane` / `crease` are tuned as *tints* (3:1 graphical bar). They are
+    // too light to carry a **white label** or to render as **body text** at the
+    // 4.5:1 bar in one or both themes (white-on-crane 3.15 dark; crane-as-text
+    // 3.37 light; white-on-crease 2.47 dark). These variants fix that. See
+    // ios/ACCESSIBILITY_CONTRAST.md.
+
+    /// Fill for prominent crane action buttons (Save, Sign in, Shuffle, Try
+    /// again). Dark enough in **both** themes that a pinned white label clears
+    /// 4.5:1 (5.36:1) while the fill still separates from the graph background
+    /// (4.68:1 light / 3.09:1 dark).
+    static let craneButton = Color(hex: "#C23A1C")
+
+    /// Fill for the prominent crease action button (Remix). Plain crease in dark
+    /// (#82A9CE) is too light for a white label (2.47:1); this keeps a deeper
+    /// blue in both themes so white clears 4.5:1 (6.78:1 light / 5.10:1 dark) and
+    /// the fill still separates from the background (5.91:1 / 3.25:1).
+    static let creaseButton = Color(light: "#2E5E8C", dark: "#40729E")
+
+    /// `crane` used as *text* (e.g. the bordered Like button's tinted label).
+    /// Darkened in light and lightened in dark so it clears 4.5:1 on the graph
+    /// background in both themes (5.71:1 light / 5.49:1 dark) — plain crane is
+    /// only 3.37:1 as light-theme text.
+    static let craneText = Color(light: "#A83618", dark: "#F26B44")
+
+    /// Dark ink for a label sitting on the gold `sax` fill (the selected Glow
+    /// toggle). White fails on light gold (~1.6:1); this fixed dark navy clears
+    /// 4.5:1 in both themes (7.38:1) since `sax` itself is fixed.
+    static let onSax = Color(hex: "#13202A")
+
     /// Human-readable name for a palette swatch, mirroring the backend's color
     /// vocabulary, so VoiceOver never reads a bare hex string. Falls back to a
     /// spoken hex ("hex E 8 4 A 2 7") for any custom / off-palette color.

@@ -82,9 +82,10 @@ struct YouView: View {
                         .foregroundStyle(.secondary)
                     Button { showAuth = true } label: {
                         Text("Sign in").frame(maxWidth: .infinity)
+                            .foregroundStyle(.white) // pin white so the label isn't system-picked
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(Blueprint.crane)
+                    .tint(Blueprint.craneButton)
                 }
                 .padding(.vertical, 4)
             }
