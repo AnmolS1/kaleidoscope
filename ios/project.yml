@@ -46,6 +46,10 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Kaleidoscope
+        # Export compliance: the app uses only standard/exempt encryption (HTTPS),
+        # so App Store Connect won't prompt on every submission. Declared here (not
+        # just in Info.plist) so `xcodegen generate` can't drop it.
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         # Universal app: declare orientations so iPad doesn't warn ("must support all
         # orientations unless full screen"). iPhone: portrait + both landscapes; iPad: all four.
