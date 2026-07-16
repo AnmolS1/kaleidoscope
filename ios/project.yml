@@ -33,6 +33,15 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ponderance.kaleidoscope
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    # Sign in with Apple. Kept here (not added via Xcode) because the project is
+    # XcodeGen-generated and the .xcodeproj is gitignored — a manual capability
+    # would be wiped on regenerate. Anmol still enables it on the App ID in the
+    # Developer portal (Part C) so device provisioning includes it.
+    entitlements:
+      path: App/Kaleidoscope.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
     info:
       path: App/Info.plist
       properties:

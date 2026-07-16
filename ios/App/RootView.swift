@@ -1,42 +1,64 @@
 import SwiftUI
 
 /// The app is a native drawing studio first: draw kaleidoscope mandalas, browse
-/// the public gallery, add the widget, and (soon) sign in to save + remix.
+/// the public gallery, and sign in (in "You") to save + remix.
 struct RootView: View {
     @Binding var focusId: String?
+    @EnvironmentObject var auth: AuthModel
     /// The studio state lives here so the in-progress drawing survives tab
     /// switches and is reachable for remix (loading a gallery piece into it).
     @StateObject private var studio = StudioModel()
+    /// Test hook: KALEIDO_TAB=draw|gallery|you selects the initial tab.
+    @State private var selection = Self.initialTab
 
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             StudioTab(model: studio)
                 .tabItem { Label("Draw", systemImage: "paintbrush.pointed") }
+                .tag(0)
             ShuffleViewer(focusId: $focusId)
                 .tabItem { Label("Gallery", systemImage: "sparkles") }
-            AddWidgetHelp()
-                .tabItem { Label("Widget", systemImage: "rectangle.3.group") }
-            AboutView()
-                .tabItem { Label("About", systemImage: "info.circle") }
+                .tag(1)
+            YouView()
+                .tabItem { Label("You", systemImage: "person.crop.circle") }
+                .tag(2)
         }
         .tint(Blueprint.crane)
     }
+
+    private static var initialTab: Int {
+        switch ProcessInfo.processInfo.environment["KALEIDO_TAB"] {
+        case "gallery": return 1
+        case "you": return 2
+        default: return 0
+        }
+    }
 }
 
-/// Hosts the studio and (until the save flow is wired) surfaces a notice when
-/// Save is tapped.
+/// Hosts the studio. Save requires sign-in — tapping it presents the auth sheet
+/// when signed out; the real save flow is wired in the save-flow phase.
 struct StudioTab: View {
     @ObservedObject var model: StudioModel
+    @EnvironmentObject var auth: AuthModel
+    @State private var showAuth = false
     @State private var showSaveNotice = false
 
     var body: some View {
-        StudioView(model: model, onSave: { showSaveNotice = true })
+        StudioView(model: model, onSave: handleSave)
             .onAppear { if StudioModel.demoRequested && model.isEmpty { model.loadDemo() } }
+            .sheet(isPresented: $showAuth) {
+                AuthSheet(reason: "Sign in to save your piece to the gallery.")
+                    .environmentObject(auth)
+            }
             .alert("Saving is coming", isPresented: $showSaveNotice) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text("Sign in to save your piece to the gallery — arriving in the next update. Drawing and PNG export are free right now.")
+                Text("The save flow lands in the next update. Drawing and PNG export are free right now.")
             }
+    }
+
+    private func handleSave() {
+        if auth.isSignedIn { showSaveNotice = true } else { showAuth = true }
     }
 }
 
