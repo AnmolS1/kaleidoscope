@@ -19,8 +19,9 @@ settings:
     # Widget extensions are simpler/more robust without the Preview debug-dylib split.
     ENABLE_DEBUG_DYLIB: NO
     MARKETING_VERSION: "1.1"
-    # Build number = git commit count at release time (monotonic). Bump before each
-    # archive. Must exceed this app's last App Store Connect upload.
+    # Fallback build number. The per-target postBuildScripts OVERRIDE this at
+    # build/archive time with the git commit count (auto-increment). This literal is
+    # only used if git is unavailable; keep it ≥ the last App Store Connect upload.
     CURRENT_PROJECT_VERSION: "55"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -31,6 +32,19 @@ targets:
     sources:
       - App
       - Shared
+    postBuildScripts:
+      - name: Set build number from git commit count
+        basedOnDependencyAnalysis: false
+        script: |
+          # Auto build number at build/archive time: git commit count (monotonic),
+          # floored so it never regresses. Degrades safely — if git or the plist is
+          # unavailable it leaves $(CURRENT_PROJECT_VERSION) from project.yml intact.
+          n=$(git -C "$PROJECT_DIR" rev-list --count HEAD 2>/dev/null || echo 0)
+          [ "$n" -lt 55 ] && n=55
+          plist="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+          if [ -f "$plist" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $n" "$plist" && echo "build number -> $n"
+          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ponderance.kaleidoscope
@@ -102,6 +116,19 @@ targets:
     sources:
       - Widget
       - Shared
+    postBuildScripts:
+      - name: Set build number from git commit count
+        basedOnDependencyAnalysis: false
+        script: |
+          # Auto build number at build/archive time: git commit count (monotonic),
+          # floored so it never regresses. Degrades safely — if git or the plist is
+          # unavailable it leaves $(CURRENT_PROJECT_VERSION) from project.yml intact.
+          n=$(git -C "$PROJECT_DIR" rev-list --count HEAD 2>/dev/null || echo 0)
+          [ "$n" -lt 55 ] && n=55
+          plist="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+          if [ -f "$plist" ]; then
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $n" "$plist" && echo "build number -> $n"
+          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ponderance.kaleidoscope.RandomWidget
