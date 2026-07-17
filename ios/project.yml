@@ -19,7 +19,9 @@ settings:
     # Widget extensions are simpler/more robust without the Preview debug-dylib split.
     ENABLE_DEBUG_DYLIB: NO
     MARKETING_VERSION: "1.1"
-    CURRENT_PROJECT_VERSION: "2"
+    # Build number = git commit count at release time (monotonic). Bump before each
+    # archive. Must exceed this app's last App Store Connect upload.
+    CURRENT_PROJECT_VERSION: "55"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
 targets:
@@ -46,6 +48,8 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: Kaleidoscope
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         # Export compliance: the app uses only standard/exempt encryption (HTTPS),
         # so App Store Connect won't prompt on every submission. Declared here (not
         # just in Info.plist) so `xcodegen generate` can't drop it.
@@ -105,6 +109,8 @@ targets:
       path: Widget/Info.plist
       properties:
         CFBundleDisplayName: Kaleidoscope
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         # Extensions are separate bundles and do NOT inherit the host app's ATS, so the
         # widget needs its own debug-only loopback exception for the wrangler-dev selection call.
         NSAppTransportSecurity:
