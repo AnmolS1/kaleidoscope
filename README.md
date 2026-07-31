@@ -186,6 +186,23 @@ wrangler d1 execute kaleidoscope --remote \
 Web Analytics is cookieless and turns on through the Cloudflare dashboard. The CSP
 already allows the beacon origins.
 
+### Releasing the iOS app
+
+Set the App Store **Support URL** to `https://ponderance.dev/support/kaleidoscope/`
+— with the trailing slash, since the bare path 307s. It currently points at the
+`ponderance.dev` hub, which makes a user hunting for help find every app but this
+one.
+
+Fix it **while the version is still editable.** Apple refuses the change on a
+`READY_FOR_SALE` version: `PATCH /v1/appStoreVersionLocalizations/{id}` answers
+`409 STATE_ERROR — "Attribute 'supportUrl' cannot be edited at this time"`
+(verified 2026-07-31). So this is release-time work, not a thing that can be
+cleaned up afterwards.
+
+Keep `package.json` `version` equal to the iOS `MARKETING_VERSION`, as the plain
+string Apple shows — `1.1`, not `1.1.0`. Orrery compares the two sides as raw
+strings, and App Store Connect reports the version exactly as entered.
+
 ## ./old
 
 The original jQuery toy, "Drawing Thingy", kept untouched as a reference. Two
