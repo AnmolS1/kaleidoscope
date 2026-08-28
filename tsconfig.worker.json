@@ -18,5 +18,5 @@
     // builtins are legitimately available at runtime too.
     "types": ["@cloudflare/workers-types", "node"]
   },
-  "include": ["src/worker", "test/worker"]
+  "include": ["src/shared", "src/worker", "test/worker"]
 }
