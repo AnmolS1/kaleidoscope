@@ -47,10 +47,15 @@ export async function generateAlt(
   try {
     const ai = env.AI as unknown as LooseAI;
     const n = Number(meta.segments);
+    // 0 means the visible layers use different symmetries (see templateAlt), so
+    // there is no single fold count to state. Telling the model "layered" beats
+    // saying nothing: without it the caption tends to invent a symmetry.
     const symmetryHint =
-      Number.isFinite(n) && n > 0
-        ? `It has ${n}-fold ${meta.mirror ? "mirror (dihedral)" : "rotational"} symmetry.`
-        : "";
+      n === 0
+        ? "It is built from several layers, each with its own symmetry."
+        : Number.isFinite(n) && n > 0
+          ? `It has ${n}-fold ${meta.mirror ? "mirror (dihedral)" : "rotational"} symmetry.`
+          : "";
     const out = (await ai.run(VISION_MODEL, {
       image: [...new Uint8Array(imageBytes)],
       prompt:

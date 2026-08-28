@@ -77,17 +77,31 @@ function joinNames(names: string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** Deterministic, always-non-empty alt text derived from symmetry + palette.
- *  e.g. "12-fold mirrored mandala in crane orange, teal and graphite". */
+/**
+ * Deterministic, always-non-empty alt text derived from symmetry + palette.
+ * e.g. "12-fold mirrored mandala in crane orange, teal and graphite".
+ *
+ * `segments === 0` is not "zero-fold": since 1.2 it is the stored signal that a
+ * piece's visible layers use DIFFERENT symmetries, so no single fold count
+ * describes it. It reads as "layered mandala". Describing it as "rotational"
+ * would be a confident, plausible sentence that is simply wrong about the
+ * picture — the worst kind of alt text.
+ *
+ * Exactly 0, not "any non-positive": the column is `INTEGER NOT NULL`, so 0 is
+ * the contract signal while NaN is only ever a hand-constructed garbage input,
+ * and the two deserve different answers.
+ */
 export function templateAlt(meta: {
   segments: number;
   mirror: number | boolean;
   palette: string | string[] | null;
 }): string {
   const n = Number(meta.segments);
-  const fold = Number.isFinite(n) && n > 0 ? `${n}-fold ` : "";
-  const sym = meta.mirror ? "mirrored" : "rotational";
+  const shape =
+    n === 0
+      ? "layered"
+      : `${Number.isFinite(n) && n > 0 ? `${n}-fold ` : ""}${meta.mirror ? "mirrored" : "rotational"}`;
   const colors = joinNames(paletteNames(meta.palette));
   const inColors = colors ? ` in ${colors}` : "";
-  return `${fold}${sym} mandala${inColors}`;
+  return `${shape} mandala${inColors}`;
 }

@@ -9,7 +9,11 @@ import {
   clampDim,
   cleanTitle,
   cleanVisibility,
+  validateTitle,
+  hasV2Caps,
+  capPolicy,
 } from "../lib/validate";
+import { contentHash } from "../../shared/vector";
 import { newArtworkId } from "../lib/ids";
 import {
   insertArtwork,
@@ -18,11 +22,17 @@ import {
   deleteArtworkRow,
   updateArtwork,
   incrementLikes,
+  findOwnByHash,
+  findOtherByHash,
+  publishArtwork,
+  countPublicSince,
+  hasPlus,
+  DuplicateHashError,
 } from "../lib/db";
 import { keys, putVectorGz, putWebp, serveObject, serveVectorJson, deleteArtworkObjects } from "../lib/r2";
 import { templateAlt } from "../lib/alttext";
 import { generateAlt } from "../lib/genalt";
-import type { Artwork } from "../types";
+import type { Artwork, Visibility } from "../types";
 
 export const artworks = new Hono<AppEnv>();
 
@@ -30,6 +40,7 @@ const PER_HOUR = { limit: 60, windowSec: 3600 };
 const PER_DAY = { limit: 300, windowSec: 86400 };
 const LIKE_RULE = { limit: 120, windowSec: 3600 };
 const SUGGEST_RULE = { limit: 30, windowSec: 3600 };
+const HASH_RULE = { limit: 120, windowSec: 3600 };
 
 // Workers AI model ids — the catalog changes, so these are pinned at build time
 // (verified current against the Cloudflare docs). llava is the documented
@@ -55,17 +66,52 @@ function fileFrom(v: unknown): UploadFile | null {
   return null;
 }
 
+// ---- save pre-flight ----
+// The save dialog asks this the moment it opens, so it can show "you already
+// saved this" (Open / edit title) or "someone else has this drawing" BEFORE the
+// user types a title. The POST checks are the safety net, not the UX.
+artworks.get("/hash/:sha", requireAuth, async (c) => {
+  const user = c.get("user")!;
+  const sha = c.req.param("sha");
+  if (!/^[0-9a-f]{64}$/.test(sha)) return c.json({ error: "bad_hash" }, 400);
+  if (!(await checkAll(c.env, [{ key: `hash:${user.id}:h`, rule: HASH_RULE }]))) {
+    return c.json({ error: "rate_limited" }, 429);
+  }
+
+  const mine = await findOwnByHash(c.env, user.id, sha);
+  const other = await findOtherByHash(c.env, user.id, sha);
+  return c.json({
+    mine: mine?.id ?? null,
+    // Another user's PRIVATE piece is never named — it would leak both its
+    // existence and its title. The POST still 409s on it (see below).
+    other:
+      other && other.visibility !== "private"
+        ? { id: other.id, title: other.title, author: other.author_name }
+        : null,
+  });
+});
+
 // ---- create ----
 artworks.post("/", requireAuth, requireCsrf, async (c) => {
   const user = c.get("user")!;
   const ip = c.req.header("CF-Connecting-IP");
+  const now = Date.now();
 
   const form = await c.req.formData().catch(() => null);
   if (!form) return c.json({ error: "bad_form" }, 400);
 
-  // Native (Bearer) clients skip Turnstile: there's no ambient credential to
-  // forge and the session + per-user rate limits already gate abuse. Web (cookie)
-  // auth still must pass the challenge.
+  // The step order below is the contract (PLAN §2.3), not incidental. The
+  // expensive and the CHARGED work happens last, so a save that turns out to be
+  // a duplicate costs the user nothing: `checkAll` increments as it checks, so
+  // rate-limiting before the dedupe check would burn a save slot on a request
+  // that never writes a row.
+  //
+  //   turnstile → validate → hash → own dedupe → other-user 409
+  //   → rate limit → R2 → D1 insert → conditional publish
+
+  // 1. Turnstile. Native (Bearer) clients skip it: there's no ambient credential
+  // to forge and the session + per-user rate limits already gate abuse. Web
+  // (cookie) auth still must pass the challenge.
   if (c.get("session")?.via !== "bearer") {
     const turnstileToken = String(form.get("turnstile") ?? "");
     if (!(await verifyTurnstile(c.env, turnstileToken, ip))) {
@@ -73,14 +119,24 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
     }
   }
 
-  const allowed = await checkAll(c.env, [
-    { key: `save:${user.id}:h`, rule: PER_HOUR },
-    { key: `save:${user.id}:d`, rule: PER_DAY },
-  ]);
-  if (!allowed) return c.json({ error: "rate_limited", message: "Whoa — slow down a little." }, 429);
-
+  // 2. Cheap validation: form shape, title, drawing.
   const drawing = form.get("drawing");
   if (typeof drawing !== "string") return c.json({ error: "missing_drawing" }, 400);
+
+  // A client that announces `X-Client-Caps: v2` has a title field, so an empty
+  // or "Untitled" title is a bug worth rejecting. A legacy client (shipped iOS
+  // 1.1, old web) has no such field; rejecting its saves would break an app
+  // already in the store, so it keeps the "Untitled" fallback.
+  const v2Client = hasV2Caps(c.req.header("X-Client-Caps"));
+  let title: string;
+  if (v2Client) {
+    const t = validateTitle(form.get("title"));
+    if (!t.ok) return c.json({ error: "title_required" }, 400);
+    title = t.title;
+  } else {
+    title = cleanTitle(form.get("title"));
+  }
+
   const meta = validateDrawingJson(drawing);
   if (!meta.ok) return c.json({ error: meta.error }, 400);
 
@@ -97,6 +153,44 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
     return c.json({ error: "bad_render_type" }, 400);
   }
 
+  // 3. Hash the render-equivalent projection.
+  const hash = await contentHash(drawing);
+
+  // 4. Same user, same picture → return the piece they already have. Nothing is
+  // written and nothing is mutated: re-saving is not an edit, and in particular
+  // it never flips the existing piece's visibility.
+  const own = await findOwnByHash(c.env, user.id, hash);
+  if (own) {
+    return c.json({ id: own.id, url: `${c.env.PUBLIC_BASE_URL}/p/${own.id}`, deduped: true });
+  }
+
+  // 5. Someone else's picture → refuse. A courtesy against posting an untouched
+  // remix, not a policy: one extra dot defeats it, which is fine. `of` is only
+  // named when the match is viewable, so a private piece is blocked without
+  // being disclosed.
+  const other = await findOtherByHash(c.env, user.id, hash);
+  if (other) {
+    return c.json(
+      other.visibility === "private"
+        ? { error: "duplicate_of_other" }
+        : { error: "duplicate_of_other", of: other.id },
+      409,
+    );
+  }
+
+  // 6. Only now charge the rate limit — this request is going to write.
+  const allowed = await checkAll(c.env, [
+    { key: `save:${user.id}:h`, rule: PER_HOUR },
+    { key: `save:${user.id}:d`, rule: PER_DAY },
+  ]);
+  if (!allowed) return c.json({ error: "rate_limited", message: "Whoa — slow down a little." }, 429);
+
+  const requested = cleanVisibility(form.get("visibility"));
+  const plus = await hasPlus(c.env, user.id);
+  const policy = capPolicy(c.env, plus);
+  // A cap we cannot evaluate is a cap we must not guess at. Fails closed.
+  if (!policy.ok) return c.json({ error: "server_misconfigured" }, 500);
+
   const remixRaw = form.get("remixOf");
   let remixOf: string | null = null;
   if (typeof remixRaw === "string" && remixRaw) {
@@ -108,8 +202,8 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
   const width = clampDim(form.get("width"));
   const height = clampDim(form.get("height"));
 
-  // store source-of-truth vector + renders. Keep the image bytes in hand so the
-  // deferred alt-text upgrade can reuse them without re-reading R2.
+  // 7. Store source-of-truth vector + renders. Keep the image bytes in hand so
+  // the deferred alt-text upgrade can reuse them without re-reading R2.
   const imageBytes = await image.arrayBuffer();
   await putVectorGz(c.env, id, drawing);
   await putWebp(c.env, keys.image(id), imageBytes);
@@ -118,24 +212,64 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
     await putWebp(c.env, keys.og(id), await og.arrayBuffer());
   }
 
-  await insertArtwork(c.env, {
-    id,
-    user_id: user.id,
-    title: cleanTitle(form.get("title")),
-    visibility: cleanVisibility(form.get("visibility")),
-    image_key: keys.image(id),
-    thumb_key: keys.thumb(id),
-    vector_key: keys.vector(id),
-    width,
-    height,
-    segments: meta.segments,
-    mirror: meta.mirror,
-    palette: meta.palette,
-    remix_of: remixOf,
-    created_at: Date.now(),
-    // Deterministic fallback — guarantees altText is never null. Upgraded async below.
-    alt_text: templateAlt(meta),
-  });
+  // 8. Insert. A piece requested as public lands UNLISTED and is then published
+  // by the conditional statement, so the cap check and the visibility change are
+  // one atomic step — there is no window in which an over-cap piece is public.
+  try {
+    await insertArtwork(c.env, {
+      id,
+      user_id: user.id,
+      title,
+      visibility: requested === "public" ? "unlisted" : requested,
+      image_key: keys.image(id),
+      thumb_key: keys.thumb(id),
+      vector_key: keys.vector(id),
+      width,
+      height,
+      segments: meta.segments,
+      mirror: meta.mirror,
+      palette: meta.palette,
+      remix_of: remixOf,
+      created_at: now,
+      // Deterministic fallback — guarantees altText is never null. Upgraded async below.
+      alt_text: templateAlt(meta),
+      content_hash: hash,
+      layers: meta.layers,
+    });
+  } catch (e) {
+    if (e instanceof DuplicateHashError) {
+      // Lost the race against a concurrent save of the same drawing. Clean up
+      // the blobs we just wrote — the row that would have owned them does not
+      // exist, so nothing would ever reference or delete them.
+      await deleteArtworkObjects(c.env, id);
+      const existing = await findOwnByHash(c.env, user.id, hash);
+      if (existing) {
+        return c.json({
+          id: existing.id,
+          url: `${c.env.PUBLIC_BASE_URL}/p/${existing.id}`,
+          deduped: true,
+        });
+      }
+    }
+    throw e;
+  }
+
+  // 9. Conditional publish. Runs for every public request, capped or not — "no
+  // cap" is expressed as a cap so large the predicate always passes, which keeps
+  // this the single path that can make a piece public.
+  let visibility: Visibility = requested === "public" ? "unlisted" : requested;
+  let capReached = false;
+  if (requested === "public") {
+    const published = await publishArtwork(c.env, {
+      id,
+      userId: user.id,
+      cap: policy.cap,
+      epoch: policy.epoch,
+      now,
+    });
+    if (published) visibility = "public";
+    else capReached = true;
+  }
 
   // Best-effort AI upgrade after the response. c.executionCtx is absent in unit
   // tests (no 4th arg to app.request); the template value already stands in.
@@ -145,7 +279,14 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
     /* no ExecutionContext (tests) — skip the deferred upgrade */
   }
 
-  return c.json({ id, url: `${c.env.PUBLIC_BASE_URL}/p/${id}` }, 201);
+  // A finished piece is never unsaveable: hitting the cap still returns 201 with
+  // the piece stored as unlisted, and the client explains why.
+  const url = `${c.env.PUBLIC_BASE_URL}/p/${id}`;
+  if (capReached) {
+    const count = await countPublicSince(c.env, user.id, policy.epoch);
+    return c.json({ id, url, visibility, capReached: true, cap: policy.cap, count }, 201);
+  }
+  return c.json({ id, url, visibility }, 201);
 });
 
 // ---- AI name suggestions ----
@@ -200,7 +341,8 @@ artworks.post("/suggest-names", requireAuth, async (c) => {
       return c.json({ names: [] });
     }
 
-    const segments = Number(form.get("segments")) || 0;
+    const segmentsRaw = form.get("segments");
+    const segments = Number(segmentsRaw) || 0;
     const mirror = String(form.get("mirror") ?? "") === "1" || form.get("mirror") === "true";
     const paletteRaw = String(form.get("palette") ?? "");
     const palette = paletteRaw
@@ -222,9 +364,15 @@ artworks.post("/suggest-names", requireAuth, async (c) => {
     const caption = (capOut?.description ?? capOut?.response ?? "").toString().slice(0, 400);
 
     // 2. Turn the caption + symmetry/palette hints into 3 titles.
+    // A literal 0 means layers with differing symmetries, so no one fold count
+    // describes it (see templateAlt) — left blank the model invents one. An
+    // ABSENT field is a legacy client that never sends symmetry, which is not
+    // the same claim, so that still says nothing.
     const symmetryHint = segments
       ? `${segments}-fold ${mirror ? "mirror (dihedral)" : "rotational"} symmetry.`
-      : "";
+      : segmentsRaw === null
+        ? ""
+        : "Built from several layers, each with its own symmetry.";
     const paletteHint = palette.length ? `Dominant colors: ${palette.join(", ")}.` : "";
     const prompt =
       `An abstract kaleidoscope mandala. ${caption} ${symmetryHint} ${paletteHint}\n` +
@@ -270,6 +418,11 @@ artworks.get("/:id", async (c) => {
     remixOf: art.remix_of,
     likes: art.likes,
     createdAt: art.created_at,
+    updatedAt: art.updated_at,
+    layers: art.layers,
+    // NULL on legacy rows until the T02c backfill runs; clients must treat a
+    // missing hash as "unknown", not as "no duplicate".
+    contentHash: art.content_hash,
     urls: {
       image: `/api/artworks/${art.id}/image`,
       thumb: `/api/artworks/${art.id}/thumb`,
@@ -300,14 +453,59 @@ artworks.get("/:id/vector", (c) => proxy(c, "vector"));
 
 // ---- edit ----
 artworks.patch("/:id", requireAuth, requireCsrf, async (c) => {
+  const user = c.get("user")!;
   const art = await getArtwork(c.env, c.req.param("id"));
   if (!art) return c.json({ error: "not_found" }, 404);
-  if (art.user_id !== c.get("user")!.id) return c.json({ error: "forbidden" }, 403);
+  if (art.user_id !== user.id) return c.json({ error: "forbidden" }, 403);
+  const now = Date.now();
 
   const body = (await c.req.json().catch(() => ({}))) as { title?: string; visibility?: string };
+
+  // The title rule applies only when the body actually carries a title. A
+  // visibility-only edit on one of the old "Untitled" rows must keep working —
+  // otherwise 1.2 would make every legacy piece unpublishable.
+  let title: string | undefined;
+  if (body.title !== undefined) {
+    if (hasV2Caps(c.req.header("X-Client-Caps"))) {
+      const t = validateTitle(body.title);
+      if (!t.ok) return c.json({ error: "title_required" }, 400);
+      title = t.title;
+    } else {
+      title = cleanTitle(body.title);
+    }
+  }
+
+  const visibility = body.visibility !== undefined ? cleanVisibility(body.visibility) : undefined;
+
+  // Going public goes through the conditional publish so the cap check and the
+  // visibility change are one statement. Everything else is a plain update that
+  // deliberately leaves `published_at` alone.
+  if (visibility === "public" && art.visibility !== "public") {
+    const policy = capPolicy(c.env, await hasPlus(c.env, user.id));
+    if (!policy.ok) return c.json({ error: "server_misconfigured" }, 500);
+
+    const published = await publishArtwork(c.env, {
+      id: art.id,
+      userId: user.id,
+      cap: policy.cap,
+      epoch: policy.epoch,
+      now,
+    });
+    if (!published) {
+      const count = await countPublicSince(c.env, user.id, policy.epoch);
+      return c.json({ error: "cap_reached", cap: policy.cap, count }, 402);
+    }
+    if (title !== undefined) await updateArtwork(c.env, art.id, { title, updated_at: now });
+    return c.json({ ok: true, visibility: "public" });
+  }
+
+  // An already-public piece asked to be public again must NOT go through the
+  // conditional publish: its own row is inside the count, so at exactly the cap
+  // the predicate reads `cap < cap` and an idempotent no-op would 402.
   await updateArtwork(c.env, art.id, {
-    title: body.title !== undefined ? cleanTitle(body.title) : undefined,
-    visibility: body.visibility !== undefined ? cleanVisibility(body.visibility) : undefined,
+    title,
+    visibility: visibility === "public" ? undefined : visibility,
+    updated_at: now,
   });
   return c.json({ ok: true });
 });

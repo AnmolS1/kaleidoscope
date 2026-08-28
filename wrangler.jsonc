@@ -16,7 +16,32 @@
     "PUBLIC_BASE_URL": "https://kaleidoscope.ponderance.dev",
     "GOOGLE_REDIRECT_URI": "https://kaleidoscope.ponderance.dev/api/auth/callback",
     "TURNSTILE_SITE_KEY": "0x4AAAAAADsdEltLI2PUUeiE",
-    "APPLE_BUNDLE_ID": "dev.ponderance.kaleidoscope"
+    "APPLE_BUNDLE_ID": "dev.ponderance.kaleidoscope",
+
+    // Plus + free public-post cap. These live here and NOT in the dashboard:
+    // `wrangler deploy` replaces the worker's var set wholesale, so a var added
+    // through the dashboard is gone the next time we ship.
+    //
+    // Written as STRINGS on purpose. `vars` preserves JSON types, so `false`
+    // here would arrive as a boolean and `PLUS_ENABLED === "true"` would fail
+    // silently against it. src/worker/lib/validate.ts does the coercion.
+    //
+    // PLUS_ENABLED stays "false" until the IAP is approved. While it is false no
+    // cap is enforced anywhere — a cap with no way to pay to lift it is just a
+    // broken product. CAP_EPOCH is set to the real timestamp in the SAME deploy
+    // that flips the flag; the placeholder below is already a valid integer
+    // because the parse fails CLOSED (NaN → 500), so a non-integer placeholder
+    // would take saves down the moment the flag flipped.
+    "CAP_EPOCH": "0",
+    "FREE_PUBLIC_CAP": "10",
+    "FREE_LAYER_CAP": "3",
+    "PLUS_LAYER_CAP": "8",
+    "PLUS_ENABLED": "false",
+    "PLUS_ALLOW_SANDBOX": "false",
+    "PLUS_ALLOW_TEST": "false",
+    "PLUS_PRODUCT_ID": "dev.ponderance.kaleidoscope.plus",
+    "LS_STORE_ID": "",
+    "LS_VARIANT_ID": ""
   },
   "ai": { "binding": "AI" },
   "d1_databases": [
@@ -31,4 +56,5 @@
   ]
   // TURNSTILE_SITE_KEY is the real widget for kaleidoscope.ponderance.dev;
   // the matching TURNSTILE_SECRET_KEY is a Wrangler secret.
+  // LS_WEBHOOK_SECRET and LS_API_KEY are Wrangler secrets too (T02d).
 }

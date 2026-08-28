@@ -1,6 +1,6 @@
 // D1 data access for users + artworks. Keyset pagination on (created_at, id).
 
-import type { Env, User, Artwork, Visibility } from "../types";
+import type { Env, User, Artwork, Visibility, PlusSource } from "../types";
 import { newUserId } from "./ids";
 
 export async function upsertUser(
@@ -157,19 +157,175 @@ export interface NewArtwork {
   remix_of: string | null;
   created_at: number;
   alt_text: string;
+  content_hash: string;
+  layers: number;
 }
 
+/** Thrown when the (user_id, content_hash) unique index rejects an insert — the
+ *  same user already has this exact drawing. The caller turns it into a dedupe
+ *  response rather than a 500. */
+export class DuplicateHashError extends Error {}
+
 export async function insertArtwork(env: Env, a: NewArtwork): Promise<void> {
-  await env.DB.prepare(
-    `INSERT INTO artworks
-      (id, user_id, title, visibility, image_key, thumb_key, vector_key, width, height, segments, mirror, palette, remix_of, likes, created_at, alt_text)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-  )
-    .bind(
-      a.id, a.user_id, a.title, a.visibility, a.image_key, a.thumb_key, a.vector_key,
-      a.width, a.height, a.segments, a.mirror, a.palette, a.remix_of, a.created_at, a.alt_text,
+  try {
+    await env.DB.prepare(
+      `INSERT INTO artworks
+        (id, user_id, title, visibility, image_key, thumb_key, vector_key, width, height, segments, mirror, palette, remix_of, likes, created_at, alt_text, content_hash, layers, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
     )
+      .bind(
+        a.id, a.user_id, a.title, a.visibility, a.image_key, a.thumb_key, a.vector_key,
+        a.width, a.height, a.segments, a.mirror, a.palette, a.remix_of, a.created_at, a.alt_text,
+        a.content_hash, a.layers, a.created_at,
+      )
+      .run();
+  } catch (e) {
+    // The read-then-insert dedupe check above this is not atomic, so two saves
+    // of the same drawing in flight together both pass it and one loses here.
+    // The index is the actual guarantee; this converts losing the race into the
+    // same answer the checked path gives.
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/UNIQUE|constraint/i.test(msg)) throw new DuplicateHashError(msg);
+    throw e;
+  }
+}
+
+/** This user's existing piece with the same render-equivalent hash, if any.
+ *  Same user + same hash is a dedupe, never a new piece. */
+export function findOwnByHash(env: Env, userId: string, hash: string): Promise<Artwork | null> {
+  return env.DB.prepare("SELECT * FROM artworks WHERE user_id = ? AND content_hash = ?")
+    .bind(userId, hash)
+    .first<Artwork>();
+}
+
+export interface HashMatch {
+  id: string;
+  title: string;
+  visibility: Visibility;
+  author_name: string | null;
+}
+
+/**
+ * Another user's piece with this hash — the remix block and the save pre-flight.
+ *
+ * Prefers a viewable (non-private) match, because that is the one whose id we
+ * are allowed to name. `ORDER BY (visibility='private')` puts non-private rows
+ * first, then oldest wins: the first person to save a drawing is the one it is
+ * attributed to.
+ */
+export function findOtherByHash(env: Env, userId: string, hash: string): Promise<HashMatch | null> {
+  return env.DB.prepare(
+    `SELECT a.id, a.title, a.visibility, u.name AS author_name
+     FROM artworks a JOIN users u ON u.id = a.user_id
+     WHERE a.content_hash = ? AND a.user_id != ?
+     ORDER BY (a.visibility = 'private'), a.created_at ASC
+     LIMIT 1`,
+  )
+    .bind(hash, userId)
+    .first<HashMatch>();
+}
+
+/**
+ * Publish a piece if the user is under their public cap — one statement, so the
+ * count and the write cannot drift apart the way a read-then-write can.
+ *
+ * Returns false when the cap blocked it (`meta.changes === 0`). Note the
+ * subquery counts CURRENTLY-public pieces, so unpublishing frees a slot; that is
+ * PLAN §2.4's SQL, which disagrees with §1's "first publication counts" prose.
+ * The SQL is the normative artifact — see HANDOFF.
+ *
+ * `published_at` is COALESCEd so re-publishing a piece that was public before
+ * keeps its original publication time and does not count twice.
+ *
+ * Callers MUST short-circuit an already-public row: at exactly the cap the
+ * subquery counts the row being updated, so an idempotent re-publish would see
+ * `cap < cap` and report itself blocked.
+ */
+export async function publishArtwork(
+  env: Env,
+  opts: { id: string; userId: string; cap: number; epoch: number; now: number },
+): Promise<boolean> {
+  const res = await env.DB.prepare(
+    `UPDATE artworks
+       SET visibility = 'public', published_at = COALESCE(published_at, ?), updated_at = ?
+     WHERE id = ?
+       AND (SELECT COUNT(*) FROM artworks
+            WHERE user_id = ? AND visibility = 'public' AND published_at >= ?) < ?`,
+  )
+    .bind(opts.now, opts.now, opts.id, opts.userId, opts.epoch, opts.cap)
     .run();
+  return (res.meta?.changes ?? 0) > 0;
+}
+
+/** How many of this user's pieces currently occupy a public slot. Mirrors the
+ *  predicate in publishArtwork exactly — if these two ever disagree the counter
+ *  shown in the UI stops describing the cap that is actually enforced. */
+export async function countPublicSince(env: Env, userId: string, epoch: number): Promise<number> {
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM artworks WHERE user_id = ? AND visibility = 'public' AND published_at >= ?",
+  )
+    .bind(userId, epoch)
+    .first<{ n: number }>();
+  return Number(row?.n ?? 0);
+}
+
+/** Rows still missing a content hash (everything saved before 1.2), for the
+ *  T02c backfill. Until it finishes the remix block is off for those pieces. */
+export async function listArtworksMissingHash(env: Env, limit: number): Promise<Artwork[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT * FROM artworks WHERE content_hash IS NULL ORDER BY created_at DESC LIMIT ?",
+  )
+    .bind(limit)
+    .all<Artwork>();
+  return results ?? [];
+}
+
+/**
+ * Set a backfilled hash + layer count. Idempotent, and tolerant of the unique
+ * index rejecting it: legacy rows can contain genuine same-user duplicates that
+ * predate the constraint, and one of those failing to acquire a hash is not a
+ * reason to abort a backfill batch. Returns whether the row was updated.
+ */
+export async function setArtworkHash(
+  env: Env,
+  id: string,
+  hash: string,
+  layers: number,
+): Promise<boolean> {
+  try {
+    const res = await env.DB.prepare(
+      "UPDATE artworks SET content_hash = ?, layers = ? WHERE id = ? AND content_hash IS NULL",
+    )
+      .bind(hash, layers, id)
+      .run();
+    return (res.meta?.changes ?? 0) > 0;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/UNIQUE|constraint/i.test(msg)) return false;
+    throw e;
+  }
+}
+
+// ---- entitlements --------------------------------------------------------
+
+/** Every Plus source this user holds. Empty means no entitlement. */
+export async function plusSources(env: Env, userId: string): Promise<PlusSource[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT DISTINCT source FROM entitlements WHERE user_id = ? AND product = 'plus' ORDER BY source",
+  )
+    .bind(userId)
+    .all<{ source: PlusSource }>();
+  return (results ?? []).map((r) => r.source);
+}
+
+/** Whether this user has Plus from any source. */
+export async function hasPlus(env: Env, userId: string): Promise<boolean> {
+  const row = await env.DB.prepare(
+    "SELECT 1 AS one FROM entitlements WHERE user_id = ? AND product = 'plus' LIMIT 1",
+  )
+    .bind(userId)
+    .first<{ one: number }>();
+  return !!row;
 }
 
 export function getArtwork(env: Env, id: string): Promise<Artwork | null> {
@@ -271,10 +427,19 @@ export async function listByUser(env: Env, userId: string, page: Page): Promise<
   return results ?? [];
 }
 
+/**
+ * Apply a title / visibility edit and stamp `updated_at`.
+ *
+ * A move to `public` NEVER comes through here — that goes through
+ * `publishArtwork`, which carries the cap predicate. Moving to private or
+ * unlisted deliberately leaves `published_at` alone: it records when a piece
+ * first went public, which stays true after it comes back down, and clearing it
+ * would let a user launder past the cap by unpublishing and republishing.
+ */
 export async function updateArtwork(
   env: Env,
   id: string,
-  patch: { title?: string; visibility?: Visibility },
+  patch: { title?: string; visibility?: Exclude<Visibility, "public">; updated_at?: number },
 ): Promise<void> {
   const sets: string[] = [];
   const vals: unknown[] = [];
@@ -287,6 +452,8 @@ export async function updateArtwork(
     vals.push(patch.visibility);
   }
   if (sets.length === 0) return;
+  sets.push("updated_at = ?");
+  vals.push(patch.updated_at ?? Date.now());
   vals.push(id);
   await env.DB.prepare(`UPDATE artworks SET ${sets.join(", ")} WHERE id = ?`).bind(...vals).run();
 }

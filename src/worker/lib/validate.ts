@@ -1,66 +1,93 @@
-// Strict server-side validation of uploaded vector JSON + caps (spec §7, §10).
-// Never trust client width/height beyond the cap.
+// Strict server-side validation of uploaded vector JSON + caps (spec §7, §10),
+// plus the small env-var coercions the Plus/cap policy reads.
+//
+// The drawing format itself is NOT defined here — src/shared/vector.ts is the
+// single definition, compiled by both the client and the Worker and mirrored in
+// Swift. This module adapts it: it turns a parse failure into a stable wire
+// error code and derives the flat metadata columns D1 stores.
+
+import {
+  deserialize,
+  paletteOf,
+  topSym,
+  VECTOR_HARD_CAP_BYTES,
+  type DrawingV2,
+} from "../../shared/vector";
+import type { Env } from "../types";
 
 export const CAPS = {
-  vectorBytes: 256 * 1024,
+  vectorBytes: VECTOR_HARD_CAP_BYTES,
   thumbBytes: 2 * 1024 * 1024,
   imageBytes: 6 * 1024 * 1024,
   ogBytes: 4 * 1024 * 1024,
   title: 120,
   dim: 4096,
-  maxStrokes: 5000,
-  maxPointsTotal: 200_000,
 };
 
-const HEX = /^#[0-9a-fA-F]{6}$/;
-
 export type DrawingMeta =
-  | { ok: true; segments: number; mirror: number; palette: string | null }
+  | {
+      ok: true;
+      drawing: DrawingV2;
+      /** topSym's segments, or 0 when visible layers disagree. */
+      segments: number;
+      mirror: number;
+      palette: string | null;
+      layers: number;
+    }
   | { ok: false; error: string };
 
+/**
+ * Map a DrawingParseError message to the stable wire code the API has always
+ * returned. The shared module throws human-readable messages (it is also a
+ * client-side library, where a message is what you want); the API contract is
+ * a machine code, and clients — including shipped iOS builds — switch on it.
+ */
+function errorCode(message: string): string {
+  if (message.includes("too large")) return "vector_too_large";
+  if (message.includes("JSON") || message.includes("not an object")) return "bad_json";
+  if (message.includes("unsupported version")) return "bad_version";
+  if (message.includes("bad bg")) return "bad_bg";
+  if (message.includes("segments")) return "bad_segments";
+  if (message.includes("sym")) return "bad_sym";
+  if (message.includes("too many strokes")) return "too_many_strokes";
+  if (message.includes("too many points")) return "too_many_points";
+  if (message.includes("too many layers")) return "too_many_layers";
+  if (message.includes("layers") || message.includes("layer")) return "bad_layers";
+  if (message.includes("strokes")) return "bad_strokes";
+  if (message.includes("tool")) return "bad_tool";
+  if (message.includes("color")) return "bad_color";
+  if (message.includes("size")) return "bad_size";
+  if (message.includes("opacity")) return "bad_opacity";
+  if (message.includes("pts")) return "bad_pts";
+  return "bad_drawing";
+}
+
+/**
+ * Parse + validate stored vector JSON (v1 or v2) and derive the metadata
+ * columns.
+ *
+ * `segments`/`mirror` come from `topSym`, which is null when visible layers
+ * disagree — that case stores 0/0 and means "layered", NOT "0-fold". Every
+ * consumer of the column has to render that (templateAlt, genalt, the OG
+ * description, the client's ArtworkPage, iOS's ArtworkView).
+ */
 export function validateDrawingJson(json: string): DrawingMeta {
-  if (json.length > CAPS.vectorBytes) return { ok: false, error: "vector_too_large" };
-  let d: any;
+  let drawing: DrawingV2;
   try {
-    d = JSON.parse(json);
-  } catch {
-    return { ok: false, error: "bad_json" };
-  }
-  if (typeof d !== "object" || d === null) return { ok: false, error: "bad_json" };
-  if (d.v !== 1) return { ok: false, error: "bad_version" };
-  if (d.bg !== "light" && d.bg !== "dark") return { ok: false, error: "bad_bg" };
-  if (!d.sym || typeof d.sym.segments !== "number" || typeof d.sym.mirror !== "boolean") {
-    return { ok: false, error: "bad_sym" };
-  }
-  if (d.sym.segments < 3 || d.sym.segments > 24) return { ok: false, error: "bad_segments" };
-  if (!Array.isArray(d.strokes)) return { ok: false, error: "bad_strokes" };
-  if (d.strokes.length > CAPS.maxStrokes) return { ok: false, error: "too_many_strokes" };
-
-  const palette = new Set<string>();
-  let pointCount = 0;
-  for (const s of d.strokes) {
-    if (s.tool !== "solid" && s.tool !== "glow") return { ok: false, error: "bad_tool" };
-    if (typeof s.color !== "string") return { ok: false, error: "bad_color" };
-    if (s.color !== "spectrum") {
-      if (!HEX.test(s.color)) return { ok: false, error: "bad_color" };
-      palette.add(s.color);
-    }
-    if (typeof s.size !== "number" || !Number.isFinite(s.size) || s.size <= 0) {
-      return { ok: false, error: "bad_size" };
-    }
-    if (typeof s.opacity !== "number" || s.opacity < 0 || s.opacity > 1) {
-      return { ok: false, error: "bad_opacity" };
-    }
-    if (!Array.isArray(s.pts)) return { ok: false, error: "bad_pts" };
-    pointCount += s.pts.length;
-    if (pointCount > CAPS.maxPointsTotal) return { ok: false, error: "too_many_points" };
+    drawing = deserialize(json);
+  } catch (e) {
+    return { ok: false, error: errorCode(e instanceof Error ? e.message : "") };
   }
 
+  const sym = topSym(drawing);
+  const palette = paletteOf(drawing);
   return {
     ok: true,
-    segments: d.sym.segments,
-    mirror: d.sym.mirror ? 1 : 0,
-    palette: palette.size ? JSON.stringify([...palette]) : null,
+    drawing,
+    segments: sym ? sym.segments : 0,
+    mirror: sym?.mirror ? 1 : 0,
+    palette: palette.length ? JSON.stringify(palette) : null,
+    layers: drawing.layers.length,
   };
 }
 
@@ -75,6 +102,87 @@ export function cleanTitle(raw: unknown): string {
   return t || "Untitled";
 }
 
+/**
+ * The strict title rule, applied only to clients that announce `X-Client-Caps:
+ * v2` — i.e. ones whose save UI actually asks for a title. Legacy clients keep
+ * the `cleanTitle` fallback, because a shipped iOS 1.1 has no field to type into
+ * and rejecting its saves would break the app in the store.
+ *
+ * NFKC (not the NFC the layer-name rule uses) is deliberate and is used ONLY to
+ * decide: it folds the compatibility lookalikes — fullwidth "ｕｎｔｉｔｌｅｄ",
+ * the ﬁ ligature — that would otherwise walk straight past a naive comparison.
+ * The value STORED is the trimmed original, so a title keeps the characters the
+ * user typed.
+ */
+export function validateTitle(raw: unknown): { ok: true; title: string } | { ok: false } {
+  const title = typeof raw === "string" ? raw.trim().slice(0, CAPS.title) : "";
+  if (!title) return { ok: false };
+  if (title.normalize("NFKC").trim().toLowerCase() === "untitled") return { ok: false };
+  return { ok: true, title };
+}
+
+/** True when the client announced it speaks v2 (and so has a title field). */
+export function hasV2Caps(header: string | undefined): boolean {
+  if (!header) return false;
+  return header
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .includes("v2");
+}
+
 export function cleanVisibility(raw: unknown): "public" | "unlisted" | "private" {
   return raw === "unlisted" || raw === "private" ? raw : "public";
+}
+
+// ---- env coercion --------------------------------------------------------
+
+/**
+ * Read a boolean var. Tolerant of both the string form wrangler.jsonc writes
+ * and a real boolean, because those are indistinguishable at the call site and
+ * getting it wrong fails silently in exactly the direction that matters (a
+ * feature that reads as off forever).
+ *
+ * Anything unrecognized, or unset, is FALSE — an unset flag must behave like
+ * today's build.
+ */
+export function envFlag(v: unknown): boolean {
+  if (typeof v === "boolean") return v;
+  return typeof v === "string" && v.trim().toLowerCase() === "true";
+}
+
+/** Read an integer var, falling back when unset. Returns NaN for a set-but-
+ *  unparseable value so the caller can decide to fail closed. */
+export function envInt(v: unknown, fallback: number): number {
+  if (typeof v === "number") return v;
+  if (typeof v !== "string" || v.trim() === "") return fallback;
+  return Number.parseInt(v, 10);
+}
+
+/** A cap so large the conditional-publish predicate always passes. */
+export const NO_CAP = 2147483647;
+
+export type CapPolicy =
+  | { ok: true; enforced: boolean; cap: number; epoch: number }
+  | { ok: false };
+
+/**
+ * Resolve the free public-post cap for one user.
+ *
+ * `CAP_EPOCH` is read ONLY when the cap is actually being enforced. That is
+ * what lets a bad epoch fail closed (a 500) without making today's builds — and
+ * every existing test, which sets no vars at all — depend on a var that does not
+ * exist yet. It also means there is exactly one code path: the conditional
+ * publish always runs, and "no cap" is expressed as a cap of NO_CAP rather than
+ * as a second branch that could get the visibility wrong.
+ */
+export function capPolicy(env: Env, plus: boolean): CapPolicy {
+  if (!envFlag(env.PLUS_ENABLED) || plus) {
+    return { ok: true, enforced: false, cap: NO_CAP, epoch: 0 };
+  }
+  const epoch = envInt(env.CAP_EPOCH, NaN);
+  // Fail closed. A NaN epoch in the comparison would silently make every
+  // `published_at >= epoch` false, i.e. an unlimited cap — the exact failure a
+  // paid feature must not have.
+  if (!Number.isFinite(epoch)) return { ok: false };
+  return { ok: true, enforced: true, cap: envInt(env.FREE_PUBLIC_CAP, 10), epoch };
 }

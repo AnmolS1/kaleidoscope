@@ -16,6 +16,27 @@ async function indexHtml(c: { env: AppEnv["Bindings"]; req: { url: string } }): 
   return c.env.ASSETS.fetch(new Request(new URL("/index.html", c.req.url)));
 }
 
+/**
+ * The og:description for a permalink.
+ *
+ * Pulled out of the handler so it can be unit-tested: the handler itself needs
+ * `HTMLRewriter`, a workerd global that the Node test environment does not have,
+ * so the route is untestable here but this string is not — and this string is
+ * the part that can be wrong.
+ *
+ * `segments === 0` means the visible layers disagree on symmetry, so there is no
+ * fold count to state. Social scrapers cache what they are given, so "a 0-fold
+ * kaleidoscope drawing" would sit in previews indefinitely.
+ */
+export function ogDescription(art: {
+  title: string;
+  author_name: string | null;
+  segments: number;
+}): string {
+  const kind = art.segments === 0 ? "a layered" : `a ${art.segments}-fold`;
+  return `${art.title}${art.author_name ? ` by ${art.author_name}` : ""} — ${kind} kaleidoscope drawing.`;
+}
+
 permalink.get("/p/:id", async (c) => {
   const id = c.req.param("id");
   const shell = await indexHtml(c);
@@ -24,9 +45,7 @@ permalink.get("/p/:id", async (c) => {
 
   const base = c.env.PUBLIC_BASE_URL;
   const title = esc(`${art.title} — Kaleidoscope`);
-  const desc = esc(
-    `${art.title}${art.author_name ? ` by ${art.author_name}` : ""} — a ${art.segments}-fold kaleidoscope drawing.`,
-  );
+  const desc = esc(ogDescription(art));
   const ogImage = `${base}/og/${art.id}`;
   const url = `${base}/p/${art.id}`;
 
