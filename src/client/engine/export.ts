@@ -5,14 +5,15 @@
 // fallback. Square output suits the centered mandala.
 
 import { forEachImage, imageTransformSvg } from "./symmetry";
-import { representativeColor } from "./brush";
+import { meanPressure, representativeColor, strokeSegments } from "./brush";
 import { paintDrawing } from "./scene";
 import {
   REFERENCE_HALF,
+  pressureAlpha,
   type Background,
   type DrawingV2,
   type Layer,
-  type Pt,
+  type Stroke,
 } from "../../shared/vector";
 
 export const BG_COLORS: Record<Background, string> = {
@@ -106,13 +107,13 @@ export function exportSVG(drawing: DrawingV2, S = 500): string {
       if (stroke.pts.length === 0) return;
       const id = `${layer.id}s${i}`;
       ids.push(id);
-      const d = pathData(stroke.pts, S);
+      const d = pathData(stroke, S);
       const color = representativeColor(stroke);
       const width = (stroke.size * scale).toFixed(2);
       const blend = stroke.tool === "glow" ? ' style="mix-blend-mode:screen"' : "";
       defs.push(
         `<path id="${id}" d="${d}" fill="none" stroke="${color}" stroke-width="${width}" ` +
-          `stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${stroke.opacity}"${blend}/>`,
+          `stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${strokeOpacity(stroke)}"${blend}/>`,
       );
     });
     if (ids.length === 0) continue;
@@ -146,17 +147,45 @@ function xmlEscape(s: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function pathData(pts: readonly Pt[], S: number): string {
+/**
+ * `stroke-opacity` for one stroke.
+ *
+ * A `<path>` carries a single opacity, so a `po` stroke — whose alpha varies
+ * point by point on canvas — is represented by its MEAN pressure. Without `po`
+ * this is the untouched `stroke.opacity`, character for character, so no stored
+ * v1 piece's SVG changes.
+ *
+ * Known divergence, PRE-EXISTING and deliberately left alone here: canvas dims
+ * glow by ×0.7 and this SVG never has. Folding it in would darken every glow
+ * stroke in every existing piece's SVG download, which is outside "path
+ * building only". Reported rather than fixed.
+ */
+function strokeOpacity(stroke: Stroke): string {
+  if (stroke.po !== 1) return String(stroke.opacity);
+  return pressureAlpha(stroke.opacity, meanPressure(stroke.pts)).toFixed(4);
+}
+
+/**
+ * The `d` attribute, built from the SAME segment list the canvas renderer uses
+ * (`strokeSegments`). A straight segment becomes `L`, a smoothed one `C`, so an
+ * exported SVG has the curve that was on screen.
+ */
+function pathData(stroke: Stroke, S: number): string {
+  const pts = stroke.pts;
   if (pts.length === 1) {
     // tiny dot as a 1-unit line so it renders with round caps
     const x = (pts[0][0] * S).toFixed(2);
     const y = (pts[0][1] * S).toFixed(2);
     return `M${x} ${y} L${x} ${y}`;
   }
-  let d = "";
-  pts.forEach(([nx, ny], i) => {
-    d += `${i === 0 ? "M" : "L"}${(nx * S).toFixed(2)} ${(ny * S).toFixed(2)}`;
-  });
+  const f = (n: number): string => (n * S).toFixed(2);
+  let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
+  for (const seg of strokeSegments(stroke)) {
+    d +=
+      seg.c1x === undefined
+        ? `L${f(seg.x)} ${f(seg.y)}`
+        : `C${f(seg.c1x)} ${f(seg.c1y!)} ${f(seg.c2x!)} ${f(seg.c2y!)} ${f(seg.x)} ${f(seg.y)}`;
+  }
   return d;
 }
 

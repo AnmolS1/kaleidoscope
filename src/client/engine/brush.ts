@@ -2,16 +2,92 @@
 // center and which has already had the image transform (rotation / reflection)
 // applied. Coordinates inside a stroke are normalized; we multiply by `half`
 // (the shorter half-axis in px) to get centered pixels. Shared by scene.ts
-// (live + committed) and export.ts (PNG / replay). SVG export builds paths
-// separately but reuses the spectrum hue function for consistency.
+// (live + committed) and export.ts (PNG / replay).
+//
+// `strokeSegments` below is the ONE path builder. Live canvas, committed canvas,
+// PNG/WebP/OG, SVG and replay all get their geometry from it, so a smoothed
+// stroke cannot curve on screen and stay a polyline in a download. Canvas turns
+// each segment into moveTo/lineTo or moveTo/bezierCurveTo; SVG turns the same
+// list into `L` or `C` commands.
 
-import { REFERENCE_HALF, type Stroke, type Pt } from "./strokes";
+import { smoothStroke } from "../../shared/smooth";
+import { REFERENCE_HALF, pressureAlpha, type Stroke, type Pt } from "../../shared/vector";
 
 type AnyCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 /** Pressure 0..1 → width multiplier, floored so strokes never vanish. */
 function widthFactor(pressure: number): number {
   return 0.35 + 0.65 * Math.max(0, Math.min(1, pressure));
+}
+
+/**
+ * One segment of a stroke's rendered path: always from source point `i` to
+ * source point `i + 1`, optionally curved.
+ *
+ * Structurally a superset of `Cubic` from ../../shared/smooth, so the smoothed
+ * builder's output is used verbatim rather than copied field by field.
+ */
+export interface StrokeSegment {
+  /** Index of the source point this segment starts at. */
+  i: number;
+  /** End point — always equals the source point at `i + 1`. */
+  x: number;
+  y: number;
+  /** Cubic control points. Absent on a straight segment. */
+  c1x?: number;
+  c1y?: number;
+  c2x?: number;
+  c2y?: number;
+}
+
+/**
+ * THE shared path builder. Normalized coordinates, pure geometry, no `half`.
+ *
+ * Segment boundaries are the source points either way, because width and
+ * spectrum hue already vary per source segment and must keep varying
+ * identically — smoothing changes the shape between two points, never how many
+ * there are.
+ *
+ * A stroke is smoothed only when it asks (`sm === 1`) AND has an interior to
+ * smooth. `smoothStroke` returns null below 3 points, and that falls through to
+ * the straight case: the coordinates are then copied from `pts` verbatim, with
+ * no arithmetic, so a v1 stroke produces bit-identical output to the polyline
+ * loop this replaced. That is what keeps every stored gallery piece rendering as
+ * its saved PNG.
+ */
+export function strokeSegments(stroke: Stroke): StrokeSegment[] {
+  const pts = stroke.pts;
+  if (pts.length < 2) return [];
+  if (stroke.sm === 1) {
+    const cubics = smoothStroke(pts);
+    if (cubics) return cubics;
+  }
+  const out: StrokeSegment[] = new Array(pts.length - 1);
+  for (let k = 0; k < pts.length - 1; k++) {
+    out[k] = { i: k, x: pts[k + 1][0], y: pts[k + 1][1] };
+  }
+  return out;
+}
+
+/**
+ * The alpha a `po` stroke paints at, at a given pressure.
+ *
+ * `applyBrushMode` has already folded glow's ×0.7 into the base alpha, so
+ * feeding that base through `pressureAlpha` is what makes the two factors
+ * compose — glow at full pressure is still 0.7, not 1.
+ */
+function poAlpha(stroke: Stroke, pressure: number): number {
+  const base = stroke.tool === "glow" ? stroke.opacity * 0.7 : stroke.opacity;
+  return pressureAlpha(base, pressure);
+}
+
+/** Mean pressure over a stroke's points. Used where one alpha must stand in for
+ *  the whole stroke — SVG, which cannot vary stroke-opacity along a path. */
+export function meanPressure(pts: readonly Pt[]): number {
+  if (pts.length === 0) return 1;
+  let sum = 0;
+  for (const p of pts) sum += p[2];
+  return sum / pts.length;
 }
 
 /** Spectrum hue (deg) for a normalized point: hue follows the angle around the
@@ -61,7 +137,16 @@ export function drawStroke(ctx: AnyCtx, stroke: Stroke, half: number): void {
     const r = (stroke.size * scale * widthFactor(p)) / 2;
     ctx.beginPath();
     ctx.fillStyle = isSpectrum ? spectrumColor(nx, ny, 1) : stroke.color;
-    ctx.globalAlpha = stroke.tool === "glow" ? stroke.opacity * 0.7 : stroke.opacity;
+    // Without `po` this is the same assignment it always was — deliberately
+    // written as a branch rather than folded into one expression, because the
+    // v1 value is pinned by test/unit/render-trace.test.ts, which records every
+    // globalAlpha write.
+    ctx.globalAlpha =
+      stroke.po === 1
+        ? poAlpha(stroke, p)
+        : stroke.tool === "glow"
+          ? stroke.opacity * 0.7
+          : stroke.opacity;
     ctx.arc(x, y, Math.max(0.5, r), 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
@@ -69,9 +154,11 @@ export function drawStroke(ctx: AnyCtx, stroke: Stroke, half: number): void {
   }
 
   // Segment-by-segment so width (and spectrum hue) can vary along the stroke.
-  for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1];
-    const b = pts[i];
+  // Each segment is stroked as its own path — chaining a smoothed stroke into a
+  // single path would force one width and one hue on the whole thing.
+  for (const seg of strokeSegments(stroke)) {
+    const a = pts[seg.i];
+    const b = pts[seg.i + 1];
     const w = stroke.size * scale * widthFactor((a[2] + b[2]) / 2);
     ctx.lineWidth = Math.max(0.5, w);
     if (isSpectrum) {
@@ -79,9 +166,23 @@ export function drawStroke(ctx: AnyCtx, stroke: Stroke, half: number): void {
       const my = (a[1] + b[1]) / 2;
       ctx.strokeStyle = spectrumColor(mx, my, 1);
     }
+    // Guarded: an unconditional per-segment globalAlpha write would appear in
+    // the v1 render trace, which is frozen. `po` is never set on a v1 stroke.
+    if (stroke.po === 1) ctx.globalAlpha = poAlpha(stroke, (a[2] + b[2]) / 2);
     ctx.beginPath();
     ctx.moveTo(a[0] * half, a[1] * half);
-    ctx.lineTo(b[0] * half, b[1] * half);
+    if (seg.c1x === undefined) {
+      ctx.lineTo(seg.x * half, seg.y * half);
+    } else {
+      ctx.bezierCurveTo(
+        seg.c1x * half,
+        seg.c1y! * half,
+        seg.c2x! * half,
+        seg.c2y! * half,
+        seg.x * half,
+        seg.y * half,
+      );
+    }
     ctx.stroke();
   }
 

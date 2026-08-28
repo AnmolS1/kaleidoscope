@@ -18,6 +18,7 @@ import {
 import { DrawingDoc, type LayerSummary } from "./history";
 import {
   REFERENCE_HALF,
+  applyPressureGamma,
   clampSegments,
   emptyDrawing,
   halfAxis,
@@ -26,6 +27,7 @@ import {
   type BrushTool,
   type DrawingV2,
   type Layer,
+  type PressurePreset,
   type Pt,
   type Stroke,
   type Symmetry,
@@ -95,6 +97,11 @@ export class Scene {
 
   private drawingStroke: Stroke | null = null;
   private activePointer: number | null = null;
+  /** Capture-time pressure curve. Applied to `p` before it is stored, so a
+   *  drawing never changes appearance when this setting later changes. */
+  private pressurePreset: PressurePreset = "normal";
+  /** Whether pen pressure also drives alpha (`po`). Pen input only. */
+  private pressureOpacity = false;
   private liveDirty = false;
   private rafId = 0;
   private ro: ResizeObserver | null = null;
@@ -310,8 +317,11 @@ export class Scene {
   private pointFromEvent(e: PointerEvent): Pt {
     const rect = this.live.getBoundingClientRect();
     const { x, y } = toNormalized(e.clientX - rect.left, e.clientY - rect.top, this.cssW, this.cssH);
-    const pressure = e.pressure > 0 ? e.pressure : DEFAULT_PRESSURE;
-    return [x, y, pressure];
+    const raw = e.pressure > 0 ? e.pressure : DEFAULT_PRESSURE;
+    // Gamma is applied HERE, at capture, and the adjusted value is what gets
+    // stored — so the preset is a property of the hand that drew, not of the
+    // document. Note it therefore also shapes the 0.5 a mouse reports.
+    return [x, y, applyPressureGamma(raw, this.pressurePreset)];
   }
 
   private onDown = (e: PointerEvent): void => {
@@ -328,6 +338,15 @@ export class Scene {
       color: this.state.color,
       size: this.state.size,
       opacity: this.state.opacity,
+      // Every new stroke is smoothed. Below 3 points there is no interior to
+      // smooth and the renderer falls back to the polyline, so the flag is
+      // harmless on a tap; setting it unconditionally is what makes "drawn in
+      // 1.2" and "drawn before" the only two rendering behaviours.
+      sm: 1,
+      // Pressure-to-opacity is pen-only: a mouse or finger reports a constant
+      // 0.5, so honouring it there would just dim every stroke by a fixed
+      // amount for no expressive gain.
+      ...(this.pressureOpacity && e.pointerType === "pen" ? { po: 1 as const } : {}),
       pts: [this.pointFromEvent(e)],
     };
     this.liveDirty = true;
@@ -398,6 +417,14 @@ export class Scene {
   }
   setOpacity(n: number): void {
     this.state.opacity = Math.max(0, Math.min(1, n));
+  }
+  /** Capture-time pressure curve for SUBSEQUENT strokes. Never retroactive. */
+  setPressurePreset(p: PressurePreset): void {
+    this.pressurePreset = p;
+  }
+  /** Whether a pen's pressure also drives alpha on subsequent strokes. */
+  setPressureOpacity(on: boolean): void {
+    this.pressureOpacity = on;
   }
 
   /**

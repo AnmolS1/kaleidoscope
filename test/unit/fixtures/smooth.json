@@ -1,5 +1,5 @@
 {
-  "_comment": "Golden for the shared stroke-smoothing path builder (src/shared/smooth.ts). Centripetal Catmull-Rom, alpha=0.5, endpoints duplicated, converted to cubic Beziers. The Swift port must reproduce these control points. Generated - do not hand-edit.",
+  "_comment": "Golden for the shared stroke-smoothing path builder (src/shared/smooth.ts). Centripetal Catmull-Rom, alpha=0.5, converted to cubic Beziers. Endpoints take the ONE-SIDED CHORD tangent, not the duplicated point the plan named: duplicating gives a zero knot span, so the interior tangent formula becomes 0/0 and an epsilon clamp leaves float residue on the first control point (-0.6199999998797687 for -0.62), which is a cross-platform parity hazard. The Swift port must reproduce these control points. Generated - do not hand-edit.",
   "alpha": 0.5,
   "points": [
     [
