@@ -164,6 +164,55 @@ final class VectorV2Tests: XCTestCase {
         assertRejects(withPoint("[0,0,\"1\"]"), "a string channel")
     }
 
+    /// The web matches `/^#[0-9a-fA-F]{6}$/`, where `$` means end-of-input.
+    /// `NSRegularExpression` uses ICU, whose `$` also matches BEFORE a trailing
+    /// line terminator — so the identical pattern accepted "#ff00aa\n" until this
+    /// was byte-matched instead. Swift would then have re-emitted the terminator
+    /// inside the color, producing bytes the web could never generate.
+    func testHexColorAnchorsAtEndOfInput() {
+        func withColor(_ literal: String) -> String {
+            v2(layers: "{\"id\":\"l1\",\"name\":\"A\",\"visible\":true,\"opacity\":1," +
+                       "\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[" +
+                       "{\"tool\":\"solid\",\"color\":\"\(literal)\",\"size\":1,\"opacity\":1," +
+                       "\"pts\":[[0,0,0]]}]}")
+        }
+        XCTAssertNoThrow(try deserializeV2(withColor("#ff00aa")), "the plain form must parse")
+        XCTAssertNoThrow(try deserializeV2(withColor("#FF00AA")), "upper case is legal")
+        assertRejects(withColor("#ff00aa\\n"), "a trailing newline")
+        assertRejects(withColor("#ff00aa\\r\\n"), "a trailing CRLF")
+        assertRejects(withColor("#ff00aa\\u2028"), "a trailing U+2028")
+        assertRejects(withColor("#ff00aaa"), "seven hex digits")
+        assertRejects(withColor("#ff00a"), "five hex digits")
+        assertRejects(withColor("ff00aa"), "no leading hash")
+        // Digit-shaped scalars from other scripts: the character class was always
+        // an explicit ASCII range, so these were never the problem — pinned so a
+        // future rewrite to a Unicode-aware check cannot reintroduce them.
+        assertRejects(withColor("#ff00\\uff41\\uff41"), "full-width letters")
+        assertRejects(withColor("#ff00\\u0663\\u0663"), "Arabic-Indic digits")
+    }
+
+    /// The web rejects a lone surrogate in `normalizeLayerName`, because JS
+    /// `JSON.parse` happily hands it an unpaired code unit. `JSONSerialization`
+    /// never gets that far — it throws on the escape itself — so the document is
+    /// refused either way and the two platforms agree on validity. Pinned because
+    /// the mechanism differs and a future parser swap could silently start
+    /// substituting U+FFFD instead, which WOULD change the stored bytes.
+    func testLoneSurrogateIsRejectedAtTheJSONLayer() {
+        let json = "{\"v\":2,\"bg\":\"light\",\"layers\":[{\"id\":\"l1\"," +
+                   "\"name\":\"a\\uD800b\",\"visible\":true,\"opacity\":1," +
+                   "\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[]}]}"
+        XCTAssertThrowsError(try deserializeV2(json), "a lone high surrogate") { error in
+            // Not "bad name": Foundation refuses the escape before the validator
+            // ever sees a String. If this ever becomes "layer 0: bad name" the
+            // parser started tolerating it, which is the case worth noticing.
+            XCTAssertEqual((error as? DrawingParseError)?.message, "invalid JSON")
+        }
+        // Control: the same document with a well-formed surrogate PAIR parses, so
+        // the rejection above is the unpaired unit and not the escape syntax.
+        let paired = json.replacingOccurrences(of: "\\uD800", with: "\\uD83D\\uDE00")
+        XCTAssertNoThrow(try deserializeV2(paired))
+    }
+
     func testRejectsUnsupportedVersionsAndBackgrounds() {
         assertRejects("{\"v\":3,\"bg\":\"light\",\"layers\":[\(okLayer)]}", "v3")
         assertRejects(v2(layers: okLayer, bg: "sepia"), "an unknown background")
