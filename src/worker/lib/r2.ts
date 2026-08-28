@@ -51,6 +51,44 @@ export async function serveVectorJson(env: Env, key: string): Promise<Response |
   });
 }
 
+/**
+ * Read the stored vector back as decompressed JSON text, with the R2 etag the
+ * bytes came with.
+ *
+ * `serveVectorJson` streams and never materializes the body, which is right for
+ * the pass-through path. Version negotiation has to *parse* the drawing, so it
+ * needs the text — and it needs the etag from the SAME object read, both because
+ * a second `get()` is a second round trip and because the etag must describe the
+ * bytes we actually flattened.
+ */
+export async function readVectorJson(
+  env: Env,
+  key: string,
+): Promise<{ json: string; etag: string } | null> {
+  const obj = await env.ART.get(key);
+  if (!obj) return null;
+  const stream = obj.body.pipeThrough(new DecompressionStream("gzip"));
+  return { json: await new Response(stream).text(), etag: obj.httpEtag };
+}
+
+/**
+ * Derive an etag for a DERIVED representation of a stored object.
+ *
+ * An etag is per-URL, so `?v=2` and the flattened URL could legally reuse one
+ * string — but a shared CDN keyed on anything looser than the full URL, or a
+ * client that carries an If-None-Match across the two, would then be told two
+ * different bodies are the same entity. The suffix keeps the representations
+ * distinguishable while staying derived from (and invalidated by) the stored
+ * object's own etag.
+ *
+ * R2's `httpEtag` is a quoted strong etag; unwrap before appending so the result
+ * is a valid quoted string and not `"abc"-v1`.
+ */
+export function variantEtag(etag: string, suffix: string): string {
+  const m = /^(?:W\/)?"(.*)"$/.exec(etag);
+  return `"${m ? m[1] : etag}-${suffix}"`;
+}
+
 export async function putWebp(env: Env, key: string, body: ArrayBuffer | ReadableStream): Promise<void> {
   await env.ART.put(key, body, { httpMetadata: { contentType: "image/webp" } });
 }
