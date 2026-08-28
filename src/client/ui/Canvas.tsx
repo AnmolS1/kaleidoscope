@@ -55,6 +55,13 @@ export function Canvas() {
       effect(() => scene.setColor(S.color.value)),
       effect(() => scene.setSize(S.size.value)),
       effect(() => scene.setOpacity(S.opacity.value)),
+      // Input preferences. These are capture-time only — they shape the next
+      // stroke, never one already drawn — so pushing them in on change is
+      // enough; nothing needs re-rendering. (T04: state.ts persists them and
+      // T06c builds the popover that writes them; this is the missing bridge,
+      // which no task's ownership list claimed.)
+      effect(() => scene.setPressurePreset(S.pressurePreset.value)),
+      effect(() => scene.setPressureOpacity(S.pressureOpacity.value)),
       effect(() => scene.setSegments(S.segments.value)),
       effect(() => scene.setMirror(S.mirror.value)),
       effect(() => scene.setBackground(S.bg.value)),
