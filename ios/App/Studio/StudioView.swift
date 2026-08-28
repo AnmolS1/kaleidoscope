@@ -34,6 +34,18 @@ struct StudioView: View {
         }
         .background(Blueprint.graph.ignoresSafeArea())
         .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
+        .overlay(alignment: .topLeading) { exportProbe }
+    }
+
+    /// Launch-gated export fingerprints for the UI tests (KALEIDO_EXPORT_PROBE=1).
+    /// Fingerprints the SAME `exportImage()` the Download button shares, so the
+    /// test can never pass against a code path the button does not take.
+    @ViewBuilder
+    private var exportProbe: some View {
+        if ExportProbe.enabled {
+            ExportProbeView(report: ExportProbe.report(
+                exported: exportImage(size: ExportProbe.probeSize), model: model))
+        }
     }
 
     // MARK: Canvas
@@ -325,9 +337,26 @@ struct StudioView: View {
 
     // MARK: Download
 
+    /// The image the Download button shares. **v2, not v1**: `currentDrawing()`
+    /// projects the document down to a single layer under one symmetry and
+    /// strips per-layer opacity and stroke smoothing, so a layered piece
+    /// downloaded through it is provably not the picture on screen. Exported
+    /// through `currentDrawingV2()` the download and the canvas render from one
+    /// document. (`KaleidoRenderer.paintDrawing` paints visible layers only,
+    /// which is the same rule `model.isEmpty` gates the button on, so no ink can
+    /// reach the file that was not on screen.)
+    /// `size` exists so the export probe can fingerprint this exact function at
+    /// a cheap resolution. Rendering the probe's "what the button produces" at a
+    /// DIFFERENT size than its "what v1 would produce" comparison makes the two
+    /// fingerprints differ for the trivial reason that the buffers are different
+    /// shapes — which silently turns the whole test vacuous. (It did: the first
+    /// version of this passed with `currentDrawing()` restored.)
+    private func exportImage(size: CGFloat = StudioExport.imageSize) -> UIImage {
+        StudioExport.renderSquare(model.currentDrawingV2(), size: size)
+    }
+
     private func download() {
-        let drawing = model.currentDrawing()
-        guard let png = StudioExport.renderSquare(drawing, size: StudioExport.imageSize).pngData() else { return }
+        guard let png = exportImage().pngData() else { return }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("kaleidoscope.png")
         do {
             try png.write(to: url)
