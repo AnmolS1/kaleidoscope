@@ -51,6 +51,7 @@ final class KaleidoCanvasView: UIView {
     // Gesture state
     private var pinchStartScale: CGFloat = 1
     private var panStartOffset: CGSize = .zero
+    private weak var panGesture: UIPanGestureRecognizer?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -79,6 +80,7 @@ final class KaleidoCanvasView: UIView {
         pan.maximumNumberOfTouches = 2
         pan.delegate = self
         addGestureRecognizer(pan)
+        panGesture = pan
 
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(onDoubleTap))
         doubleTap.numberOfTapsRequired = 2
@@ -97,6 +99,11 @@ final class KaleidoCanvasView: UIView {
     func refresh() {
         setNeedsDisplay()
         guard let model else { return }
+        // When the finger does not draw, it pans — that is the whole offer the
+        // Pencil banner makes ("use fingers to pan and zoom instead"). Leaving
+        // the two-finger minimum in place there would make a single finger do
+        // nothing at all.
+        panGesture?.minimumNumberOfTouches = model.drawWithFinger ? 2 : 1
         if model.revision != lastAnnouncedRevision {
             lastAnnouncedRevision = model.revision
             announceStateChange(model: model)
@@ -532,6 +539,17 @@ final class KaleidoCanvasView: UIView {
 // MARK: - Apple Pencil
 
 extension KaleidoCanvasView: UIPencilInteractionDelegate {
+    /// Both delegate methods are implemented on purpose. UIKit calls the newer
+    /// one when it exists and falls back to the deprecated one otherwise, and
+    /// Swift does NOT warn on implementing a deprecated protocol requirement —
+    /// so relying on the old one alone would be an unverifiable bet on the
+    /// deployment SDK. The deployment target is 17.0, which is below the newer
+    /// method's availability.
+    @available(iOS 17.5, *)
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
+        handlePencilTap()
+    }
+
     func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
         handlePencilTap()
     }
@@ -585,6 +603,12 @@ extension KaleidoCanvasView: UIGestureRecognizerDelegate {
     /// something. The alternative (`delaysTouchesEnded = false`) would let a real
     /// double-tap stamp two stray dots before resetting.
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        // Hover is a Pencil-only signal, so it must be exempted from the
+        // no-pencil rule EXPLICITLY. It has no delegate today, which means this
+        // method is not consulted for it — but that is incidental, and a future
+        // `hover.delegate = self` would otherwise silently kill the hover ring,
+        // the one requirement here that no simulator can catch.
+        if g is UIHoverGestureRecognizer { return true }
         guard touch.type != .pencil else { return false }
         if g is UITapGestureRecognizer { return (model?.viewScale ?? 1) != 1 }
         return true
