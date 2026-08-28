@@ -226,6 +226,38 @@ test.describe("view transform", () => {
     expect(r.zoomed).toBeGreaterThan(0);
   });
 
+  test("the badge signals survive leaving the studio and coming back", async ({ page }) => {
+    await studio(page);
+    const zoomed = await zoomCentre(page, 4);
+    expect(zoomed.scale).toBe(4);
+
+    await page.evaluate(async () => {
+      const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
+      const S = await load("/src/client/state.ts");
+      S.navigate("/gallery");
+    });
+    await page.waitForSelector(".canvas-host canvas", { state: "detached" });
+    await page.evaluate(async () => {
+      const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
+      const S = await load("/src/client/state.ts");
+      S.navigate("/");
+    });
+    await page.waitForSelector(".canvas-host canvas");
+
+    // A new Scene starts at the identity view and never announces it (nothing
+    // changed), so the mirrors have to be reset when the old engine goes. What
+    // this discriminates is AGREEMENT AFTER A REMOUNT: a badge reading 400% over
+    // a 1x canvas, with a reset affordance that resets nothing.
+    const r = await page.evaluate(async () => {
+      const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
+      const S = await load("/src/client/state.ts");
+      return { view: S.scene.value.getView(), scale: S.viewScale.value, isDefault: S.viewIsDefault.value };
+    });
+    expect(r.view).toEqual({ scale: 1, tx: 0, ty: 0 });
+    expect(r.scale).toBe(1);
+    expect(r.isDefault).toBe(true);
+  });
+
   test("exports ignore the view entirely", async ({ page }) => {
     const g = await studio(page);
     await mouseStroke(page, g, [

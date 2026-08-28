@@ -100,6 +100,13 @@ export function Canvas() {
       disposers.forEach((d) => d());
       scene.destroy();
       S.scene.value = null;
+      // The view mirrors have to go back to the default with the engine that
+      // owned them. A fresh Scene starts at the identity view and never fires
+      // onViewChange for it (setViewInternal is a no-op when nothing changed),
+      // so leaving these behind means navigating away at 4x and back shows a
+      // badge reading 400% over a canvas that is at 1x.
+      S.viewScale.value = 1;
+      S.viewIsDefault.value = true;
     };
   }, []);
 
