@@ -16,14 +16,10 @@ export interface SymmetryImage {
   mirror: boolean;
 }
 
-export const MIN_SEGMENTS = 3;
-export const MAX_SEGMENTS = 24;
-
-export function clampSegments(n: number): number {
-  n = Math.round(n);
-  if (Number.isNaN(n)) return MIN_SEGMENTS;
-  return Math.max(MIN_SEGMENTS, Math.min(MAX_SEGMENTS, n));
-}
+// The segment bounds and the clamp live in the shared vector contract, which the
+// Worker and Swift also enforce. Re-exported here (rather than redeclared) so the
+// renderer can never drift from what the format accepts.
+export { MIN_SEGMENTS, MAX_SEGMENTS, clampSegments } from "../../shared/vector";
 
 /** Total number of symmetry images: n for C_n, 2n for D_n. */
 export function imageCount(segments: number, mirror: boolean): number {
@@ -84,6 +80,28 @@ export function transformPoint(
     x: x * cos - ry * sin,
     y: x * sin + ry * cos,
   };
+}
+
+/**
+ * The inverse of transformPoint: map a point in the drawing frame back into the
+ * base (un-imaged) frame. Used by hit-testing, which has a tap in canvas space
+ * and needs to know whether it landed on any of a stroke's N symmetry images —
+ * inverting each image once is N cheap transforms instead of expanding every
+ * stroke into N polylines.
+ *
+ * Forward is R(angle) . S; S is its own inverse, so this is S . R(-angle).
+ */
+export function inverseTransformPoint(
+  image: SymmetryImage,
+  x: number,
+  y: number,
+): { x: number; y: number } {
+  const { angle, mirror } = image;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const rx = x * cos + y * sin;
+  const ry = -x * sin + y * cos;
+  return { x: rx, y: mirror ? -ry : ry };
 }
 
 /**

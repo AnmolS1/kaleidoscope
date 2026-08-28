@@ -6,10 +6,16 @@
 
 import { forEachImage, imageTransformSvg } from "./symmetry";
 import { representativeColor } from "./brush";
-import { paintStrokes } from "./scene";
-import { REFERENCE_HALF, type Drawing } from "./strokes";
+import { paintDrawing } from "./scene";
+import {
+  REFERENCE_HALF,
+  type Background,
+  type DrawingV2,
+  type Layer,
+  type Pt,
+} from "../../shared/vector";
 
-export const BG_COLORS: Record<Drawing["bg"], string> = {
+export const BG_COLORS: Record<Background, string> = {
   light: "#EEF0EC",
   dark: "#13202A",
 };
@@ -24,15 +30,20 @@ function makeOffscreen(size: number): { canvas: OffscreenCanvas; ctx: OffCtx } {
   return { canvas, ctx };
 }
 
-/** Paint a full drawing (bg + all strokes) into a square context of `size` px. */
-function renderSquare(ctx: OffCtx | CanvasRenderingContext2D, drawing: Drawing, size: number): void {
+/** Paint a full drawing (bg + every visible layer) into a square context. */
+function renderSquare(ctx: OffCtx | CanvasRenderingContext2D, drawing: DrawingV2, size: number): void {
   ctx.fillStyle = BG_COLORS[drawing.bg];
   ctx.fillRect(0, 0, size, size);
-  paintStrokes(ctx, drawing.strokes, size, size, size / 2, drawing.sym);
+  // paintDrawing, not paintStrokes: exports must composite layers exactly as the
+  // screen does, INCLUDING the single-visible-layer-at-opacity-1 bypass. That
+  // bypass matters more here than anywhere — the background is already filled,
+  // so a glow stroke routed through an offscreen buffer would blend against
+  // transparent black instead of against the background and come out wrong.
+  paintDrawing(ctx, drawing, size, size, size / 2);
 }
 
 /** PNG at 1/2/4×. Returns a Blob. */
-export async function exportPNG(drawing: Drawing, scale: 1 | 2 | 4 = 1): Promise<Blob> {
+export async function exportPNG(drawing: DrawingV2, scale: 1 | 2 | 4 = 1): Promise<Blob> {
   const size = PNG_BASE * scale;
   const { canvas, ctx } = makeOffscreen(size);
   renderSquare(ctx, drawing, size);
@@ -40,68 +51,102 @@ export async function exportPNG(drawing: Drawing, scale: 1 | 2 | 4 = 1): Promise
 }
 
 /** Small WebP thumbnail for the gallery / save flow. */
-export async function exportThumb(drawing: Drawing, size = 512): Promise<Blob> {
+export async function exportThumb(drawing: DrawingV2, size = 512): Promise<Blob> {
   const { canvas, ctx } = makeOffscreen(size);
   renderSquare(ctx, drawing, size);
   return canvas.convertToBlob({ type: "image/webp", quality: 0.85 });
 }
 
 /** Full-size WebP render (source for the stored image). */
-export async function exportWebP(drawing: Drawing, size = PNG_BASE): Promise<Blob> {
+export async function exportWebP(drawing: DrawingV2, size = PNG_BASE): Promise<Blob> {
   const { canvas, ctx } = makeOffscreen(size);
   renderSquare(ctx, drawing, size);
   return canvas.convertToBlob({ type: "image/webp", quality: 0.92 });
 }
 
 /** 1200×630 OG/share card — mandala centered on the themed background. */
-export async function exportOG(drawing: Drawing, w = 1200, h = 630): Promise<Blob> {
+export async function exportOG(drawing: DrawingV2, w = 1200, h = 630): Promise<Blob> {
   const canvas = new OffscreenCanvas(w, h);
   const ctx = canvas.getContext("2d") as OffCtx;
   ctx.fillStyle = BG_COLORS[drawing.bg];
   ctx.fillRect(0, 0, w, h);
   const half = (h / 2) * 0.82;
-  paintStrokes(ctx, drawing.strokes, w, h, half, drawing.sym);
+  paintDrawing(ctx, drawing, w, h, half);
   return canvas.convertToBlob({ type: "image/webp", quality: 0.9 });
 }
 
 /**
- * SVG export — pure string, no DOM. One <path> per stroke in <defs>, referenced
- * by a <use> per symmetry image (compact + editable in vector tools). Spectrum
- * strokes collapse to one representative hue (a single <path> can't gradient
- * along its length); glow strokes use screen blending to approximate additivity.
+ * SVG export — pure string, no DOM.
+ *
+ * Structure mirrors the document: one <path> per stroke in <defs>, then a <g>
+ * per visible layer carrying that layer's opacity, containing a <g> per symmetry
+ * image whose <use>s reference the layer's paths. That gives a vector editor the
+ * same handles the app has — a layer, and a movable copy per image.
+ *
+ * The layer name rides in a <title> only. It is metadata, never rendered text,
+ * and it is XML-escaped because layer names are user input.
+ *
+ * Two long-standing approximations remain: spectrum strokes collapse to one
+ * representative hue (a single <path> cannot gradient along its length) and glow
+ * strokes use screen blending to stand in for additive compositing. Paint order
+ * within a layer is image-major here where the canvas is stroke-major, which can
+ * differ where two strokes of one layer overlap near the center.
  */
-export function exportSVG(drawing: Drawing, S = 500): string {
+export function exportSVG(drawing: DrawingV2, S = 500): string {
   const vb = `${-S} ${-S} ${2 * S} ${2 * S}`;
   const scale = S / REFERENCE_HALF;
   const defs: string[] = [];
-  const uses: string[] = [];
+  const groups: string[] = [];
 
-  drawing.strokes.forEach((stroke, i) => {
-    if (stroke.pts.length === 0) return;
-    const id = `s${i}`;
-    const d = pathData(stroke.pts, S);
-    const color = representativeColor(stroke);
-    const width = (stroke.size * scale).toFixed(2);
-    const blend = stroke.tool === "glow" ? ' style="mix-blend-mode:screen"' : "";
-    defs.push(
-      `<path id="${id}" d="${d}" fill="none" stroke="${color}" stroke-width="${width}" ` +
-        `stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${stroke.opacity}"${blend}/>`,
-    );
-    forEachImage(drawing.sym.segments, drawing.sym.mirror, (image) => {
-      uses.push(`<use href="#${id}" transform="${imageTransformSvg(image)}"/>`);
+  for (const layer of drawing.layers) {
+    if (!layer.visible) continue;
+
+    const ids: string[] = [];
+    layer.strokes.forEach((stroke, i) => {
+      if (stroke.pts.length === 0) return;
+      const id = `${layer.id}s${i}`;
+      ids.push(id);
+      const d = pathData(stroke.pts, S);
+      const color = representativeColor(stroke);
+      const width = (stroke.size * scale).toFixed(2);
+      const blend = stroke.tool === "glow" ? ' style="mix-blend-mode:screen"' : "";
+      defs.push(
+        `<path id="${id}" d="${d}" fill="none" stroke="${color}" stroke-width="${width}" ` +
+          `stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${stroke.opacity}"${blend}/>`,
+      );
     });
-  });
+    if (ids.length === 0) continue;
+
+    const images: string[] = [];
+    forEachImage(layer.sym.segments, layer.sym.mirror, (image) => {
+      const uses = ids.map((id) => `<use href="#${id}"/>`).join("");
+      images.push(`<g transform="${imageTransformSvg(image)}">${uses}</g>`);
+    });
+
+    groups.push(
+      `<g opacity="${layer.opacity}"><title>${xmlEscape(layer.name)}</title>${images.join("")}</g>`,
+    );
+  }
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="${2 * S}" height="${2 * S}">` +
     `<rect x="${-S}" y="${-S}" width="${2 * S}" height="${2 * S}" fill="${BG_COLORS[drawing.bg]}"/>` +
     `<defs>${defs.join("")}</defs>` +
-    `<g>${uses.join("")}</g>` +
+    groups.join("") +
     `</svg>`
   );
 }
 
-function pathData(pts: Drawing["strokes"][number]["pts"], S: number): string {
+function xmlEscape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function pathData(pts: readonly Pt[], S: number): string {
   if (pts.length === 1) {
     // tiny dot as a 1-unit line so it renders with round caps
     const x = (pts[0][0] * S).toFixed(2);
@@ -136,7 +181,7 @@ export interface ReplayOptions {
  * thrown error if MediaRecorder/captureStream is unavailable — the UI hides the
  * option in that case. GIF fallback (gif.js) is a clean future seam.
  */
-export async function exportReplayWebM(drawing: Drawing, opts: ReplayOptions = {}): Promise<Blob> {
+export async function exportReplayWebM(drawing: DrawingV2, opts: ReplayOptions = {}): Promise<Blob> {
   if (!canRecordReplay()) throw new Error("replay-unsupported");
   const size = opts.size ?? 800;
   const fps = opts.fps ?? 30;
@@ -147,7 +192,10 @@ export async function exportReplayWebM(drawing: Drawing, opts: ReplayOptions = {
   canvas.height = size;
   const ctx = canvas.getContext("2d")!;
 
-  const totalPoints = Math.max(1, drawing.strokes.reduce((n, s) => n + s.pts.length, 0));
+  const totalPoints = Math.max(
+    1,
+    drawing.layers.reduce((n, l) => n + l.strokes.reduce((m, s) => m + s.pts.length, 0), 0),
+  );
   const stream = canvas.captureStream(fps);
   const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
     ? "video/webm;codecs=vp9"
@@ -182,21 +230,34 @@ export async function exportReplayWebM(drawing: Drawing, opts: ReplayOptions = {
 
 function drawPartial(
   ctx: CanvasRenderingContext2D,
-  drawing: Drawing,
+  drawing: DrawingV2,
   size: number,
   revealPoints: number,
 ): void {
   ctx.fillStyle = BG_COLORS[drawing.bg];
   ctx.fillRect(0, 0, size, size);
+  paintDrawing(ctx, partialDrawing(drawing, revealPoints), size, size, size / 2);
+}
+
+/**
+ * The drawing truncated to its first `revealPoints` points, bottom layer first —
+ * the piece builds up in the order it was made. Layers are kept even when empty
+ * so the composite (and therefore the bypass decision) matches the finished
+ * render throughout the replay.
+ */
+function partialDrawing(drawing: DrawingV2, revealPoints: number): DrawingV2 {
   let budget = revealPoints;
-  const partial: Drawing["strokes"] = [];
-  for (const s of drawing.strokes) {
-    if (budget <= 0) break;
-    const take = Math.min(budget, s.pts.length);
-    partial.push({ ...s, pts: s.pts.slice(0, take) });
-    budget -= take;
-  }
-  paintStrokes(ctx, partial, size, size, size / 2, drawing.sym);
+  const layers = drawing.layers.map((l) => {
+    const strokes: Layer["strokes"] = [];
+    for (const s of l.strokes) {
+      if (budget <= 0) break;
+      const take = Math.min(budget, s.pts.length);
+      strokes.push({ ...s, pts: s.pts.slice(0, take) });
+      budget -= take;
+    }
+    return { ...l, strokes };
+  });
+  return { ...drawing, layers };
 }
 
 /** Trigger a browser download for a Blob or string payload. */

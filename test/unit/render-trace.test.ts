@@ -18,8 +18,8 @@
 // produces must not move.
 
 import { describe, expect, it } from "vitest";
-import { paintStrokes } from "../../src/client/engine/scene";
-import { deserialize, halfAxis } from "../../src/client/engine/strokes";
+import { paintDrawing } from "../../src/client/engine/scene";
+import { deserialize, halfAxis } from "../../src/shared/vector";
 import { V1_FIXTURES } from "./fixtures/v1-drawings";
 import { recordingContext } from "./helpers/record-ctx";
 
@@ -34,9 +34,14 @@ const H = 600;
  * renderer; the returned trace must stay byte-identical.
  */
 function renderV1(json: string): string[] {
+  // MIGRATED (T03): the v1 drawing now upgrades to a single visible layer at
+  // opacity 1 and goes through the layer-aware painter, which must take the
+  // no-offscreen bypass for exactly this shape. If it ever stops doing so, the
+  // composite path shows up here as extra save/setTransform/drawImage ops and
+  // the snapshot below fails — which is the whole point of this file.
   const d = deserialize(json);
   const { ctx, trace } = recordingContext();
-  paintStrokes(ctx, d.strokes, W, H, halfAxis(W, H), d.sym);
+  paintDrawing(ctx, d, W, H, halfAxis(W, H));
   return trace;
 }
 
@@ -58,6 +63,17 @@ describe("v1 render golden (pre-v2-rewrite baseline)", () => {
     }
   });
 
+  // The bypass is the rule that keeps stored work pixel-stable, so assert it
+  // directly rather than only through the snapshot: a composited layer would
+  // have to reset the transform and blit a buffer.
+  it("takes the no-offscreen bypass for every v1 fixture", () => {
+    for (const fx of V1_FIXTURES) {
+      const trace = renderV1(fx.json);
+      expect(trace.some((op) => op.startsWith("drawImage(")), fx.name).toBe(false);
+      expect(trace.some((op) => op.startsWith("setTransform(")), fx.name).toBe(false);
+    }
+  });
+
   // The symmetry group determines how many times each stroke is painted; if that
   // count drifts the trace diff is enormous and hard to read, so name it here.
   it("paints each stroke once per symmetry image", () => {
@@ -69,7 +85,7 @@ describe("v1 render golden (pre-v2-rewrite baseline)", () => {
     ];
     for (const [name, images] of cases) {
       const fx = V1_FIXTURES.find((f) => f.name === name)!;
-      const strokes = deserialize(fx.json).strokes.length;
+      const strokes = deserialize(fx.json).layers[0].strokes.length;
       const trace = renderV1(fx.json);
       // Two saves per (stroke × image) pair: paintStrokes opens one to scope the
       // image transform, and drawStroke opens a second to scope the brush mode.
