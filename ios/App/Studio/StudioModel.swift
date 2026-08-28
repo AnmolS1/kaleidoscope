@@ -503,6 +503,27 @@ final class StudioModel: ObservableObject {
     }
     /// Shown once, the first time a Pencil touches the canvas, offering to turn
     /// `drawWithFinger` off. Dismissal is persisted.
+    /// Whether a Pencil has ever been used on this device.
+    ///
+    /// The brush popover keeps its pressure controls hidden until this is true:
+    /// the preset and `po` are both pencil-only, so on a finger those controls
+    /// would be settings that shape nothing.
+    ///
+    /// Deliberately SEPARATE from `pencilBannerSeen`, which means "we have shown
+    /// the one-time banner". The two happen to latch at the same moment today,
+    /// and conflating them would break the first time either grows a reason to
+    /// reset — and the banner only ever fires on a touch, where this must also
+    /// catch a hover. Same key as the web's `kal.penSeen`.
+    @Published private(set) var pencilSeen: Bool = false {
+        didSet { UserDefaults.standard.set(pencilSeen, forKey: Keys.pencilSeen) }
+    }
+
+    /// Latch the Pencil. Safe to call on every pencil touch AND hover.
+    func notePencilSeen() {
+        guard !pencilSeen else { return }
+        pencilSeen = true
+    }
+
     @Published var showPencilBanner: Bool = false
 
     // View transform (1–8×). Owned here rather than by the view so an export or
@@ -524,6 +545,7 @@ final class StudioModel: ObservableObject {
         static let drawWithFinger = "kal.drawWithFinger"
         static let smoothStrokes = "kal.smoothStrokes"
         static let pencilBannerSeen = "kal.pencilBannerSeen"
+        static let pencilSeen = "kal.penSeen"
     }
 
     init(layerCap: Int = 3) {
@@ -550,6 +572,7 @@ final class StudioModel: ObservableObject {
         if defaults.object(forKey: Keys.smoothStrokes) != nil {
             smoothStrokes = defaults.bool(forKey: Keys.smoothStrokes)
         }
+        pencilSeen = defaults.bool(forKey: Keys.pencilSeen)
     }
 
     // MARK: Forwarding surface

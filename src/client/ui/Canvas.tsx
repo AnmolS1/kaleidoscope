@@ -28,6 +28,10 @@ export function Canvas() {
           S.canUndo.value = canUndo;
           S.canRedo.value = canRedo;
           S.strokeCount.value = count;
+          // Read from the scene rather than adding a fourth callback argument:
+          // hiding a layer changes this WITHOUT changing the stroke count, so
+          // the two are not derivable from one another.
+          S.visibleStrokeCount.value = scene.visibleStrokeCount;
         },
         // The engine is the source of truth for the layer stack. Mirroring it
         // into signals here — including writing the ACTIVE layer's symmetry back
@@ -47,6 +51,11 @@ export function Canvas() {
         onLayersChange: (layers, activeLayerId) => {
           S.layers.value = layers;
           S.activeLayerId.value = activeLayerId;
+          // Also here, not only on history change: toggling a layer's eye is
+          // deliberately NOT an undo step, so it never reaches
+          // onHistoryChange — yet it is exactly what changes how much of the
+          // drawing is visible.
+          S.visibleStrokeCount.value = scene.visibleStrokeCount;
           const active = layers.find((l) => l.id === activeLayerId);
           if (active) {
             S.segments.value = active.sym.segments;

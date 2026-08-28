@@ -1162,6 +1162,10 @@ export class Scene {
   get strokeCount(): number {
     return this.doc.totalStrokes;
   }
+  /** Strokes on visible layers. What "is there anything to save" must ask. */
+  get visibleStrokeCount(): number {
+    return this.doc.visibleStrokes;
+  }
   get toolState(): Readonly<ToolState> {
     return this.state;
   }

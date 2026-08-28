@@ -83,7 +83,12 @@ function SaveDialogInner() {
   async function onSave() {
     const scene = S.scene.value;
     if (!scene) return;
-    if (scene.strokeCount === 0) {
+    // VISIBLE strokes, not the total: a drawing whose only ink sits on hidden
+    // layers renders blank, so guarding on strokeCount would upload a blank
+    // image and a thumbnail to match. DESIGN.md gives this its own dialog state
+    // (SaveNothingVisible) — T06a builds that; this keeps it from saving
+    // meanwhile.
+    if (scene.visibleStrokeCount === 0) {
       setError("Draw something first!");
       return;
     }

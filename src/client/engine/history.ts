@@ -311,6 +311,21 @@ export class DrawingDoc {
     for (const l of this.hist.current.layers) n += l.strokes.length;
     return n;
   }
+  /**
+   * Strokes on VISIBLE layers — i.e. how much of the drawing is actually a
+   * picture.
+   *
+   * Distinct from `totalStrokes` on purpose. Undo and the clear button care
+   * about everything the document holds; anything that asks "is there something
+   * here to save/export" must not count ink on a hidden layer, or a drawing
+   * whose only strokes are hidden saves as a blank image while every guard says
+   * it is fine. iOS calls the same idea `visibleStrokes`.
+   */
+  get visibleStrokes(): number {
+    let n = 0;
+    for (const l of this.hist.current.layers) if (l.visible) n += l.strokes.length;
+    return n;
+  }
   /** Whether another layer may be added under the current cap. */
   get canAddLayer(): boolean {
     return this.hist.current.layers.length < Math.min(this.cap, MAX_LAYERS);

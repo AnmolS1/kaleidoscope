@@ -444,3 +444,46 @@ describe("hit-testing follows the drawn curve, not the raw polyline", () => {
     expect(hitTestDrawing(doc.drawing, curl[1][0], curl[1][1], 0)).not.toBeNull();
   });
 });
+
+describe("visibleStrokes vs totalStrokes", () => {
+  // These must NOT be the same number, and conflating them is what lets a
+  // drawing whose only ink is hidden pass a not-empty guard and upload a blank
+  // image. Undo and Clear want the total; anything asking "is there a picture
+  // here" wants the visible count.
+  it("diverge as soon as a layer with strokes is hidden", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]));
+    expect(doc.totalStrokes).toBe(1);
+    expect(doc.visibleStrokes).toBe(1);
+
+    doc.setLayerVisible(doc.activeLayerId, false);
+    expect(doc.totalStrokes).toBe(1); // the ink is still in the document
+    expect(doc.visibleStrokes).toBe(0); // ...but there is no picture
+  });
+
+  it("counts only the visible layers when several exist", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.1, 0.1, 1]]));
+    const first = doc.activeLayerId;
+    doc.addLayer();
+    doc.commitStroke(stroke("#222222", [[0.2, 0.2, 1], [0.3, 0.3, 1]]));
+    doc.commitStroke(stroke("#333333", [[0.4, 0.4, 1], [0.5, 0.5, 1]]));
+    expect(doc.totalStrokes).toBe(3);
+    expect(doc.visibleStrokes).toBe(3);
+
+    doc.setLayerVisible(first, false);
+    expect(doc.totalStrokes).toBe(3);
+    expect(doc.visibleStrokes).toBe(2);
+  });
+
+  // Showing it again restores the count — the strokes were never lost, which is
+  // the whole reason hiding is not an undo step.
+  it("comes back when the layer is shown again", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]));
+    doc.setLayerVisible(doc.activeLayerId, false);
+    expect(doc.visibleStrokes).toBe(0);
+    doc.setLayerVisible(doc.activeLayerId, true);
+    expect(doc.visibleStrokes).toBe(1);
+  });
+});
