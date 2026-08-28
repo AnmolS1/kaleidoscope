@@ -57,6 +57,15 @@ export interface SceneCallbacks {
   onLayersChange?: (layers: LayerSummary[], activeLayerId: string) => void;
   /** Fires whenever zoom or pan changes. Drives the zoom badge (T06b). */
   onViewChange?: (view: Readonly<View>) => void;
+  /**
+   * Fires the first time this Scene sees a pen, and not again.
+   *
+   * The brush popover keeps its pressure section hidden until a pen has been
+   * seen, because a preset that shapes nothing is a control that lies. Only the
+   * engine knows — `pointerType` never reaches the UI — so it has to be
+   * announced rather than derived.
+   */
+  onPenSeen?: () => void;
 }
 
 export interface SceneOptions {
@@ -246,6 +255,8 @@ export class Scene {
   private pressureOpacity = false;
   /** New strokes carry `sm` unless this is off. Mirrors S.smoothStrokes. */
   private smoothStrokes = true;
+  /** Latches on the first pen event; see SceneCallbacks.onPenSeen. */
+  private penSeen = false;
   private liveDirty = false;
   private rafId = 0;
   private ro: ResizeObserver | null = null;
@@ -570,7 +581,15 @@ export class Scene {
     return [x, y, applyPressureGamma(e.pressure, this.pressurePreset)];
   }
 
+  /** Latch and announce the first pen. Cheap enough to call on every event. */
+  private notePointer(e: PointerEvent): void {
+    if (this.penSeen || e.pointerType !== "pen") return;
+    this.penSeen = true;
+    this.cb.onPenSeen?.();
+  }
+
   private onDown = (e: PointerEvent): void => {
+    this.notePointer(e);
     const s = this.screenOf(e);
     if (e.pointerType === "touch") this.touches.set(e.pointerId, s);
 
@@ -627,6 +646,10 @@ export class Scene {
   };
 
   private onMove = (e: PointerEvent): void => {
+    // Also here, not only on pointerdown: a pen HOVERING over the canvas is
+    // very much a pen having been seen, and on iPad that happens before the
+    // user ever touches down.
+    this.notePointer(e);
     if (e.pointerType === "touch" && this.touches.has(e.pointerId)) {
       this.touches.set(e.pointerId, this.screenOf(e));
     }

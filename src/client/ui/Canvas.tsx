@@ -37,6 +37,9 @@ export function Canvas() {
         // already matches, so this cannot loop.
         // The engine owns the view; these are read-only mirrors for the zoom
         // badge (T06b). Writing back from here would fight the gesture handlers.
+        onPenSeen: () => {
+          S.penSeen.value = true;
+        },
         onViewChange: (view) => {
           S.viewScale.value = view.scale;
           S.viewIsDefault.value = view.scale === 1 && view.tx === 0 && view.ty === 0;

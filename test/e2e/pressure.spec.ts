@@ -311,3 +311,41 @@ test.describe("smooth strokes toggle", () => {
     expect(onAgain.png).toBe(on.png);
   });
 });
+
+test.describe("penSeen latches on the first pen, and only a pen", () => {
+  // The brush popover hides its pressure controls until this is true, so a
+  // false negative hides a real Pencil user's settings and a false positive
+  // shows a mouse user controls that do nothing.
+  const readPenSeen = (page: import("@playwright/test").Page) =>
+    page.evaluate(async () => {
+      const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
+      const S = await load("/src/client/state.ts");
+      return S.penSeen.value as boolean;
+    });
+
+  test("a mouse stroke does not set it; a pen stroke does", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector(".canvas-host canvas");
+    // Start from a known state — the signal is persisted across reloads.
+    await page.evaluate(async () => {
+      const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
+      (await load("/src/client/state.ts")).penSeen.value = false;
+    });
+
+    await penStroke(page, { pointerType: "mouse" });
+    expect(await readPenSeen(page)).toBe(false);
+
+    await penStroke(page, { pointerType: "pen" });
+    expect(await readPenSeen(page)).toBe(true);
+  });
+
+  test("it latches — putting the pen down again does not clear it", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector(".canvas-host canvas");
+    await penStroke(page, { pointerType: "pen" });
+    expect(await readPenSeen(page)).toBe(true);
+    // A later mouse stroke must not hide settings mid-session.
+    await penStroke(page, { pointerType: "mouse" });
+    expect(await readPenSeen(page)).toBe(true);
+  });
+});

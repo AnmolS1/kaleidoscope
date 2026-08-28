@@ -42,6 +42,17 @@ export const drawWithFinger = signal<boolean>(loadStored("kal.drawWithFinger", t
  */
 export const smoothStrokes = signal<boolean>(loadStored("kal.smoothStrokes", true, isBool));
 
+/**
+ * Whether a pen has ever been used on this device.
+ *
+ * The brush popover keeps its pressure controls hidden until this is true: a
+ * preset that shapes nothing (a mouse reports no usable pressure, and the gamma
+ * is pen-only) is a control that lies about what it does. Persisted, because
+ * "this person has a Pencil" does not stop being true on reload — and it latches
+ * on, never off, so putting the Pencil down does not hide settings mid-session.
+ */
+export const penSeen = signal<boolean>(loadStored("kal.penSeen", false, isBool));
+
 /** Pen hover position in normalized canvas coords, or null. */
 export const hoverPoint = signal<{ x: number; y: number } | null>(null);
 
@@ -210,6 +221,7 @@ if (typeof window !== "undefined") {
   pressureOpacity.subscribe((v) => persist("kal.pressureOpacity", v));
   drawWithFinger.subscribe((v) => persist("kal.drawWithFinger", v));
   smoothStrokes.subscribe((v) => persist("kal.smoothStrokes", v));
+  penSeen.subscribe((v) => persist("kal.penSeen", v));
 }
 
 export const PALETTE = [
