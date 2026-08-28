@@ -36,7 +36,7 @@ test.describe("stored v1 drawings render through Scene unchanged", () => {
         const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
         const S = await load("/src/client/state.ts");
         const { paintStrokes } = await load("/src/client/engine/scene.ts");
-        const { deserialize, halfAxis } = await load("/src/client/engine/strokes.ts");
+        const { deserialize, halfAxis } = await load("/src/shared/vector.ts");
 
         const scene = S.scene.value;
         if (!scene) return { error: "scene not mounted" };
@@ -60,12 +60,18 @@ test.describe("stored v1 drawings render through Scene unchanged", () => {
         ref.height = art.height;
         const rctx = ref.getContext("2d")!;
         rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        paintStrokes(rctx, drawing.strokes, cssW, cssH, halfAxis(cssW, cssH), drawing.sym);
+        // Reference side deliberately calls paintStrokes, NOT paintDrawing: that
+        // function is frozen by the op-level trace golden, so comparing against
+        // it is comparing new compositing against pinned painting. Pointing both
+        // sides at paintDrawing would make a regression inside paintDrawing
+        // invisible here. v1 fixtures always have exactly one layer.
+        const layer = drawing.layers[0];
+        paintStrokes(rctx, layer.strokes, cssW, cssH, halfAxis(cssW, cssH), layer.sym);
 
         return {
           scene: art.toDataURL("image/png"),
           reference: ref.toDataURL("image/png"),
-          strokes: drawing.strokes.length,
+          strokes: drawing.layers[0].strokes.length,
           size: `${art.width}x${art.height}`,
         };
       }, fx.json);
@@ -89,7 +95,7 @@ test.describe("stored v1 drawings render through Scene unchanged", () => {
       const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
       const S = await load("/src/client/state.ts");
       const { paintStrokes } = await load("/src/client/engine/scene.ts");
-      const { deserialize, halfAxis } = await load("/src/client/engine/strokes.ts");
+      const { deserialize, halfAxis } = await load("/src/shared/vector.ts");
 
       const drawing = deserialize(json);
       S.scene.value.loadDrawing(drawing);
@@ -106,14 +112,68 @@ test.describe("stored v1 drawings render through Scene unchanged", () => {
       const rctx = ref.getContext("2d")!;
       rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       // One fewer symmetry image — a small but real render difference.
-      paintStrokes(rctx, drawing.strokes, cssW, cssH, halfAxis(cssW, cssH), {
-        segments: drawing.sym.segments - 1,
-        mirror: drawing.sym.mirror,
+      const layer = drawing.layers[0];
+      paintStrokes(rctx, layer.strokes, cssW, cssH, halfAxis(cssW, cssH), {
+        segments: layer.sym.segments - 1,
+        mirror: layer.sym.mirror,
       });
 
       return art.toDataURL("image/png") !== ref.toDataURL("image/png");
     }, V1_FIXTURES[0].json);
 
     expect(differs).toBe(true);
+  });
+
+  // The bypass only protects stored work if the composite path it is avoiding
+  // genuinely differs. Split the same fixture across two layers at full opacity
+  // and require the result NOT to match the single-layer render — otherwise the
+  // tests above would pass just as well with the bypass deleted.
+  test("the offscreen composite is a different path from the bypass", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector(".canvas-host canvas");
+
+    const r = await page.evaluate(async (json: string) => {
+      const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
+      const { paintDrawing } = await load("/src/client/engine/scene.ts");
+      const { deserialize, halfAxis } = await load("/src/shared/vector.ts");
+
+      const one = deserialize(json);
+      const strokes = one.layers[0].strokes;
+      // Same ink, same order, same symmetry — only the layer split differs.
+      const two = {
+        ...one,
+        layers: [
+          { ...one.layers[0], strokes: strokes.slice(0, 1) },
+          { ...one.layers[0], id: "l2", name: "Layer 2", strokes: strokes.slice(1) },
+        ],
+      };
+      const half = 0.6;
+      const faded = {
+        ...one,
+        layers: [{ ...one.layers[0], opacity: half }],
+      };
+
+      const paint = (d: any) => {
+        const c = document.createElement("canvas");
+        c.width = 600;
+        c.height = 600;
+        const ctx = c.getContext("2d")!;
+        // Fill a background, as every export does: this is where a glow stroke
+        // blended inside an empty buffer diverges most from one blended against
+        // what is already there.
+        ctx.fillStyle = "#13202A";
+        ctx.fillRect(0, 0, 600, 600);
+        paintDrawing(ctx, d, 600, 600, halfAxis(600, 600));
+        return c.toDataURL("image/png");
+      };
+
+      return { one: paint(one), two: paint(two), faded: paint(faded), strokes: strokes.length };
+    }, V1_FIXTURES.find((f) => f.name === "cyclic-12-dark-glow")!.json);
+
+    // The fixture must actually have several glow strokes for this to mean
+    // anything.
+    expect(r.strokes).toBeGreaterThan(1);
+    expect(r.two).not.toBe(r.one);
+    expect(r.faded).not.toBe(r.one);
   });
 });

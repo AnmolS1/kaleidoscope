@@ -29,7 +29,23 @@ export function Canvas() {
           S.canRedo.value = canRedo;
           S.strokeCount.value = count;
         },
+        // The engine is the source of truth for the layer stack. Mirroring it
+        // into signals here — including writing the ACTIVE layer's symmetry back
+        // into the shared segments/mirror signals — is what makes the main rail
+        // a view onto the active layer rather than a global setting. The write
+        // back is safe because setSegments/setMirror are no-ops when the value
+        // already matches, so this cannot loop.
+        onLayersChange: (layers, activeLayerId) => {
+          S.layers.value = layers;
+          S.activeLayerId.value = activeLayerId;
+          const active = layers.find((l) => l.id === activeLayerId);
+          if (active) {
+            S.segments.value = active.sym.segments;
+            S.mirror.value = active.sym.mirror;
+          }
+        },
       },
+      { layerCap: S.layerCap.value },
     );
     S.scene.value = scene;
 
@@ -43,19 +59,24 @@ export function Canvas() {
       effect(() => scene.setMirror(S.mirror.value)),
       effect(() => scene.setBackground(S.bg.value)),
       effect(() => scene.setShowGuides(S.showGuides.value)),
+      // /api/me resolves after mount, so the cap arrives late.
+      effect(() => scene.setLayerCap(S.layerCap.value)),
     ];
 
     // If we arrived here via "Remix", load that drawing and sync the toolbar.
+    // The engine picks the top-most visible layer as active and reports its
+    // symmetry back through onLayersChange, so nothing is read off the drawing
+    // here — a v2 piece has no single symmetry to read.
     const remix = S.pendingRemix.value;
     if (remix) {
       S.bg.value = remix.bg;
-      S.segments.value = remix.sym.segments;
-      S.mirror.value = remix.sym.mirror;
       scene.loadDrawing(remix);
       S.pendingRemix.value = null;
     } else {
       // Fresh studio session — don't carry a stale remix parent.
       S.remixOf.value = null;
+      S.remixSourceHash.value = null;
+      S.remixSourceMeta.value = null;
     }
 
     return () => {
@@ -66,11 +87,22 @@ export function Canvas() {
   }, []);
 
   // Reading these signals in the render body subscribes the component, so the
-  // label re-computes whenever symmetry or the stroke count changes.
+  // label re-computes whenever symmetry, the layer stack or the stroke count
+  // changes. A multi-layer piece has no single symmetry, so it is described as
+  // layered rather than by the active layer's fold — the same wording the
+  // gallery uses when `segments` is 0.
   const n = S.strokeCount.value;
-  const label =
-    `Drawing canvas: ${S.segments.value}-fold ${S.mirror.value ? "mirror" : "rotational"} symmetry, ` +
-    `${n} ${n === 1 ? "stroke" : "strokes"}`;
+  const stack = S.layers.value;
+  const visible = stack.filter((l) => l.visible);
+  const mixed =
+    visible.length > 1 &&
+    visible.some(
+      (l) => l.sym.segments !== visible[0].sym.segments || l.sym.mirror !== visible[0].sym.mirror,
+    );
+  const symLabel = mixed
+    ? `layered, ${visible.length} layers`
+    : `${S.segments.value}-fold ${S.mirror.value ? "mirror" : "rotational"} symmetry`;
+  const label = `Drawing canvas: ${symLabel}, ${n} ${n === 1 ? "stroke" : "strokes"}`;
 
   return <div ref={host} class="canvas-host" aria-label={label} role="img" />;
 }

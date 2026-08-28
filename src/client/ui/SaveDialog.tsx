@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import * as S from "../state";
 import { exportWebP, exportThumb, exportOG } from "../engine/export";
-import { serialize } from "../engine/strokes";
+import { serialize } from "../../shared/vector";
 import { saveArtwork, loginUrl, getTurnstileSiteKey, ApiError } from "../api";
 import { renderTurnstile } from "./turnstile";
 

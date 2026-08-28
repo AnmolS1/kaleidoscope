@@ -4,18 +4,42 @@
 
 import { signal } from "@preact/signals";
 import type { Scene } from "./engine/scene";
-import type { Background, BrushTool, Drawing } from "./engine/strokes";
-import { type SessionUser, fetchMe } from "./api";
+import type { LayerSummary } from "./engine/history";
+import type {
+  Background,
+  BrushTool,
+  DrawingV2,
+  PressurePreset,
+} from "../shared/vector";
+import { DEFAULT_LAYER_CAP, type PlusInfo, type SessionUser, fetchMe } from "./api";
 
 // --- tool state ---
 export const tool = signal<BrushTool>("solid");
 export const color = signal<string>("#E84A27");
 export const size = signal<number>(6);
 export const opacity = signal<number>(1);
+// segments/mirror are a VIEW onto the active layer, not a global. Canvas.tsx
+// pushes writes into the engine (which applies them to the active layer) and
+// writes the active layer's values back here whenever the active layer changes.
 export const segments = signal<number>(12);
 export const mirror = signal<boolean>(true);
 export const bg = signal<Background>("light");
 export const showGuides = signal<boolean>(true);
+
+// --- input preferences (persisted; consumed by the capture path in T04) ---
+export const pressurePreset = signal<PressurePreset>(loadStored("kal.pressurePreset", "normal", isPreset));
+export const pressureOpacity = signal<boolean>(loadStored("kal.pressureOpacity", false, isBool));
+/** Whether a bare finger draws. Off means fingers only pan/zoom. */
+export const drawWithFinger = signal<boolean>(loadStored("kal.drawWithFinger", true, isBool));
+
+/** Pen hover position in normalized canvas coords, or null. */
+export const hoverPoint = signal<{ x: number; y: number } | null>(null);
+
+// --- layers ---
+export const layers = signal<LayerSummary[]>([]);
+export const activeLayerId = signal<string>("l1");
+/** How many layers this account may ADD. Never limits opening or editing. */
+export const layerCap = signal<number>(DEFAULT_LAYER_CAP);
 
 // --- engine handle + history flags ---
 export const scene = signal<Scene | null>(null);
@@ -23,23 +47,44 @@ export const canUndo = signal<boolean>(false);
 export const canRedo = signal<boolean>(false);
 export const strokeCount = signal<number>(0);
 
-// --- auth ---
+// --- auth + entitlement ---
 export const me = signal<SessionUser | null>(null);
 export const authLoaded = signal<boolean>(false);
+export const plus = signal<PlusInfo | null>(null);
+/** Drives the Plus sheet (rendered by T08); set from anywhere that hits a gate. */
+export const plusOpen = signal<boolean>(false);
 
 export async function initAuth(): Promise<void> {
   try {
-    me.value = await fetchMe();
+    const { user, plus: p } = await fetchMe();
+    me.value = user;
+    plus.value = p;
+    // A worker that predates the entitlement block leaves the free cap in place
+    // rather than an undefined one.
+    layerCap.value = p ? p.layerCap : DEFAULT_LAYER_CAP;
   } catch {
     me.value = null;
+    plus.value = null;
+    layerCap.value = DEFAULT_LAYER_CAP;
   } finally {
     authLoaded.value = true;
   }
 }
 
 // --- remix: a drawing to load into the studio + the parent id to record ---
-export const pendingRemix = signal<Drawing | null>(null);
+export const pendingRemix = signal<DrawingV2 | null>(null);
 export const remixOf = signal<string | null>(null);
+
+/** What the save dialog needs to recognise an unchanged remix (T06a). */
+export interface RemixSourceMeta {
+  id: string;
+  title: string;
+  isOwner: boolean;
+  likes: number;
+}
+/** Content hash of the piece being remixed, or null when it couldn't be computed. */
+export const remixSourceHash = signal<string | null>(null);
+export const remixSourceMeta = signal<RemixSourceMeta | null>(null);
 
 // --- UI ---
 export const helpOpen = signal<boolean>(false);
@@ -107,6 +152,44 @@ if (typeof window !== "undefined") {
   };
   matchMedia("(min-width: 1024px)").addEventListener("change", onBp);
   matchMedia("(min-width: 641px)").addEventListener("change", onBp);
+}
+
+// --- persistence -----------------------------------------------------------
+//
+// Preferences only, and each read is guarded: localStorage throws outright in
+// some privacy modes, so a bad value or a hostile storage must never stop the
+// studio from mounting.
+
+function isPreset(v: unknown): v is PressurePreset {
+  return v === "light" || v === "normal" || v === "firm";
+}
+function isBool(v: unknown): v is boolean {
+  return typeof v === "boolean";
+}
+
+function loadStored<T>(key: string, fallback: T, ok: (v: unknown) => v is T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    const parsed: unknown = JSON.parse(raw);
+    return ok(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function persist(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* storage unavailable or full — a preference is not worth failing over */
+  }
+}
+
+if (typeof window !== "undefined") {
+  pressurePreset.subscribe((v) => persist("kal.pressurePreset", v));
+  pressureOpacity.subscribe((v) => persist("kal.pressureOpacity", v));
+  drawWithFinger.subscribe((v) => persist("kal.drawWithFinger", v));
 }
 
 export const PALETTE = [

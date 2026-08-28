@@ -10,11 +10,29 @@ export interface SessionUser {
   flagged: boolean;
 }
 
+/**
+ * The Plus entitlement block from /api/me. `enabled` is the PLUS_ENABLED kill
+ * switch: while it is false there is no cap anywhere and no Plus UI, so a client
+ * must read it before showing any paywall affordance.
+ */
+export interface PlusInfo {
+  active: boolean;
+  sources: Array<"apple" | "lemonsqueezy" | "comp">;
+  publicCount: number;
+  publicCap: number | null;
+  layerCap: number;
+  enabled: boolean;
+}
+
 export interface MeResponse {
   user: SessionUser | null;
   csrf?: string;
   turnstileSiteKey?: string;
+  plus?: PlusInfo;
 }
+
+/** Layers a free account may add. The floor when /api/me says nothing. */
+export const DEFAULT_LAYER_CAP = 3;
 
 let csrfToken: string | null = null;
 let turnstileSiteKey: string | null = null;
@@ -59,11 +77,36 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function fetchMe(): Promise<SessionUser | null> {
+export interface MeResult {
+  user: SessionUser | null;
+  plus: PlusInfo | null;
+}
+
+/**
+ * Session + entitlement. `plus` is null against a worker that predates it, so
+ * every caller has to have a default ready rather than assuming the block is
+ * there — a new bundle can be loaded against an old worker for the length of one
+ * deploy, and the layer cap must not become NaN in that window.
+ */
+export async function fetchMe(): Promise<MeResult> {
   const data = await request<MeResponse>("/api/me");
   if (data.csrf) csrfToken = data.csrf;
   if (data.turnstileSiteKey) turnstileSiteKey = data.turnstileSiteKey;
-  return data.user;
+  return { user: data.user, plus: parsePlus(data.plus) };
+}
+
+function parsePlus(raw: unknown): PlusInfo | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const p = raw as Record<string, unknown>;
+  const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+  return {
+    active: p.active === true,
+    sources: Array.isArray(p.sources) ? (p.sources.filter((s) => typeof s === "string") as PlusInfo["sources"]) : [],
+    publicCount: num(p.publicCount, 0),
+    publicCap: typeof p.publicCap === "number" && Number.isFinite(p.publicCap) ? p.publicCap : null,
+    layerCap: num(p.layerCap, DEFAULT_LAYER_CAP),
+    enabled: p.enabled === true,
+  };
 }
 
 export function loginUrl(returnTo?: string): string {
@@ -85,8 +128,13 @@ export interface ArtworkMeta {
   visibility: "public" | "unlisted" | "private";
   author: { name: string | null; avatar: string | null };
   isOwner: boolean;
+  /** 0 means the visible layers disagree — render "layered", never "0-fold". */
   segments: number;
   mirror: boolean;
+  /** Layer count. Optional: absent from a worker that predates v2. */
+  layers?: number;
+  contentHash?: string | null;
+  updatedAt?: number | null;
   width: number;
   height: number;
   palette: string[];
@@ -153,8 +201,14 @@ export function getArtwork(id: string): Promise<ArtworkMeta> {
   return request<ArtworkMeta>(`/api/artworks/${id}`);
 }
 
+/**
+ * Stored vector JSON. `?v=2` is the capability signal: it tells the worker this
+ * client can read layers, so it serves the stored bytes instead of flattening to
+ * v1 (or refusing with 426 when a flatten would change the picture). The URL
+ * differs from the legacy one, so the two cache entries stay distinct.
+ */
 export async function getArtworkVector(id: string): Promise<string> {
-  const res = await fetch(`/api/artworks/${id}/vector`, { credentials: "same-origin" });
+  const res = await fetch(`/api/artworks/${id}/vector?v=2`, { credentials: "same-origin" });
   if (!res.ok) throw new ApiError(res.status, "vector_unavailable");
   return res.text(); // browser transparently gunzips (Content-Encoding: gzip)
 }
