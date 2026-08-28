@@ -27,9 +27,19 @@ final class AppRouter: ObservableObject {
 
     /// Load a piece into the studio and jump to Draw (remix). Records the source
     /// so a subsequent save links `remixOf`.
-    func remix(_ drawing: Drawing, sourceId: String, into studio: StudioModel) {
+    ///
+    /// A remix of a layered piece must arrive with its layers intact, so this is
+    /// the v2 entry point. The v1 overload below stays for the caller that still
+    /// reads through `deserialize` (T13 migrates it to `?v=2`); it upgrades to
+    /// the single-layer v2 shape §2.1 specifies, which is exactly what the
+    /// studio would have built for a fresh canvas.
+    func remix(_ drawing: DrawingV2, sourceId: String, into studio: StudioModel) {
         studio.load(drawing)
         studio.remixSourceId = sourceId
         tab = Self.drawTab
+    }
+
+    func remix(_ drawing: Drawing, sourceId: String, into studio: StudioModel) {
+        remix(upgradeToV2(drawing), sourceId: sourceId, into: studio)
     }
 }
