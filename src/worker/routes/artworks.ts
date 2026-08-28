@@ -13,7 +13,8 @@ import {
   hasV2Caps,
   capPolicy,
 } from "../lib/validate";
-import { contentHash } from "../../shared/vector";
+import { contentHash, deserialize, flattenToV1, serializeV1 } from "../../shared/vector";
+import type { DrawingV1 } from "../../shared/vector";
 import { newArtworkId } from "../lib/ids";
 import {
   insertArtwork,
@@ -29,7 +30,17 @@ import {
   hasPlus,
   DuplicateHashError,
 } from "../lib/db";
-import { keys, putVectorGz, putWebp, serveObject, serveVectorJson, deleteArtworkObjects } from "../lib/r2";
+import {
+  keys,
+  putVectorGz,
+  putWebp,
+  serveObject,
+  serveVectorJson,
+  readVectorJson,
+  variantEtag,
+  deleteArtworkObjects,
+  IMMUTABLE_CACHE,
+} from "../lib/r2";
 import { templateAlt } from "../lib/alttext";
 import { generateAlt } from "../lib/genalt";
 import type { Artwork, Visibility } from "../types";
@@ -432,16 +443,12 @@ artworks.get("/:id", async (c) => {
 });
 
 // ---- R2 proxies (edge-cached, immutable) ----
-async function proxy(c: Context<AppEnv>, kind: "image" | "thumb" | "vector") {
+async function proxy(c: Context<AppEnv>, kind: "image" | "thumb") {
   const id = c.req.param("id");
   if (!id) return c.json({ error: "not_found" }, 404);
   const art = await getArtwork(c.env, id);
   if (!art) return c.json({ error: "not_found" }, 404);
   if (!canView(art, c.get("user")?.id)) return c.json({ error: "not_found" }, 404);
-  if (kind === "vector") {
-    const res = await serveVectorJson(c.env, art.vector_key);
-    return res ?? c.json({ error: "not_found" }, 404);
-  }
   const key = kind === "image" ? art.image_key : art.thumb_key;
   const res = await serveObject(c.env, key);
   return res ?? c.json({ error: "not_found" }, 404);
@@ -449,7 +456,61 @@ async function proxy(c: Context<AppEnv>, kind: "image" | "thumb" | "vector") {
 
 artworks.get("/:id/image", (c) => proxy(c, "image"));
 artworks.get("/:id/thumb", (c) => proxy(c, "thumb"));
-artworks.get("/:id/vector", (c) => proxy(c, "vector"));
+
+// ---- vector: version negotiation ----
+//
+// One drawing, two representations at two URLs.
+//
+//  ?v=2  the stored bytes, untouched. This path never parses, which is what
+//        keeps it working for anything the current parser would reject.
+//  else  the caller is a pre-1.2 client (iOS 1.1, an already-loaded web
+//        bundle) that can only read v1, so flatten — or refuse with 426 when
+//        flattening would change the picture rather than merely re-encode it.
+//
+// Stored v1 pieces go through the same flatten. deserialize() upgrades them to
+// a single v2 layer and flattenToV1 projects them straight back, byte-for-byte
+// (pinned by T01's fixture round-trip), so there is no legacy short-circuit to
+// rot — and every no-param response carries the same etag shape.
+artworks.get("/:id/vector", async (c) => {
+  const id = c.req.param("id");
+  if (!id) return c.json({ error: "not_found" }, 404);
+  const art = await getArtwork(c.env, id);
+  if (!art) return c.json({ error: "not_found" }, 404);
+  // The 426 lives strictly AFTER this check. A piece the caller may not see has
+  // to answer 404 whether or not it happens to be flattenable; otherwise the
+  // status code is an existence oracle for other people's private work — and a
+  // fairly precise one, since 426 also reveals that the piece uses layers.
+  if (!canView(art, c.get("user")?.id)) return c.json({ error: "not_found" }, 404);
+
+  if (c.req.query("v") === "2") {
+    const res = await serveVectorJson(c.env, art.vector_key);
+    return res ?? c.json({ error: "not_found" }, 404);
+  }
+
+  const stored = await readVectorJson(c.env, art.vector_key);
+  if (!stored) return c.json({ error: "not_found" }, 404);
+
+  let flat: DrawingV1 | null;
+  try {
+    flat = flattenToV1(deserialize(stored.json));
+  } catch {
+    // The stored object is unreadable by the current parser. That is a server
+    // fault, not the caller's, and the piece is not lost — ?v=2 still serves
+    // the bytes. Never echo the parse message: it describes stored content.
+    return c.json({ error: "vector_unreadable" }, 500);
+  }
+  if (!flat) return c.json({ error: "upgrade_required" }, 426);
+
+  return new Response(serializeV1(flat), {
+    headers: {
+      "Content-Type": "application/json",
+      // Same immutable caching as the stored representation: the URL differs,
+      // so the two never share a cache entry.
+      "Cache-Control": IMMUTABLE_CACHE,
+      ETag: variantEtag(stored.etag, "v1"),
+    },
+  });
+});
 
 // ---- edit ----
 artworks.patch("/:id", requireAuth, requireCsrf, async (c) => {
