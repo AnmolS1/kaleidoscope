@@ -94,7 +94,7 @@ enum ExportProbe {
     /// is silenced exactly here — where using it is the POINT — and stays loud
     /// everywhere else.
     @MainActor
-    @available(*, deprecated)
+    @available(*, deprecated, message: "Intentional: the probe's whole job is to render the v1 projection and prove it differs from the v2 one. This warning is the only expected one in this file.")
     private static func legacyProjection(_ model: StudioModel) -> Drawing {
         model.currentDrawing()
     }
