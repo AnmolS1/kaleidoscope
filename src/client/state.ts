@@ -41,6 +41,15 @@ export const activeLayerId = signal<string>("l1");
 /** How many layers this account may ADD. Never limits opening or editing. */
 export const layerCap = signal<number>(DEFAULT_LAYER_CAP);
 
+// --- view (zoom/pan) ---
+// Mirrors of the engine's view, pushed here by Canvas.tsx. T06b's zoom badge
+// reads both: `viewScale` for the number, `viewIsDefault` to hide itself.
+// (T05 deviation: state.ts belongs to T03, but every other engine mirror —
+// layers, canUndo, strokeCount — lives here, and T03 set the same precedent by
+// adding T04's pressure signals. Two bare declarations, no logic.)
+export const viewScale = signal<number>(1);
+export const viewIsDefault = signal<boolean>(true);
+
 // --- engine handle + history flags ---
 export const scene = signal<Scene | null>(null);
 export const canUndo = signal<boolean>(false);

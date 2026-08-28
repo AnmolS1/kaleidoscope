@@ -6,6 +6,12 @@
 //
 // v2 adds layers. The document (layers, per-layer symmetry, undo) lives in
 // DrawingDoc; this class owns pixels, input and the render loop only.
+//
+// It also owns the VIEW — a 1–8× zoom plus a pan, applied when painting and
+// inverted when reading a pointer. The view is not part of the document: the
+// symmetry centre is the drawing's centre wherever that has been panned to, and
+// every export re-renders from `getDrawing()`, so what is on screen has no say
+// in what gets saved.
 
 import {
   forEachImage,
@@ -49,17 +55,153 @@ export interface SceneCallbacks {
   onHistoryChange?: (canUndo: boolean, canRedo: boolean, count: number) => void;
   /** Fires whenever the layer list, a layer's fields, or the active layer change. */
   onLayersChange?: (layers: LayerSummary[], activeLayerId: string) => void;
+  /** Fires whenever zoom or pan changes. Drives the zoom badge (T06b). */
+  onViewChange?: (view: Readonly<View>) => void;
 }
 
 export interface SceneOptions {
   /** Max layers this account may ADD. Never limits loading or editing. */
   layerCap?: number;
+  /** Whether a bare finger draws. Off means one finger pans. */
+  drawWithFinger?: boolean;
 }
 
 const MAX_DPR = 3;
 const DEFAULT_PRESSURE = 0.5;
 /** Extra tap slack for hit-testing, in CSS px on top of the stroke's own width. */
 const HIT_SLACK_PX = 8;
+
+/** A non-drawing gesture counts as a tap below this much movement / duration. */
+const TAP_SLOP_PX = 10;
+const TAP_MS = 300;
+/** How far apart two taps may be, in time and space, and still be a double tap. */
+const DOUBLE_TAP_MS = 320;
+const DOUBLE_TAP_SLOP_PX = 32;
+
+// ---- view transform -------------------------------------------------------
+//
+// The view is a pan/zoom applied at PAINT time only. It never touches the
+// document: stored coordinates are always in the drawing's own normalized space,
+// so exports, hashes and the symmetry centre are all completely unaware of it.
+//
+// Screen (CSS px, canvas top-left) and drawing (CSS px, canvas top-left) space
+// relate by `screen = translate + scale * drawing`, which is exactly what
+// `ctx.translate(tx, ty); ctx.scale(s, s)` does. Everything that consumes a
+// pointer position therefore inverts it: `drawing = (screen - translate) / scale`.
+
+export interface View {
+  /** 1 = fit, MAX_SCALE = fully zoomed in. */
+  scale: number;
+  /** Screen-space offset in CSS px, applied BEFORE the scale. */
+  tx: number;
+  ty: number;
+}
+
+export const MIN_SCALE = 1;
+export const MAX_SCALE = 8;
+
+/** The view a fresh canvas starts at, and what double-tap restores. */
+export const IDENTITY_VIEW: Readonly<View> = { scale: 1, tx: 0, ty: 0 };
+
+/**
+ * The screen-space move below which a captured point is dropped, in CSS px.
+ * Small enough to keep a deliberate curve, big enough to throw away the jitter
+ * a 240 Hz digitiser reports while the hand is still.
+ */
+const MIN_POINT_DIST_PX = 1.1;
+
+export function clampScale(s: number): number {
+  // NaN only: it survives Math.max/min and would poison the whole view, where
+  // ±Infinity clamps to the ends perfectly well. A pinch with both fingers in
+  // the same place is the way this actually arrives.
+  if (Number.isNaN(s)) return MIN_SCALE;
+  return Math.max(MIN_SCALE, Math.min(MAX_SCALE, s));
+}
+
+export function isIdentityView(v: Readonly<View>): boolean {
+  return v.scale === 1 && v.tx === 0 && v.ty === 0;
+}
+
+/** Screen CSS px (canvas-relative) → drawing CSS px. The inverse of the paint transform. */
+export function screenToDrawing(
+  v: Readonly<View>,
+  sx: number,
+  sy: number,
+): { x: number; y: number } {
+  return { x: (sx - v.tx) / v.scale, y: (sy - v.ty) / v.scale };
+}
+
+/** Drawing CSS px → screen CSS px (canvas-relative). */
+export function drawingToScreen(
+  v: Readonly<View>,
+  dx: number,
+  dy: number,
+): { x: number; y: number } {
+  return { x: v.tx + v.scale * dx, y: v.ty + v.scale * dy };
+}
+
+/**
+ * Scale by `factor` while pinning the drawing point currently under
+ * (`ax`, `ay`) to that same screen position — the behaviour every pinch and
+ * ctrl+wheel expects. When the scale clamps, the translate is left alone
+ * (`s' === s` makes the formula the identity), so a pinch past the limit does
+ * not creep.
+ */
+export function zoomedView(
+  v: Readonly<View>,
+  ax: number,
+  ay: number,
+  factor: number,
+): View {
+  const scale = clampScale(v.scale * factor);
+  const d = screenToDrawing(v, ax, ay);
+  return { scale, tx: ax - scale * d.x, ty: ay - scale * d.y };
+}
+
+/** How much of the drawing must stay on screen, in CSS px, per axis. */
+const MIN_VISIBLE_PX = 48;
+
+/**
+ * The only pan limit: some of the drawing has to stay on screen, so a piece can
+ * never be panned into nothing.
+ *
+ * Deliberately weak, and weaker than the first version of this function, which
+ * required the drawing's CENTRE to stay visible. That sounds reasonable and is
+ * wrong: at 8x it makes every region away from the middle unreachable, which is
+ * the one thing zoom exists for. It also silently broke the anchor of any zoom
+ * that was not centred, so a ctrl+wheel at the edge crept.
+ *
+ * A tighter rule would also participate in the coordinate arithmetic of every
+ * gesture, and double-tap already restores the identity view, so there is little
+ * to rescue the user from.
+ */
+export function clampView(v: Readonly<View>, cssW: number, cssH: number): View {
+  const scale = clampScale(v.scale);
+  return {
+    scale,
+    tx: clampAxis(v.tx, scale * cssW, cssW),
+    ty: clampAxis(v.ty, scale * cssH, cssH),
+  };
+}
+
+/** Keep [t, t + extent] overlapping [0, viewport] by at least MIN_VISIBLE_PX. */
+function clampAxis(t: number, extent: number, viewport: number): number {
+  if (!Number.isFinite(t)) return 0;
+  const m = Math.min(MIN_VISIBLE_PX, extent, viewport);
+  return Math.max(m - extent, Math.min(viewport - m, t));
+}
+
+/**
+ * Minimum stored move, in NORMALIZED units, for a point to be kept.
+ *
+ * Divided by the view scale, which is the whole point: at 8× a 1.1 px twitch of
+ * the hand is an eighth of a drawing pixel, and dropping it would quantise the
+ * stroke to a visible staircase exactly where the user zoomed in to get detail.
+ * Dividing keeps the threshold at a constant ~1.1 px OF SCREEN at every zoom.
+ */
+export function minPointDistance(half: number, scale: number): number {
+  return MIN_POINT_DIST_PX / (half * scale);
+}
 
 // Self-contained canvas palette (mirrors tokens.css) so the engine never depends
 // on <html data-theme> being applied first.
@@ -106,8 +248,26 @@ export class Scene {
   private rafId = 0;
   private ro: ResizeObserver | null = null;
 
+  // ---- view / gesture state ----
+  private viewState: View = { ...IDENTITY_VIEW };
+  /** Whether a bare finger draws. Off means one finger pans instead. */
+  private drawWithFinger = true;
+  /** Space held with the canvas (not a control) focused → drag pans. */
+  private spaceHeld = false;
+  /** Pointer currently panning with one finger / space-drag, if any. */
+  private panPointer: number | null = null;
+  private panLast: { x: number; y: number } | null = null;
+  /** Live touch points, keyed by pointerId — the source of truth for "two fingers". */
+  private touches = new Map<number, { x: number; y: number }>();
+  /** Set while two or more fingers are down. Non-null means NOTHING draws. */
+  private pinch: { dist: number; midX: number; midY: number } | null = null;
+  /** Where and when a non-drawing gesture started, for tap detection. */
+  private tapStart: { x: number; y: number; t: number; moved: number } | null = null;
+  private lastTap: { x: number; y: number; t: number } | null = null;
+
   constructor(host: HTMLElement, initial: ToolState, cb: SceneCallbacks = {}, opts: SceneOptions = {}) {
     this.host = host;
+    this.drawWithFinger = opts.drawWithFinger ?? true;
     this.state = { ...initial, segments: clampSegments(initial.segments) };
     this.cb = cb;
     this.doc = new DrawingDoc(
@@ -161,6 +321,11 @@ export class Scene {
       c.height = Math.floor(h * this.dpr);
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     }
+    // The view SURVIVES a resize — rotating an iPad must not throw away the zoom
+    // the user set. Only re-clamp it, because the new viewport may no longer
+    // contain the drawing centre. At the identity view this is a no-op, so a
+    // fresh mount never moves.
+    this.setViewInternal(this.viewState, false);
     this.renderGrid();
     this.renderArt();
   }
@@ -180,35 +345,47 @@ export class Scene {
     ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, w, h);
 
-    // graph-paper grid
-    const fine = theme.fine;
-    const bold = theme.bold;
+    // Graph-paper grid. The paper belongs to the DRAWING, so it zooms and pans
+    // with it — but it is drawn in SCREEN space rather than under the view
+    // transform, because the whole point of the `Math.round(x) + 0.5` phase is a
+    // crisp one-device-pixel line. Snapping in drawing space and then scaling by
+    // a fractional zoom lands the line back off the pixel grid and it goes soft.
+    // So: the spacing is scaled, the position is snapped, the width stays 1.
     const step = 24;
     ctx.lineWidth = 1;
-    ctx.strokeStyle = fine;
-    ctx.beginPath();
-    for (let x = (w / 2) % step; x < w; x += step) {
-      ctx.moveTo(Math.round(x) + 0.5, 0);
-      ctx.lineTo(Math.round(x) + 0.5, h);
-    }
-    for (let y = (h / 2) % step; y < h; y += step) {
-      ctx.moveTo(0, Math.round(y) + 0.5);
-      ctx.lineTo(w, Math.round(y) + 0.5);
-    }
-    ctx.stroke();
-    ctx.strokeStyle = bold;
-    ctx.beginPath();
-    for (let x = (w / 2) % (step * 5); x < w; x += step * 5) {
-      ctx.moveTo(Math.round(x) + 0.5, 0);
-      ctx.lineTo(Math.round(x) + 0.5, h);
-    }
-    for (let y = (h / 2) % (step * 5); y < h; y += step * 5) {
-      ctx.moveTo(0, Math.round(y) + 0.5);
-      ctx.lineTo(w, Math.round(y) + 0.5);
-    }
-    ctx.stroke();
+    this.strokeGridLines(step, theme.fine);
+    this.strokeGridLines(step * 5, theme.bold);
 
     if (this.state.showGuides) this.renderGuides();
+  }
+
+  /** Screen x/y of the drawing's centre — the origin every grid line is phased from. */
+  private get centerScreen(): { x: number; y: number } {
+    return drawingToScreen(this.viewState, this.cssW / 2, this.cssH / 2);
+  }
+
+  private strokeGridLines(stepDrawing: number, color: string): void {
+    const ctx = this.gctx;
+    const w = this.cssW;
+    const h = this.cssH;
+    const step = stepDrawing * this.viewState.scale;
+    // Fully zoomed out the step is 24 px; there is no zoom level where this is
+    // small enough to matter, but a non-finite view would spin forever.
+    if (!(step > 0.5)) return;
+    const origin = this.centerScreen;
+
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    // First line at or after the left/top edge: origin + k*step >= 0.
+    for (let x = origin.x + Math.ceil(-origin.x / step) * step; x < w; x += step) {
+      ctx.moveTo(Math.round(x) + 0.5, 0);
+      ctx.lineTo(Math.round(x) + 0.5, h);
+    }
+    for (let y = origin.y + Math.ceil(-origin.y / step) * step; y < h; y += step) {
+      ctx.moveTo(0, Math.round(y) + 0.5);
+      ctx.lineTo(w, Math.round(y) + 0.5);
+    }
+    ctx.stroke();
   }
 
   // Guides show the ACTIVE layer's symmetry — they are drawing aids for the
@@ -217,10 +394,16 @@ export class Scene {
     const ctx = this.gctx;
     const sym = this.doc.activeLayer.sym;
     const n = sym.segments;
-    const r = Math.max(this.cssW, this.cssH);
+    // The guides radiate from the DRAWING's centre, which the view can push off
+    // screen, so the rays have to be long enough to still cross the viewport
+    // from wherever that centre now is. They are clipped, so over-reaching costs
+    // nothing; falling short would leave a visible stub.
+    const origin = this.centerScreen;
+    const r =
+      Math.hypot(this.cssW, this.cssH) + Math.hypot(origin.x, origin.y) + Math.max(this.cssW, this.cssH);
     const color = THEME[this.state.bg].guide;
     ctx.save();
-    ctx.translate(this.cssW / 2, this.cssH / 2);
+    ctx.translate(origin.x, origin.y);
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -266,15 +449,49 @@ export class Scene {
     return false;
   }
 
+  /**
+   * Run `paint` with the view transform in effect.
+   *
+   * At the identity view this issues NOTHING: no save, no translate, no scale.
+   * Same shape as T04's guard on `globalAlpha`.
+   *
+   * Honest note on why, because the obvious justification is wrong and someone
+   * will eventually check: `translate(0, 0); scale(1, 1)` is a bit-exact no-op
+   * in canvas 2D, so removing this guard does NOT break `v1-render.spec.ts`
+   * (verified by deleting it — all six tests still pass). What it buys is that
+   * the engine's paint path stays literally the pre-view path at 1x, with no
+   * matrix multiply between `paintDrawing` and the pixels that render-trace
+   * pins, and no room for a future non-integer view state to round. That is
+   * pinned directly by "the engine adds no transform of its own at 1x" in
+   * test/e2e/zoom-pan.spec.ts rather than left to the goldens, which cannot see
+   * it.
+   *
+   * Callers clear the canvas BEFORE calling this, at the base DPR transform:
+   * a `clearRect(0, 0, cssW, cssH)` under a pan would miss most of the canvas.
+   */
+  private withView(ctx: AnyCtx, paint: () => void): void {
+    if (isIdentityView(this.viewState)) {
+      paint();
+      return;
+    }
+    ctx.save();
+    ctx.translate(this.viewState.tx, this.viewState.ty);
+    ctx.scale(this.viewState.scale, this.viewState.scale);
+    paint();
+    ctx.restore();
+  }
+
   private renderArt(): void {
     this.actx.clearRect(0, 0, this.cssW, this.cssH);
     const live =
       !this.liveOnOverlay && this.drawingStroke && this.drawingStroke.pts.length > 0
         ? this.drawingStroke
         : null;
-    paintDrawing(this.actx, this.doc.drawing, this.cssW, this.cssH, this.half, {
-      liveStroke: live,
-      liveLayerId: this.doc.activeLayerId,
+    this.withView(this.actx, () => {
+      paintDrawing(this.actx, this.doc.drawing, this.cssW, this.cssH, this.half, {
+        liveStroke: live,
+        liveLayerId: this.doc.activeLayerId,
+      });
     });
   }
 
@@ -283,14 +500,16 @@ export class Scene {
     ctx.clearRect(0, 0, this.cssW, this.cssH);
     if (!this.liveOnOverlay) return;
     if (this.drawingStroke && this.drawingStroke.pts.length > 0) {
-      paintStrokes(
-        ctx,
-        [this.drawingStroke],
-        this.cssW,
-        this.cssH,
-        this.half,
-        this.doc.activeLayer.sym,
-      );
+      this.withView(ctx, () => {
+        paintStrokes(
+          ctx,
+          [this.drawingStroke!],
+          this.cssW,
+          this.cssH,
+          this.half,
+          this.doc.activeLayer.sym,
+        );
+      });
     }
   }
 
@@ -312,11 +531,29 @@ export class Scene {
     this.live.addEventListener("pointerup", this.onUp);
     this.live.addEventListener("pointercancel", this.onUp);
     this.live.addEventListener("pointerleave", this.onUp);
+    // passive:false — a zoom gesture that also scrolls the page is unusable, and
+    // the default for wheel on a listener like this is passive in every engine.
+    this.live.addEventListener("wheel", this.onWheel, { passive: false });
+    window.addEventListener("keydown", this.onKeyDown);
+    window.addEventListener("keyup", this.onKeyUp);
+    // Space is a held modifier, so a lost window is a stuck one.
+    window.addEventListener("blur", this.onWindowBlur);
+  }
+
+  /** Canvas-relative screen position of an event, in CSS px. */
+  private screenOf(e: { clientX: number; clientY: number }): { x: number; y: number } {
+    const rect = this.live.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
   private pointFromEvent(e: PointerEvent): Pt {
-    const rect = this.live.getBoundingClientRect();
-    const { x, y } = toNormalized(e.clientX - rect.left, e.clientY - rect.top, this.cssW, this.cssH);
+    const s = this.screenOf(e);
+    // Un-apply the view before normalizing. Everything downstream — the stored
+    // point, the symmetry centre, the content hash — is in the drawing's space,
+    // which is what makes a stroke drawn at 8× land in the same place it would
+    // have at 1×.
+    const d = screenToDrawing(this.viewState, s.x, s.y);
+    const { x, y } = toNormalized(d.x, d.y, this.cssW, this.cssH);
     const raw = e.pressure > 0 ? e.pressure : DEFAULT_PRESSURE;
     // Gamma is applied HERE, at capture, and the adjusted value is what gets
     // stored — so the preset is a property of the hand that drew, not of the
@@ -325,6 +562,34 @@ export class Scene {
   }
 
   private onDown = (e: PointerEvent): void => {
+    const s = this.screenOf(e);
+    if (e.pointerType === "touch") this.touches.set(e.pointerId, s);
+
+    // A second finger converts whatever was happening into a pinch, and the
+    // stroke the first finger had started is THROWN AWAY rather than committed.
+    // Two-finger gestures never draw — including the half-stroke that precedes
+    // one, which is the part a naive implementation leaves behind as a stray
+    // mark every time the user zooms.
+    if (this.touches.size >= 2) {
+      this.abortStroke();
+      this.endPan();
+      this.beginPinch();
+      this.capture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+    if (this.pinch) return;
+
+    // Space-drag, or one finger when finger-drawing is off. Pen and mouse always
+    // draw: `drawWithFinger` is about the hand resting on an iPad, and gating on
+    // anything other than "touch" would disable the mouse.
+    if (this.spaceHeld || (e.pointerType === "touch" && !this.drawWithFinger)) {
+      if (this.activePointer !== null || this.panPointer !== null) return;
+      e.preventDefault();
+      this.beginPan(e.pointerId, s);
+      return;
+    }
+
     if (this.activePointer !== null) return;
     e.preventDefault();
     this.activePointer = e.pointerId;
@@ -353,10 +618,24 @@ export class Scene {
   };
 
   private onMove = (e: PointerEvent): void => {
+    if (e.pointerType === "touch" && this.touches.has(e.pointerId)) {
+      this.touches.set(e.pointerId, this.screenOf(e));
+    }
+    if (this.pinch) {
+      e.preventDefault();
+      this.updatePinch();
+      return;
+    }
+    if (this.panPointer === e.pointerId) {
+      e.preventDefault();
+      this.updatePan(this.screenOf(e));
+      return;
+    }
+
     if (this.activePointer !== e.pointerId || !this.drawingStroke) return;
     e.preventDefault();
     const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    const minDist = 1.1 / this.half;
+    const minDist = minPointDistance(this.half, this.viewState.scale);
     const pts = this.drawingStroke.pts;
     for (const ev of events.length ? events : [e]) {
       const p = this.pointFromEvent(ev);
@@ -367,6 +646,26 @@ export class Scene {
   };
 
   private onUp = (e: PointerEvent): void => {
+    if (e.pointerType === "touch") this.touches.delete(e.pointerId);
+
+    if (this.pinch) {
+      // Hold the gesture until EVERY finger is up. Ending it at the first lift
+      // would hand the remaining finger back to the drawing path mid-pinch and
+      // leave a mark across the piece.
+      if (this.touches.size === 0) {
+        this.pinch = null;
+        this.endGestureTap();
+      }
+      this.release(e.pointerId);
+      return;
+    }
+    if (this.panPointer === e.pointerId) {
+      this.endPan();
+      this.endGestureTap();
+      this.release(e.pointerId);
+      return;
+    }
+
     if (this.activePointer !== e.pointerId || !this.drawingStroke) return;
     e.preventDefault();
     try {
@@ -388,6 +687,188 @@ export class Scene {
   private notify(): void {
     this.cb.onHistoryChange?.(this.doc.canUndo, this.doc.canRedo, this.doc.totalStrokes);
     this.cb.onLayersChange?.(this.doc.summaries(), this.doc.activeLayerId);
+  }
+
+  // ---- gestures ------------------------------------------------------------
+
+  private capture(id: number): void {
+    try {
+      this.live.setPointerCapture(id);
+    } catch {
+      /* synthetic events / unsupported */
+    }
+  }
+  private release(id: number): void {
+    try {
+      this.live.releasePointerCapture(id);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
+   * Discard the in-progress stroke without committing it.
+   *
+   * Every field the drawing path reads is reset, so the `pointerup` that will
+   * still arrive for that pointer finds nothing to resurrect: `activePointer` no
+   * longer matches and `drawingStroke` is null, which is what the guard at the
+   * top of `onUp`'s drawing branch tests.
+   */
+  private abortStroke(): void {
+    if (this.activePointer !== null) this.release(this.activePointer);
+    this.activePointer = null;
+    const had = this.drawingStroke !== null;
+    this.drawingStroke = null;
+    this.lctx.clearRect(0, 0, this.cssW, this.cssH);
+    // The stroke may have been rendered into the stack rather than the overlay.
+    if (had && !this.liveOnOverlay) this.renderArt();
+  }
+
+  private beginPan(id: number, at: { x: number; y: number }): void {
+    this.panPointer = id;
+    this.panLast = at;
+    this.tapStart = { x: at.x, y: at.y, t: Date.now(), moved: 0 };
+    this.capture(id);
+    this.live.style.cursor = "grabbing";
+  }
+
+  private updatePan(at: { x: number; y: number }): void {
+    if (!this.panLast) return;
+    const dx = at.x - this.panLast.x;
+    const dy = at.y - this.panLast.y;
+    this.panLast = at;
+    if (this.tapStart) this.tapStart.moved += Math.hypot(dx, dy);
+    this.panBy(dx, dy);
+  }
+
+  private endPan(): void {
+    if (this.panPointer === null) return;
+    this.panPointer = null;
+    this.panLast = null;
+    this.live.style.cursor = this.spaceHeld ? "grab" : "crosshair";
+  }
+
+  private beginPinch(): void {
+    const m = this.touchMetrics();
+    if (!m) return;
+    this.pinch = m;
+    this.tapStart = { x: m.midX, y: m.midY, t: Date.now(), moved: 0 };
+  }
+
+  private updatePinch(): void {
+    const m = this.touchMetrics();
+    if (!m || !this.pinch) return;
+    const prev = this.pinch;
+    this.pinch = m;
+    const dx = m.midX - prev.midX;
+    const dy = m.midY - prev.midY;
+    if (this.tapStart) this.tapStart.moved += Math.hypot(dx, dy) + Math.abs(m.dist - prev.dist);
+    // Pan by the midpoint's move, then scale about the NEW midpoint, so the two
+    // parts of a pinch compose the way the fingers do.
+    let next = { ...this.viewState, tx: this.viewState.tx + dx, ty: this.viewState.ty + dy };
+    if (prev.dist > 0 && m.dist > 0) next = zoomedView(next, m.midX, m.midY, m.dist / prev.dist);
+    this.setViewInternal(next);
+  }
+
+  /** Midpoint and spread of the first two live touches. */
+  private touchMetrics(): { dist: number; midX: number; midY: number } | null {
+    const it = this.touches.values();
+    const a = it.next();
+    const b = it.next();
+    if (a.done || b.done) return null;
+    return {
+      dist: Math.hypot(b.value.x - a.value.x, b.value.y - a.value.y),
+      midX: (a.value.x + b.value.x) / 2,
+      midY: (a.value.y + b.value.y) / 2,
+    };
+  }
+
+  /**
+   * A pan/pinch that was really a tap. Two of them in quick succession reset the
+   * view.
+   *
+   * KNOWN LIMIT, deliberate: this only sees gestures that did not draw — a
+   * two-finger tap, or a one-finger tap while finger-drawing is off. With finger
+   * drawing on, a double tap is two dots of ink and resetting the view under
+   * them would be worse than not resetting. `resetView()` is public for the zoom
+   * badge (T06b) so there is always a pointer-free way out.
+   */
+  private endGestureTap(): void {
+    const start = this.tapStart;
+    this.tapStart = null;
+    if (!start) return;
+    const now = Date.now();
+    if (start.moved > TAP_SLOP_PX || now - start.t > TAP_MS) {
+      this.lastTap = null;
+      return;
+    }
+    const prev = this.lastTap;
+    if (
+      prev &&
+      now - prev.t <= DOUBLE_TAP_MS &&
+      Math.hypot(start.x - prev.x, start.y - prev.y) <= DOUBLE_TAP_SLOP_PX
+    ) {
+      this.lastTap = null;
+      this.resetView();
+      return;
+    }
+    this.lastTap = { x: start.x, y: start.y, t: now };
+  }
+
+  private onWheel = (e: WheelEvent): void => {
+    // A trackpad pinch is delivered as a wheel event with ctrlKey set — that is
+    // the ONLY way the platform exposes it — so this one branch covers both the
+    // documented ctrl/⌘+wheel shortcut and a real two-finger pinch on a Mac.
+    e.preventDefault();
+    const at = this.screenOf(e);
+    // deltaMode 1 is lines, 2 is pages; normalize both to something px-like.
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.cssH : 1;
+    if (e.ctrlKey || e.metaKey) {
+      this.zoomAt(at.x, at.y, Math.exp((-e.deltaY * unit) / 100));
+    } else {
+      this.panBy(-e.deltaX * unit, -e.deltaY * unit);
+    }
+  };
+
+  /**
+   * Space engages pan-on-drag, but only when the canvas has focus.
+   *
+   * Space is also how a keyboard user activates a focused button, so swallowing
+   * it globally would break every control in the toolbar. Requiring the body or
+   * the canvas host to be the active element is the cheap, honest test.
+   */
+  private onKeyDown = (e: KeyboardEvent): void => {
+    if (e.code !== "Space" || e.repeat || this.spaceHeld) return;
+    const el = document.activeElement;
+    if (el && el !== document.body && !this.host.contains(el)) return;
+    e.preventDefault();
+    this.spaceHeld = true;
+    if (this.panPointer === null) this.live.style.cursor = "grab";
+  };
+
+  private onKeyUp = (e: KeyboardEvent): void => {
+    if (e.code !== "Space") return;
+    this.spaceHeld = false;
+    if (this.panPointer === null) this.live.style.cursor = "crosshair";
+  };
+
+  private onWindowBlur = (): void => {
+    this.spaceHeld = false;
+    if (this.panPointer === null) this.live.style.cursor = "crosshair";
+  };
+
+  /** Store a view, clamp it, re-render what it affects, and report upward. */
+  private setViewInternal(next: Readonly<View>, render = true): void {
+    const v = clampView(next, this.cssW, this.cssH);
+    const cur = this.viewState;
+    if (v.scale === cur.scale && v.tx === cur.tx && v.ty === cur.ty) return;
+    this.viewState = v;
+    if (render) {
+      this.renderGrid();
+      this.renderArt();
+      this.renderLive();
+    }
+    this.cb.onViewChange?.(this.viewState);
   }
 
   /** Re-render everything a layer change can affect, then report upward. */
@@ -425,6 +906,58 @@ export class Scene {
   /** Whether a pen's pressure also drives alpha on subsequent strokes. */
   setPressureOpacity(on: boolean): void {
     this.pressureOpacity = on;
+  }
+  /** Whether a bare finger draws. Off means a single finger pans instead. */
+  setDrawWithFinger(on: boolean): void {
+    this.drawWithFinger = on;
+  }
+
+  // ---- view ----------------------------------------------------------------
+
+  /** The current zoom + pan. The badge (T06b) reads `scale`. */
+  getView(): Readonly<View> {
+    return this.viewState;
+  }
+  get zoom(): number {
+    return this.viewState.scale;
+  }
+  /** Whether the view is untouched — the badge hides itself on this. */
+  get isDefaultView(): boolean {
+    return isIdentityView(this.viewState);
+  }
+
+  /** Scale about a canvas-relative screen point, pinning what is under it. */
+  zoomAt(screenX: number, screenY: number, factor: number): void {
+    this.setViewInternal(zoomedView(this.viewState, screenX, screenY, factor));
+  }
+  /** Scale about the middle of the viewport — for a button or a shortcut. */
+  zoomBy(factor: number): void {
+    this.zoomAt(this.cssW / 2, this.cssH / 2, factor);
+  }
+  /** Move the drawing by a screen-space delta, in CSS px. */
+  panBy(dx: number, dy: number): void {
+    this.setViewInternal({ ...this.viewState, tx: this.viewState.tx + dx, ty: this.viewState.ty + dy });
+  }
+  setView(v: Partial<View>): void {
+    this.setViewInternal({ ...this.viewState, ...v });
+  }
+  /** Back to 1×, centred. What double-tap and the badge both do. */
+  resetView(): void {
+    this.setViewInternal(IDENTITY_VIEW);
+  }
+
+  /**
+   * A viewport position (`clientX`/`clientY`, i.e. straight off an event) in the
+   * drawing's normalized coordinates.
+   *
+   * Exposed because the view is otherwise the engine's private business:
+   * `hitTestStroke` takes normalized coordinates, and a caller that reached for
+   * `toNormalized` directly would be silently wrong at every zoom but 1×.
+   */
+  screenToNormalized(clientX: number, clientY: number): { x: number; y: number } {
+    const s = this.screenOf({ clientX, clientY });
+    const d = screenToDrawing(this.viewState, s.x, s.y);
+    return toNormalized(d.x, d.y, this.cssW, this.cssH);
   }
 
   /**
@@ -556,7 +1089,9 @@ export class Scene {
    * first — the same order a user reads the stack.
    */
   hitTestStroke(x: number, y: number): StrokeHit | null {
-    return hitTestDrawing(this.doc.drawing, x, y, HIT_SLACK_PX / this.half);
+    // The slack is a FINGER, so it is 8 px of screen at every zoom — which is a
+    // smaller distance in the drawing the further in you are.
+    return hitTestDrawing(this.doc.drawing, x, y, HIT_SLACK_PX / (this.half * this.viewState.scale));
   }
 
   deleteStroke(layerId: string, index: number): boolean {
@@ -586,9 +1121,11 @@ export class Scene {
     return this.doc.drawing;
   }
 
-  /** Load a drawing (also sets background from it). Drops history. */
+  /** Load a drawing (also sets background from it). Drops history and the view. */
   loadDrawing(d: DrawingV2): void {
     this.state.bg = d.bg;
+    // A new piece arrives framed, not wherever the last one was left zoomed.
+    this.setViewInternal(IDENTITY_VIEW, false);
     this.doc.load(d);
     this.syncSymFromActive();
     this.renderGrid();
@@ -604,6 +1141,13 @@ export class Scene {
     this.live.removeEventListener("pointerup", this.onUp);
     this.live.removeEventListener("pointercancel", this.onUp);
     this.live.removeEventListener("pointerleave", this.onUp);
+    this.live.removeEventListener("wheel", this.onWheel);
+    // The window listeners outlive the canvases — Canvas.tsx builds and tears
+    // down a Scene inside a useEffect, so a leaked one would keep answering
+    // keystrokes for a dead engine after every remount.
+    window.removeEventListener("keydown", this.onKeyDown);
+    window.removeEventListener("keyup", this.onKeyUp);
+    window.removeEventListener("blur", this.onWindowBlur);
     this.grid.remove();
     this.art.remove();
     this.live.remove();
