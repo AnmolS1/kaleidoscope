@@ -1,341 +1,443 @@
 import SwiftUI
 import KaleidoEngine
 
-/// The drawing studio — canvas + controls. Draw + download are free (no account);
-/// Save (wired in the save-flow phase) is provided via `onSave`.
+/// The drawing studio: a full-bleed canvas with the blueprint-instrument chrome
+/// floating over it (DESIGN.md §2).
+///
+/// The canvas is the whole screen and the chrome is an overlay, not a sibling in
+/// a VStack. That is the load-bearing change from 1.1, where a fixed controls
+/// panel took 42% of the height: the drawing is the product, and a panel that
+/// permanently occupies a third of an iPad is a panel that is wrong on an iPad.
+/// The corollary is the rule the whole layout obeys — **no panel ever covers the
+/// drawing's centre**. Popovers hang off the rail, the layers panel docks to a
+/// corner, and nothing floats over the middle except the remove-stroke capsule,
+/// which is deliberately anchored to what it is about to delete.
+///
+/// Draw + download are free (no account); Save is provided via `onSave`.
 struct StudioView: View {
     @ObservedObject var model: StudioModel
-    /// Invoked by the Save button. Defaults to a "coming soon" notice so the
-    /// button exists in the studio before the save flow is wired.
+    /// Invoked by the Save button.
     var onSave: () -> Void = {}
 
+    @EnvironmentObject private var router: AppRouter
+
     @State private var shareItem: ShareItem?
-    @State private var showColorPicker = false
     @State private var customColor = Color(hex: "#E84A27")
+    /// The rail-anchored card. Only ONE of brush / colour / symmetry at a time —
+    /// two floating cards over a drawing is two things covering the art.
+    @State private var panel: StudioPanel?
+    /// The layers panel is a SEPARATE slot, not another `panel` case, because
+    /// `IPadLayers` shows it open beside the symmetry popover: tapping a row's
+    /// sym line opens the dial for that layer without closing the list it was
+    /// tapped in. Folding it into `panel` made that tap dismiss its own context.
+    @State private var showLayers = false
+    @State private var showClearConfirm = false
+    @State private var showHelp = false
+    /// Measured natural heights of the two card slots — see `scrollableCard`.
+    @State private var leadingCardHeight: CGFloat = 0
+    @State private var layersCardHeight: CGFloat = 0
+    @StateObject private var nudges = NudgeCenter()
 
-    // Accessibility system settings.
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    /// Whether a pen has ever touched this install. Drives the Brush popover's
+    /// pressure section, which is pen-only.
+    ///
+    /// Read from the same `kal.pencilBannerSeen` key `StudioModel.notePencilUsed`
+    /// writes, and refreshed when the model raises its banner flag, because a
+    /// `UserDefaults` read is not observable and the first pen touch of a fresh
+    /// install has to reveal the section without a relaunch.
+    @State private var pencilSeen = UserDefaults.standard.bool(forKey: "kal.pencilBannerSeen")
+
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.verticalSizeClass) private var vSize
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Swatch diameter, scaled with Dynamic Type so the palette grows with text.
-    @ScaledMetric(relativeTo: .body) private var swatchSize: CGFloat = 30
+    private var layout: StudioLayout { StudioLayout(horizontal: hSize, vertical: vSize) }
 
-    private let palette = ["#E84A27", "#2E5E8C", "#D9A521", "#1B2A33", "#3FA34D", "#8E44AD", "#EAEAEA"]
+    /// At accessibility text sizes the rail's glyphs and captions grow, so the
+    /// rail itself has to. Capped: past ~76pt the rail stops being a rail and
+    /// starts being a sidebar that eats the canvas.
+    private var metrics: StudioMetrics {
+        var m = layout.metrics
+        guard dynamicTypeSize.isAccessibilitySize else { return m }
+        m.railWidth = min(m.railWidth * 1.35, 76)
+        m.railButton = min(m.railButton * 1.35, 60)
+        m.dockHeight = m.dockHeight * 1.2
+        return m
+    }
+
+    /// The edge sliders are a look-free shortcut, not the only way to set size and
+    /// opacity — the Brush popover always carries both. At accessibility sizes
+    /// they are suppressed: a 10pt label and a 4pt track cannot scale, and a
+    /// control that a user cannot read is worse than one they must open a panel
+    /// to reach.
+    private var showsEdgeSliders: Bool {
+        layout.showsEdgeSliders && !dynamicTypeSize.isAccessibilitySize
+    }
 
     var body: some View {
         GeometryReader { geo in
-            VStack(spacing: 0) {
-                canvas
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                controls
-                    .frame(height: min(340, geo.size.height * 0.42))
+            ZStack {
+                DrawingCanvas(model: model)
+                    .ignoresSafeArea()
+                chrome(in: geo)
             }
         }
         .background(Blueprint.graph.ignoresSafeArea())
-        .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
+        // The chrome follows the CANVAS, not the system. Every `Blueprint` token
+        // is a light/dark pair, so without this a dark canvas kept light chrome:
+        // graphite-ink slider labels on a near-black ground, which measured out
+        // at roughly 1.2:1 and is exactly what `IPadDark` shows must not happen.
+        // The canvas background is the studio's ground, so it is the thing the
+        // surfaces sitting on it have to agree with.
+        .environment(\.colorScheme, model.background == .dark ? .dark : .light)
         .overlay(alignment: .topLeading) { exportProbe }
-    }
-
-    /// Launch-gated export fingerprints for the UI tests (KALEIDO_EXPORT_PROBE=1).
-    /// Fingerprints the SAME `exportImage()` the Download button shares, so the
-    /// test can never pass against a code path the button does not take.
-    @ViewBuilder
-    private var exportProbe: some View {
-        if ExportProbe.enabled {
-            ExportProbeView(report: ExportProbe.report(
-                exported: exportImage(size: ExportProbe.probeSize), model: model))
+        .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
+        .sheet(isPresented: $showHelp) { StudioHelpSheet() }
+        // Compact width gets bottom sheets rather than floating cards: a 280pt
+        // card on a 390pt-wide screen is a modal wearing a popover's clothes.
+        .sheet(isPresented: sheetBinding) { panelSheet }
+        .alert("Clear the canvas?", isPresented: $showClearConfirm) {
+            Button("Clear strokes", role: .destructive) { model.clear() }
+            Button("Keep drawing", role: .cancel) {}
+        } message: {
+            Text("Removes every stroke. Your \(model.layers.count) layers, their names and symmetry stay. You can undo this.")
+        }
+        .onChange(of: model.showPencilBanner) { _, shown in
+            guard shown else { return }
+            pencilSeen = true
+            // T11's canvas raises its own inline banner. Dismiss it and show the
+            // spec's toast instead, so the copy and the CTA match DESIGN.md §3
+            // without editing the canvas.
+            model.dismissPencilBanner()
+            nudges.show(.pencilDetected)
+        }
+        .onChange(of: model.drawWithFinger) { _, canDraw in
+            if !canDraw { nudges.show(.fingersPan) }
+        }
+        .onChange(of: model.activeLayerId) { _, id in
+            // Remove-stroke retargets the active layer to whatever it hit. Say so
+            // — a silent active-layer change is how the next stroke lands
+            // somewhere the user did not expect.
+            guard model.removeStrokeMode,
+                  let name = model.layers.first(where: { $0.id == id })?.name else { return }
+            nudges.show(.switchedLayer(name))
+        }
+        .onChange(of: model.revision) { _, _ in
+            // "Dismiss on the next stroke" (DESIGN.md §3). `revision` moves on
+            // every pixel-affecting edit, which is the closest signal the studio
+            // has to "the user got on with it".
+            if case .switchedLayer = nudges.current {} else { nudges.dismissOnEdit() }
         }
     }
 
-    // MARK: Canvas
-
-    private var canvas: some View {
-        DrawingCanvas(model: model)
-            .aspectRatio(1, contentMode: .fit)
-            .padding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: Controls
-
-    @ViewBuilder
-    private var controls: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            // Accessibility sizes: the panel is height-capped, so the action row
-            // would fall below the scroll fold. Pin it as an always-visible bar
-            // below the scroll so Undo/Redo/Clear/Download/Save stay reachable
-            // without scrolling; the canvas keeps the same height.
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(spacing: 16) { adjustmentRows }
-                        .padding(16)
-                }
-                Divider()
-                pinnedActionBar
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-            }
-            .background(controlsBackground)
-        } else {
-            ScrollView {
-                VStack(spacing: 16) {
-                    adjustmentRows
-                    actionRow
-                }
-                .padding(16)
-            }
-            .background(controlsBackground)
-        }
-    }
-
-    /// The scrollable adjustment controls (everything except the action row).
-    @ViewBuilder
-    private var adjustmentRows: some View {
-        colorRow
-        sliderRow(title: "Size", accessibilityLabel: "Brush size",
-                  value: $model.size, range: 2...60) { "\(Int($0.rounded())) points" }
-        sliderRow(title: "Opacity", accessibilityLabel: "Opacity",
-                  value: $model.opacity, range: 0.1...1) { "\(Int(($0 * 100).rounded())) percent" }
-        segmentsRow
-        togglesRow
-    }
+    // MARK: Chrome
 
     @ViewBuilder
-    private var controlsBackground: some View {
-        if reduceTransparency {
-            Blueprint.card
-        } else {
-            Color.clear.background(.ultraThinMaterial)
+    private func chrome(in geo: GeometryProxy) -> some View {
+        switch layout {
+        case .rail: regularChrome(in: geo)
+        case .dock: dockChrome(in: geo)
+        case .compactRail: compactRailChrome(in: geo)
         }
     }
 
-    private var colorRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Default: label + toggle on one line. At accessibility Dynamic Type
-            // sizes the toggle would clip off the right edge, so stack them.
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 8) {
-                    label("Color")
-                    spectrumToggle
-                }
-            } else {
-                HStack {
-                    label("Color")
-                    Spacer()
-                    spectrumToggle
-                }
+    // MARK: Regular width (iPad)
+
+    private func regularChrome(in geo: GeometryProxy) -> some View {
+        ZStack(alignment: .topLeading) {
+            // Rail, full height, inset from every edge.
+            StudioRail(model: model, metrics: metrics, panel: $panel, showLayers: $showLayers,
+                       onClear: { showClearConfirm = true }, onDownload: download)
+                .padding(.vertical, metrics.railInset)
+                .padding(.leading, metrics.railInset)
+                .frame(maxHeight: .infinity, alignment: .top)
+
+            // Top bar: readout leading, actions trailing, clear of the rail.
+            HStack(alignment: .top) {
+                readout
+                Spacer(minLength: 12)
+                topActions
             }
-            // Horizontal scroll so the 44pt-hit-target swatches + ColorPicker
-            // never clip — at default width or at large Dynamic Type sizes.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(palette, id: \.self) { hex in swatch(hex) }
-                    ColorPicker("", selection: $customColor, supportsOpacity: false)
-                        .labelsHidden()
-                        .onChange(of: customColor) { _, newValue in
-                            model.color = newValue.hexRGB
-                            model.useSpectrum = false
-                        }
-                        .accessibilityLabel("Custom color picker")
-                }
-                .padding(.vertical, 2)
-                .opacity(model.useSpectrum ? 0.45 : 1)
+            .padding(.leading, metrics.popoverAnchor)
+            .padding(.trailing, metrics.railInset)
+            .padding(.top, metrics.railInset)
+
+            if showsEdgeSliders {
+                EdgeSliders(model: model)
+                    .padding(.trailing, metrics.edgeInset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             }
+
+            ZoomBadge(scale: model.viewScale) { model.resetView() }
+                .padding(.trailing, metrics.edgeInset)
+                .padding(.bottom, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+
+            floatingPanels(in: geo)
+            removeStrokeBar
+            toast
+                .padding(.leading, metrics.popoverAnchor)
+                .padding(.bottom, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
     }
 
-    private var spectrumToggle: some View {
-        Toggle("Spectrum", isOn: $model.useSpectrum)
-            .toggleStyle(ContrastToggleStyle(onFill: Blueprint.craneButton, onLabel: .white))
-            .font(.caption)
-            .accessibilityLabel("Rainbow spectrum brush")
-            .accessibilityHint("Cycles through colors as you draw")
+    /// Rail-anchored cards. The layers panel docks top-right and everything else
+    /// hangs off the rail on the left, so the centre stays clear in every
+    /// combination — including both open at once, which `IPadLayers` shows.
+    @ViewBuilder
+    private func floatingPanels(in geo: GeometryProxy) -> some View {
+        let maxCardHeight = max(200, geo.size.height - metrics.railInset * 2 - 56)
+        // The layers panel is top-anchored on the trailing side and the edge
+        // sliders are vertically centred there, so an unbounded panel grows into
+        // them. Capping it at the midline keeps both usable; a taller stack
+        // scrolls, which is the right answer anyway.
+        let maxLayersHeight = max(200, geo.size.height / 2 - 64 - 24)
+
+        if showLayers {
+            scrollableCard(maxHeight: maxLayersHeight, measured: $layersCardHeight) {
+                LayersPanel(model: model,
+                            onEditSymmetry: { panel = .symmetry($0) },
+                            onNudge: { nudges.show($0) })
+            }
+            .padding(.trailing, 80)
+            .padding(.top, 64)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .transition(cardTransition)
+        }
+
+        if hasLeadingPanel {
+            scrollableCard(maxHeight: maxCardHeight, measured: $leadingCardHeight) { leadingPanel }
+                .padding(.leading, metrics.popoverAnchor)
+                .padding(.top, 64)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .transition(cardTransition)
+        }
     }
 
-    private func swatch(_ hex: String) -> some View {
-        let isSelected = !model.useSpectrum && model.color.caseInsensitiveCompare(hex) == .orderedSame
-        return Circle()
-            .fill(Color(hex: hex))
-            .frame(width: swatchSize, height: swatchSize)
-            .overlay(Circle().stroke(Blueprint.graphite.opacity(0.25), lineWidth: 1))
-            .overlay(selectionRing(isSelected: isSelected))
-            // Keep the 30pt visual but give at least a 44pt tappable/focusable area.
-            .frame(minWidth: 44, minHeight: 44)
-            .contentShape(Circle())
-            .onTapGesture {
-                model.color = hex
-                model.useSpectrum = false
+    /// Everything except the layers panel hangs off the rail on the left. Split
+    /// out as a Bool because a `@ViewBuilder` returns `some View`, never an
+    /// optional — `if let` on one silently does not compile.
+    private var hasLeadingPanel: Bool { panel != nil }
+
+    @ViewBuilder
+    private var leadingPanel: some View {
+        switch panel {
+        case .brush: BrushPopover(model: model, pencilSeen: pencilSeen)
+        case .color: ColorPopover(model: model, customColor: $customColor)
+        case .symmetry(let id): SymmetryPopover(model: model, layerId: id) { panel = nil }
+        default: EmptyView()
+        }
+    }
+
+    /// Cards scroll rather than clip. On a landscape phone the brush card is
+    /// taller than the screen; clipping it would put "Smooth strokes" somewhere
+    /// no gesture can reach.
+    ///
+    /// The height is MEASURED rather than inferred. A `ScrollView` claims every
+    /// point of height it is offered and its ideal height is unbounded, so
+    /// neither `.frame(maxHeight:)` nor `.fixedSize()` shrinks it — both were
+    /// tried, and both produced a full-height card with a 280pt panel floating in
+    /// the middle of it (and, on the iPad, a card that reached across the SIZE
+    /// edge slider). Measuring the content and pinning the frame to
+    /// `min(content, max)` is the only version that both fits the content and
+    /// still scrolls when the content is genuinely taller than the screen.
+    private func scrollableCard<Content: View>(maxHeight: CGFloat,
+                                               measured: Binding<CGFloat>,
+                                               @ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            content()
+                .background(GeometryReader { g in
+                    Color.clear.preference(key: CardHeightKey.self, value: g.size.height)
+                })
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .fixedSize(horizontal: true, vertical: false) // width comes from the card
+        .frame(height: min(max(measured.wrappedValue, 1), maxHeight))
+        .onPreferenceChange(CardHeightKey.self) { measured.wrappedValue = $0 }
+        .cardBackground()
+    }
+
+    private var cardTransition: AnyTransition {
+        // DESIGN.md §7: 120ms fade + a 4px rise, none under reduced motion.
+        reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 4))
+    }
+
+    // MARK: Compact width (phone portrait)
+
+    private func dockChrome(in geo: GeometryProxy) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                readout
+                Spacer(minLength: 8)
+                topActions
             }
-            .accessibilityElement()
-            .accessibilityLabel(Blueprint.colorName(forHex: hex))
-            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-            .accessibilityHint("Sets the brush color")
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+
+            Spacer(minLength: 0)
+
+            toast.padding(.horizontal, 16).padding(.bottom, 8)
+            removeStrokeBar.padding(.horizontal, 16).padding(.bottom, 8)
+
+            PhoneStrip(model: model, customColor: $customColor, panel: $panel)
+                .padding(.bottom, 8)
+
+            PhoneDock(model: model, metrics: metrics, panel: $panel, showLayers: $showLayers,
+                      onClear: { showClearConfirm = true }, onDownload: download)
+                .padding(.horizontal, metrics.dockInset)
+        }
+    }
+
+    // MARK: Compact height (phone landscape)
+
+    private func compactRailChrome(in geo: GeometryProxy) -> some View {
+        ZStack(alignment: .topLeading) {
+            CompactRail(model: model, metrics: metrics, panel: $panel, showLayers: $showLayers,
+                        onClear: { showClearConfirm = true }, onDownload: download)
+                .padding(.leading, metrics.railInset)
+                .frame(maxHeight: .infinity, alignment: .center)
+
+            // Save only, top-right (DESIGN.md §2).
+            PrimaryAction(title: "Save", systemImage: "sparkles",
+                          height: metrics.actionHeight, isEnabled: !model.isEmpty, action: onSave)
+                .padding(.trailing, metrics.railInset)
+                .padding(.top, metrics.railInset)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
+            VStack(alignment: .trailing, spacing: 8) {
+                SwatchRow(model: model, customColor: $customColor, swatchSize: 22)
+                readout
+            }
+            .padding(.trailing, metrics.railInset)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+
+            floatingPanels(in: geo)
+            removeStrokeBar
+            toast
+                .padding(.leading, metrics.popoverAnchor)
+                .padding(.bottom, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        }
+    }
+
+    // MARK: Shared pieces
+
+    private var readout: some View {
+        ReadoutCapsule(
+            text: Readout.capsule(layerIndex: activeIndex, sym: model.symmetry,
+                                  brushSize: model.size, zoom: model.viewScale,
+                                  removeMode: model.removeStrokeMode, layout: layout),
+            spoken: Readout.spokenCapsule(layerName: model.activeLayer.name, sym: model.symmetry,
+                                          brushSize: model.size, zoom: model.viewScale,
+                                          removeMode: model.removeStrokeMode),
+            height: metrics.readoutHeight)
+    }
+
+    private var activeIndex: Int {
+        model.layers.firstIndex { $0.id == model.activeLayerId } ?? 0
+    }
+
+    /// Download · Save · Gallery · Help on regular width; the phone keeps only
+    /// Download (icon) and Save, because the tab bar already reaches the gallery.
+    @ViewBuilder
+    private var topActions: some View {
+        HStack(spacing: 8) {
+            GhostAction(title: "Download", systemImage: "square.and.arrow.down",
+                        height: metrics.actionHeight, compact: layout != .rail,
+                        isEnabled: !model.isEmpty,
+                        accessibilityLabelText: "Download PNG", action: download)
+
+            PrimaryAction(title: "Save", systemImage: "sparkles",
+                          height: metrics.actionHeight, compact: false,
+                          isEnabled: !model.isEmpty, action: onSave)
+
+            if layout == .rail {
+                GhostAction(title: "Gallery", systemImage: "square.grid.2x2",
+                            height: metrics.actionHeight, compact: true,
+                            accessibilityLabelText: "Gallery") {
+                    router.tab = AppRouter.galleryTab
+                }
+                GhostAction(title: "Help", systemImage: "questionmark",
+                            height: metrics.actionHeight, compact: true,
+                            accessibilityLabelText: "Help") { showHelp = true }
+            }
+        }
     }
 
     @ViewBuilder
-    private func selectionRing(isSelected: Bool) -> some View {
-        if isSelected {
-            ZStack {
-                Circle().stroke(Blueprint.crane, lineWidth: 3).padding(-3)
-                // Differentiate Without Color: a checkmark so selection reads
-                // without relying on the crane-colored glow.
-                if differentiateWithoutColor {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: swatchSize * 0.45, weight: .bold))
-                        .foregroundStyle(.white)
-                        .shadow(radius: 1)
-                }
-            }
-        }
-    }
-
-    private func sliderRow(title: String, accessibilityLabel: String, value: Binding<Double>,
-                           range: ClosedRange<Double>, spoken: @escaping (Double) -> String) -> some View {
-        HStack {
-            label(title).frame(width: 70, alignment: .leading).accessibilityHidden(true)
-            Slider(value: value, in: range)
-                .tint(Blueprint.crease)
-                .accessibilityLabel(accessibilityLabel)
-                .accessibilityValue(spoken(value.wrappedValue))
-        }
-    }
-
-    private var segmentsRow: some View {
-        HStack {
-            label("Segments").frame(width: 70, alignment: .leading).accessibilityHidden(true)
-            Slider(
-                value: Binding(get: { Double(model.segments) }, set: { model.segments = Int($0.rounded()) }),
-                in: Double(MIN_SEGMENTS)...Double(MAX_SEGMENTS),
-                step: 1
-            )
-            .tint(Blueprint.crease)
-            .accessibilityLabel("Symmetry segments")
-            .accessibilityValue("\(model.segments)")
-            Text("\(model.segments)")
-                .font(.caption.monospacedDigit())
-                .frame(width: 24)
-                .foregroundStyle(Blueprint.graphite)
-                .accessibilityHidden(true)
-        }
-    }
-
-    private var togglesRow: some View {
-        HStack(spacing: 12) {
-            Toggle("Glow", isOn: Binding(
-                get: { model.tool == .glow },
-                set: { model.tool = $0 ? .glow : .solid }
-            ))
-            .toggleStyle(ContrastToggleStyle(onFill: Blueprint.sax, onLabel: Blueprint.onSax))
-            .accessibilityLabel("Glow brush")
-            .accessibilityHint("Draws with a soft luminous halo")
-
-            // Mirror on = dihedral (reflection); off = rotation only. Under
-            // Differentiate Without Color, an icon conveys the mode by shape,
-            // not just the selected tint.
-            Toggle(isOn: $model.mirror) {
-                if differentiateWithoutColor {
-                    Label("Mirror", systemImage: model.mirror ? "circle.lefthalf.filled" : "arrow.triangle.2.circlepath")
-                } else {
-                    Text("Mirror")
-                }
-            }
-            .toggleStyle(ContrastToggleStyle(onFill: Blueprint.creaseButton, onLabel: .white))
-            .accessibilityLabel("Mirror symmetry")
-            .accessibilityHint(model.mirror ? "On: reflected wedges" : "Off: rotation only")
-
-            Toggle("Guides", isOn: $model.showGuides)
-                .toggleStyle(ContrastToggleStyle(onFill: Blueprint.creaseButton, onLabel: .white))
-                .accessibilityLabel("Symmetry guides")
-                .accessibilityHint("Shows faint wedge guide lines")
-            Toggle("Dark", isOn: Binding(
-                get: { model.background == .dark },
-                set: { model.background = $0 ? .dark : .light }
-            ))
-            // Fill = graphite ink, label = graph paper: both flip with the theme
-            // together, so the label stays ~13:1 in light and dark.
-            .toggleStyle(ContrastToggleStyle(onFill: Blueprint.graphite, onLabel: Blueprint.graph))
-            .accessibilityLabel("Dark canvas")
-            .accessibilityHint("Switches the canvas background between light and dark")
-            Spacer()
-        }
-        .font(.caption)
-    }
-
-    // Default (one row): undo/redo/clear, spacer, download, save.
-    private var actionRow: some View {
-        HStack(spacing: 14) {
-            editButtons
-            Spacer()
-            downloadButton
-            saveButton
-        }
-    }
-
-    /// Accessibility sizes: two rows so all five controls fit (a single row
-    /// overflows and pushes Save off-screen). Undo/redo/clear on top, then
-    /// Download + Save full-width. Used pinned below the scroll in `controls`.
-    private var pinnedActionBar: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 14) { editButtons; Spacer() }
-            HStack(spacing: 14) {
-                downloadButton.frame(maxWidth: .infinity)
-                saveButton.frame(maxWidth: .infinity)
-            }
-            // Keep the two full-width labels on one line, scaling if needed.
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+    private var removeStrokeBar: some View {
+        if let hit = model.pendingHit {
+            RemoveStrokeBar(model: model, hit: hit)
+                .padding(.top, 64)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .transition(cardTransition)
         }
     }
 
     @ViewBuilder
-    private var editButtons: some View {
-        iconButton("arrow.uturn.backward", label: "Undo", enabled: model.canUndo) { model.undo() }
-        iconButton("arrow.uturn.forward", label: "Redo", enabled: model.canRedo) { model.redo() }
-        iconButton("trash", label: "Clear canvas", enabled: !model.isEmpty) { model.clear() }
-    }
-
-    private var downloadButton: some View {
-        Button {
-            download()
-        } label: {
-            Label("PNG", systemImage: "square.and.arrow.down")
+    private var toast: some View {
+        if let nudge = nudges.current {
+            StudioToast(systemImage: nudge.systemImage, message: nudge.message,
+                        actionTitle: nudge.actionTitle,
+                        action: nudgeAction(nudge),
+                        onDismiss: { nudges.dismiss() })
+                .transition(cardTransition)
         }
-        .buttonStyle(.bordered)
-        .tint(Blueprint.crease)
-        .disabled(model.isEmpty)
-        .accessibilityLabel("Download PNG")
-        .accessibilityHint("Exports the drawing as an image to share or save")
     }
 
-    private var saveButton: some View {
-        Button {
-            onSave()
-        } label: {
-            Label("Save", systemImage: "sparkles")
-                .foregroundStyle(.white) // pin white so the label isn't system-picked
+    private func nudgeAction(_ nudge: StudioNudge) -> (() -> Void)? {
+        switch nudge {
+        case .pencilDetected:
+            return { panel = .brush; nudges.dismiss() }
+        case .hiddenLayer(let name):
+            return {
+                if let id = model.layers.first(where: { $0.name == name })?.id {
+                    model.setLayerVisible(id, true)
+                }
+                nudges.dismiss()
+            }
+        default:
+            return nil
         }
-        .buttonStyle(.borderedProminent)
-        .tint(Blueprint.craneButton)
-        .disabled(model.isEmpty)
-        .accessibilityHint("Saves the piece to the gallery")
     }
 
-    private func iconButton(_ system: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: system).font(.title3)
+    // MARK: Sheets (compact width)
+
+    private var sheetBinding: Binding<Bool> {
+        Binding(
+            get: { (panel != nil || showLayers) && !layout.usesPopovers },
+            set: { if !$0 { panel = nil; showLayers = false } }
+        )
+    }
+
+    @ViewBuilder
+    private var panelSheet: some View {
+        Group {
+            switch panel {
+            case .brush: BrushPopover(model: model, pencilSeen: pencilSeen)
+            case .color: ColorPopover(model: model, customColor: $customColor)
+            case .symmetry(let id): SymmetryPopover(model: model, layerId: id) { panel = nil }
+            case nil:
+                if showLayers {
+                    LayersPanel(model: model,
+                                onEditSymmetry: { showLayers = false; panel = .symmetry($0) },
+                                onNudge: { nudges.show($0) })
+                }
+            }
         }
-        .buttonStyle(.bordered)
-        .tint(Blueprint.graphite)
-        .disabled(!enabled)
-        .accessibilityLabel(label)
+        .frame(maxWidth: .infinity)
+        // DESIGN.md §2: a phone sheet never exceeds a third of the height at
+        // rest. `.large` stays available because the brush card is taller than
+        // a third of a phone and its last row must still be reachable.
+        .presentationDetents([.fraction(0.34), .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Blueprint.graphCard)
     }
 
-    private func label(_ text: String) -> some View {
-        Text(text).font(.subheadline.weight(.medium)).foregroundStyle(Blueprint.graphite)
-    }
-
-    // MARK: Download
+    // MARK: Export
 
     /// The image the Download button shares. **v2, not v1**: `currentDrawing()`
     /// projects the document down to a single layer under one symmetry and
@@ -345,6 +447,7 @@ struct StudioView: View {
     /// document. (`KaleidoRenderer.paintDrawing` paints visible layers only,
     /// which is the same rule `model.isEmpty` gates the button on, so no ink can
     /// reach the file that was not on screen.)
+    ///
     /// `size` exists so the export probe can fingerprint this exact function at
     /// a cheap resolution. Rendering the probe's "what the button produces" at a
     /// DIFFERENT size than its "what v1 would produce" comparison makes the two
@@ -364,6 +467,54 @@ struct StudioView: View {
         } catch {
             // Non-fatal: sharing simply won't open.
         }
+    }
+
+    /// Launch-gated export fingerprints for the UI tests (KALEIDO_EXPORT_PROBE=1).
+    /// Fingerprints the SAME `exportImage()` the Download button shares, so the
+    /// test can never pass against a code path the button does not take.
+    @ViewBuilder
+    private var exportProbe: some View {
+        if ExportProbe.enabled {
+            ExportProbeView(report: ExportProbe.report(
+                exported: exportImage(size: ExportProbe.probeSize), model: model))
+        }
+    }
+}
+
+/// Gestures a user cannot discover by looking. Deliberately short: this is a
+/// reference for the things with no on-screen affordance, not a manual.
+struct StudioHelpSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private let rows: [(String, String, String)] = [
+        ("hand.pinch", "Pinch to zoom", "Up to 8×. Double-tap the canvas to snap back to 100%."),
+        ("hand.draw", "Two fingers pan", "One finger draws unless you turn that off in Brush."),
+        ("applepencil.tip", "Pencil double-tap", "Switches to Remove stroke and back."),
+        ("scissors", "Remove a stroke", "Tap it once to highlight every image of it, again to delete."),
+        ("square.3.layers.3d", "Layers", "Each layer keeps its own symmetry. Hiding one is not an undo step.")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            List(rows, id: \.1) { row in
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.1).font(.subheadline.weight(.medium))
+                        Text(row.2).font(.footnote).foregroundStyle(Blueprint.graphite.opacity(0.72))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } icon: {
+                    Image(systemName: row.0).foregroundStyle(Blueprint.craneStrong)
+                }
+                .padding(.vertical, 2)
+            }
+            .navigationTitle("Gestures")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 
@@ -419,5 +570,13 @@ struct ContrastToggleStyle: ToggleStyle {
         .buttonStyle(.plain)
         // Preserve the "selected" trait the system button-toggle exposes when on.
         .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+    }
+}
+
+/// Natural height of a popover card's content — see `StudioView.scrollableCard`.
+private struct CardHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

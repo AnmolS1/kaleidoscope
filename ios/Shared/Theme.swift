@@ -23,6 +23,18 @@ extension Color {
             UIColor(hex: trait.userInterfaceStyle == .dark ? dark : light)
         })
     }
+
+    /// Per-theme alpha as well as per-theme hue. The blueprint hairlines are
+    /// `rgba(46,94,140,.13)` in light and `rgba(130,169,206,.16)` in dark — the
+    /// alphas differ, so a single `.opacity()` on a dynamic color cannot express
+    /// them and would quietly render one of the two themes wrong.
+    init(light: String, lightAlpha: CGFloat, dark: String, darkAlpha: CGFloat) {
+        self = Color(UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor(hex: dark).withAlphaComponent(darkAlpha)
+                : UIColor(hex: light).withAlphaComponent(lightAlpha)
+        })
+    }
 }
 
 /// The Kaleidoscope "blueprint / origami workshop" palette.
@@ -75,6 +87,66 @@ enum Blueprint {
     /// toggle). White fails on light gold (~1.6:1); this fixed dark navy clears
     /// 4.5:1 in both themes (7.38:1) since `sax` itself is fixed.
     static let onSax = Color(hex: "#13202A")
+
+    // MARK: Blueprint-instrument surfaces and lines (DESIGN.md §1)
+    //
+    // The 1.2 studio chrome is a thin rail of line icons over graph paper: it
+    // needs a card surface, an inset well for thumbnails, and two weights of
+    // hairline. These are the same values the web resolves out of
+    // `src/client/styles/tokens.css`, so the two clients read as one product.
+
+    /// Panel / popover / card surface — `--color-graph-card`.
+    static let graphCard = Color(light: "#F6F7F4", dark: "#182530")
+
+    /// Input and thumbnail wells — `--color-inset`. Sits *inside* a card, which
+    /// is why it is lighter than the card in light mode and darker in dark.
+    static let inset = Color(light: "#FFFFFF", dark: "#1D2C38")
+
+    /// Hairline — `--color-crease-line`. Dividers inside a panel.
+    static let creaseLine = Color(light: "#2E5E8C", lightAlpha: 0.13,
+                                  dark: "#82A9CE", darkAlpha: 0.16)
+
+    /// Bold hairline — `--color-crease-line-bold`. Panel and control borders.
+    static let creaseLineBold = Color(light: "#2E5E8C", lightAlpha: 0.28,
+                                      dark: "#82A9CE", darkAlpha: 0.30)
+
+    /// Faint graph rule, matching the canvas grid.
+    static let gridLine = Color(light: "#2E5E8C", lightAlpha: 0.07,
+                                dark: "#82A9CE", darkAlpha: 0.09)
+
+    /// DESIGN.md calls this `crane-strong`: crane rendered as TEXT. It is the
+    /// existing `craneText` token rather than the spec's literal `#C23A1C`,
+    /// because §1 also says the `ACCESSIBILITY_CONTRAST.md` rules still hold and
+    /// `#C23A1C` is only 4.10:1 on the light graph ground. `craneText` is the
+    /// same hue family at 5.71:1 / 5.49:1. One name, so panel code never has to
+    /// re-derive which crane it wants.
+    static var craneStrong: Color { craneText }
+
+    // MARK: Radii and elevation
+
+    static let rSm: CGFloat = 6
+    static let rMd: CGFloat = 10
+    static let rLg: CGFloat = 16
+
+    /// `--shadow-card`, as the two SwiftUI shadows that compose it.
+    static let cardShadowNear = (color: Color.black.opacity(0.06), radius: CGFloat(2), y: CGFloat(1))
+    static let cardShadowFar = (color: Color.black.opacity(0.08), radius: CGFloat(14), y: CGFloat(8))
+
+    // MARK: Type roles
+    //
+    // Text-STYLE based, not fixed point sizes, so every readout and label scales
+    // with Dynamic Type. The design's px sizes map on: 10 → .caption2,
+    // 12 → .caption, 13 → .footnote, 14 → .subheadline, 18 → .headline.
+
+    /// IBM Plex Mono's role: readouts, tick labels, the `12 · D` lines.
+    static func mono(_ style: Font.TextStyle = .caption) -> Font {
+        .system(style, design: .monospaced)
+    }
+
+    /// Bricolage Grotesque's role: panel and dialog titles.
+    static func display(_ style: Font.TextStyle = .subheadline) -> Font {
+        .system(style, design: .default).weight(.semibold)
+    }
 
     /// Human-readable name for a palette swatch, mirroring the backend's color
     /// vocabulary, so VoiceOver never reads a bare hex string. Falls back to a

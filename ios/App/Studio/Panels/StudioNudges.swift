@@ -1,0 +1,96 @@
+import SwiftUI
+
+// The studio's nudges (DESIGN.md §3, frames FirstRun / Nudges / IPadBrush).
+//
+// Copy is VERBATIM from the spec — em dashes, the "▸" in the finger-pan string,
+// the curly quotes around a layer name. These strings also ship on the web, and a
+// nudge that says something slightly different on each platform is a nudge a user
+// cannot learn.
+//
+// One at a time, bottom-leading, dismissed by the next stroke or after 6 seconds.
+
+enum StudioNudge: Equatable {
+    /// First Pencil touch. Offers the finger-pan switch where it is finally useful.
+    case pencilDetected
+    /// Confirmation after `drawWithFinger` goes off.
+    case fingersPan
+    /// A new layer inherited the layer it was added above.
+    case newLayerSymmetry(String)
+    /// Remove-stroke retargeted the active layer.
+    case switchedLayer(String)
+    /// A stroke was refused because the active layer is hidden.
+    case hiddenLayer(String)
+
+    var systemImage: String {
+        switch self {
+        case .pencilDetected: return "applepencil.tip"
+        case .fingersPan: return "hand.draw"
+        case .newLayerSymmetry: return "square.3.layers.3d"
+        case .switchedLayer: return "square.3.layers.3d"
+        case .hiddenLayer: return "eye.slash"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .pencilDetected:
+            return "Apple Pencil detected — tune pressure in Brush."
+        case .fingersPan:
+            return "Finger touches now pan and zoom. Change in Brush ▸ Draw with finger."
+        case .newLayerSymmetry:
+            return "New layer inherits this layer's symmetry. Tap the badge to change it."
+        case .switchedLayer(let name):
+            return "Switched to \(name)"
+        case .hiddenLayer(let name):
+            return "\u{201C}\(name)\u{201D} is hidden, so nothing was drawn."
+        }
+    }
+
+    /// The chip CTA, if this nudge has one.
+    var actionTitle: String? {
+        switch self {
+        case .pencilDetected: return "Open Brush"
+        case .hiddenLayer: return "Show layer"
+        default: return nil
+        }
+    }
+
+    /// Nudges that report a completed action are announced but not dwelt on;
+    /// `switchedLayer` in particular fires mid-gesture during remove-stroke.
+    var dismissAfter: TimeInterval {
+        switch self {
+        case .switchedLayer: return 2.5
+        default: return 6
+        }
+    }
+}
+
+/// Holds the one visible nudge and its auto-dismiss timer.
+///
+/// A single slot, not a queue: DESIGN.md says one at a time, and a queue would
+/// keep showing a nudge about a state the user has already moved past.
+@MainActor
+final class NudgeCenter: ObservableObject {
+    @Published private(set) var current: StudioNudge?
+    private var token = 0
+
+    func show(_ nudge: StudioNudge) {
+        current = nudge
+        token += 1
+        let mine = token
+        let delay = nudge.dismissAfter
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, self.token == mine else { return }
+            self.current = nil
+        }
+    }
+
+    func dismiss() {
+        token += 1
+        current = nil
+    }
+
+    /// "Dismiss on the next stroke". Called when the document's revision moves.
+    func dismissOnEdit() { dismiss() }
+}
