@@ -1,0 +1,3541 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`v1 render golden (pre-v2-rewrite baseline) > cyclic-12-dark-glow — C_12 (no mirror), two overlapping glow strokes over a solid one — the "lighter" composite against existing ink is the case an offscreen per-layer buffer would change 1`] = `
+"save()
+translate(400, 300)
+rotate(0)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.523599)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.047198)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.570796)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.617994)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.141593)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.665191)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.712389)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.235988)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.759587)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.523599)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.047198)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.570796)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.617994)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.141593)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.665191)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.712389)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.235988)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.759587)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.63
+strokeStyle = "#1D9E75"
+lineWidth = 4.34775
+beginPath()
+moveTo(-15, 210)
+lineTo(42, 174)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(42, 174)
+lineTo(90, 120)
+stroke()
+lineWidth = 5.84925
+beginPath()
+moveTo(90, 120)
+lineTo(123, 57)
+stroke()
+lineWidth = 4.34775
+beginPath()
+moveTo(123, 57)
+lineTo(138, -9)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.523599)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.047198)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.570796)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.617994)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.141593)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.665191)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.712389)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.235988)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.759587)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "lighter"
+globalAlpha = 0.525
+strokeStyle = "#D9A521"
+lineWidth = 4.1715
+beginPath()
+moveTo(135, 165)
+lineTo(78, 135)
+stroke()
+lineWidth = 4.698
+beginPath()
+moveTo(78, 135)
+lineTo(18, 126)
+stroke()
+lineWidth = 4.1715
+beginPath()
+moveTo(18, 126)
+lineTo(-42, 144)
+stroke()
+restore()
+restore()"
+`;
+
+exports[`v1 render golden (pre-v2-rewrite baseline) > dihedral-9-light — D_9 (odd n, mirrored → 18 images), hex + spectrum strokes, per-segment width from pressure, per-segment hue from position 1`] = `
+"save()
+translate(400, 300)
+rotate(0)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.698132)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.396263)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.792527)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.490659)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.886922)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.585054)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.698132)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.396263)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.792527)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.490659)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.886922)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.585054)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.698132)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.396263)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.792527)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.490659)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.886922)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.585054)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.698132)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.396263)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.792527)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.490659)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.886922)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.585054)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()"
+`;
+
+exports[`v1 render golden (pre-v2-rewrite baseline) > dot-and-min-segments — the single-point dot path (arc/fill, not stroke) at the minimum segment count, mirrored 1`] = `
+"save()
+translate(400, 300)
+rotate(0)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#2A2A6E"
+beginPath()
+fillStyle = "#2A2A6E"
+globalAlpha = 1
+arc(-120, 120, 4.2075, 0, 6.283185)
+fill()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#2A2A6E"
+beginPath()
+fillStyle = "#2A2A6E"
+globalAlpha = 1
+arc(-120, 120, 4.2075, 0, 6.283185)
+fill()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#2A2A6E"
+beginPath()
+fillStyle = "#2A2A6E"
+globalAlpha = 1
+arc(-120, 120, 4.2075, 0, 6.283185)
+fill()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#2A2A6E"
+beginPath()
+fillStyle = "#2A2A6E"
+globalAlpha = 1
+arc(-120, 120, 4.2075, 0, 6.283185)
+fill()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#2A2A6E"
+beginPath()
+fillStyle = "#2A2A6E"
+globalAlpha = 1
+arc(-120, 120, 4.2075, 0, 6.283185)
+fill()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#2A2A6E"
+beginPath()
+fillStyle = "#2A2A6E"
+globalAlpha = 1
+arc(-120, 120, 4.2075, 0, 6.283185)
+fill()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+scale(1, -1)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 1
+strokeStyle = "#E84A27"
+lineWidth = 1.347
+beginPath()
+moveTo(36, -186)
+lineTo(60, -132)
+stroke()
+lineWidth = 1.815
+beginPath()
+moveTo(60, -132)
+lineTo(93, -84)
+stroke()
+lineWidth = 2.244
+beginPath()
+moveTo(93, -84)
+lineTo(120, -27)
+stroke()
+lineWidth = 2.088
+beginPath()
+moveTo(120, -27)
+lineTo(132, 36)
+stroke()
+lineWidth = 1.503
+beginPath()
+moveTo(132, 36)
+lineTo(117, 90)
+stroke()
+restore()
+restore()"
+`;
+
+exports[`v1 render golden (pre-v2-rewrite baseline) > max-segments-24 — C_24, the upper clamp bound, with a translucent spectrum stroke 1`] = `
+"save()
+translate(400, 300)
+rotate(0)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.261799)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.523599)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(0.785398)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.047198)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.308997)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.570796)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(1.832596)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.094395)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.356194)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.617994)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(2.879793)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.141593)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.403392)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.665191)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(3.926991)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.18879)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.45059)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.712389)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(4.974188)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.235988)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.497787)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(5.759587)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()
+save()
+translate(400, 300)
+rotate(6.021386)
+save()
+lineCap = "round"
+lineJoin = "round"
+globalCompositeOperation = "source-over"
+globalAlpha = 0.85
+lineWidth = 3.108
+strokeStyle = "hsla(209.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-165, -60)
+lineTo(-108, -93)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(233.3, 85%, 60%, 1)"
+beginPath()
+moveTo(-108, -93)
+lineTo(-42, -108)
+stroke()
+lineWidth = 3.654
+strokeStyle = "hsla(265.7, 85%, 60%, 1)"
+beginPath()
+moveTo(-42, -108)
+lineTo(27, -90)
+stroke()
+lineWidth = 3.108
+strokeStyle = "hsla(309.4, 85%, 60%, 1)"
+beginPath()
+moveTo(27, -90)
+lineTo(84, -45)
+stroke()
+restore()
+restore()"
+`;

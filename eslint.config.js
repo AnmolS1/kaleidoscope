@@ -13,6 +13,11 @@ export default tseslint.config(
       ".remember/**",
       "test-results/**",
       "playwright-report/**",
+      // Gitignored working dirs. Flat config does NOT auto-ignore these, so
+      // scratch scripts in them get linted (and double-report against any
+      // worktree copy) unless named here.
+      ".claude/**",
+      "kaleidoscope-plan/**",
     ],
   },
   js.configs.recommended,

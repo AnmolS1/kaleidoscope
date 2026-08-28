@@ -35,6 +35,9 @@ google-oauth.json
 /dist
 .wrangler
 
+# AI plan/working dirs — never publish (see working-with-anmol memory note)
+/kaleidoscope-plan
+
 # test artifacts
 /test-results
 /playwright-report
