@@ -127,3 +127,66 @@ export const ColorIcon = (p: P) => (
     <path d="M12 22a10 10 0 1 1 0-20c4 0 6 2.5 6 5 0 2-1.8 3-3.4 3H13a2.4 2.4 0 0 0-1 4.6c.7.4 1 1 1 1.8A2 2 0 0 1 12 22Z" />
   </Svg>
 );
+
+// ── D01 chrome additions ─────────────────────────────────────────────────────
+// The rail, the strip chips and the toasts need marks the old wrapped toolbar
+// never had. Same 24×24 / currentColor contract as everything above.
+
+/** Brush SETTINGS (sliders), distinct from the brush TOOL mark. */
+export const TuneIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h9M17 18h3" />
+    <circle cx="16" cy="6" r="2" />
+    <circle cx="10" cy="12" r="2" />
+    <circle cx="15" cy="18" r="2" />
+  </Svg>
+);
+/** Zoom badge. A magnifier, not a percent sign — the number sits beside it. */
+export const ZoomIcon = (p: P) => (
+  <Svg {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.6-3.6" />
+  </Svg>
+);
+/** Layers. Also used by T06c's panel button and the phone strip's layers chip. */
+export const LayersIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+    <path d="m3 13 9 5 9-5" />
+  </Svg>
+);
+/** Remove-stroke (the `E` tool). Rendered by T06c; the mark lives here. */
+export const RemoveStrokeIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 20c4-1 6-4 8-8s4-7 8-8" stroke-dasharray="3 3" />
+    <path d="m15 15 6 6M21 15l-6 6" />
+  </Svg>
+);
+export const EyeIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z" />
+    <circle cx="12" cy="12" r="2.6" />
+  </Svg>
+);
+export const EyeOffIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="M4.5 7.5C2.9 9.2 2 12 2 12s3.6 6 10 6c1.7 0 3.2-.4 4.5-1M9.9 6.2A9.9 9.9 0 0 1 12 6c6.4 0 10 6 10 6s-1 1.7-2.8 3.3" />
+    <path d="m3 3 18 18" />
+  </Svg>
+);
+/** Apple Pencil / stylus — the "pen detected" toast. */
+export const PenIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="m15 4 5 5L9 20H4v-5L15 4Z" />
+    <path d="m13.5 5.5 5 5" />
+  </Svg>
+);
+/** A hand — the "fingers now pan" toast. */
+export const HandIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11" />
+    <path d="M12 11V4.5a1.5 1.5 0 0 1 3 0V11" />
+    <path d="M15 11V6.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-.5A6.5 6.5 0 0 1 4 14.5V12a1.5 1.5 0 0 1 3 0" />
+    <path d="M6 11V9" />
+  </Svg>
+);

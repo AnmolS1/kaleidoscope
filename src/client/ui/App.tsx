@@ -2,9 +2,11 @@ import { useEffect } from "preact/hooks";
 import { effect } from "@preact/signals";
 import * as S from "../state";
 import { Canvas } from "./Canvas";
-import { Toolbar } from "./Toolbar";
+import { Toolbar, openPopover } from "./Toolbar";
 import { HelpOverlay } from "./HelpOverlay";
 import { SaveDialog } from "./SaveDialog";
+import { ToastHost, showToast } from "./Toast";
+import { PenIcon } from "./Icons";
 import { Gallery } from "./Gallery";
 import { ArtworkPage } from "./ArtworkPage";
 
@@ -31,13 +33,27 @@ function useGlobalKeys() {
       if (mod) return; // leave other mod-combos to the browser
 
       switch (e.key) {
-        case "c":
-        case "C":
-          scene?.clear();
+        case "b":
+        case "B":
+          S.tool.value = "solid";
           break;
         case "g":
         case "G":
+          // DESIGN.md's shortcut strip claims G for the glow BRUSH. Guides moved
+          // to A ("axes") rather than losing their key; HelpOverlay's SHORTCUTS
+          // table is the single place both are written down.
+          S.tool.value = "glow";
+          break;
+        // T06c INSERTION POINT — `case "e"` selects the remove-stroke tool and
+        // `case "l"` toggles the layers panel. Flip their `available` flags in
+        // HelpOverlay's SHORTCUTS so the strip and the overlay pick them up.
+        case "a":
+        case "A":
           S.showGuides.value = !S.showGuides.value;
+          break;
+        case "c":
+        case "C":
+          scene?.clear();
           break;
         case "m":
         case "M":
@@ -58,12 +74,16 @@ function useGlobalKeys() {
         case "?":
           S.helpOpen.value = true;
           break;
-        case "d":
-        case "D": {
-          const menu = document.getElementById("download-menu") as HTMLDetailsElement | null;
-          if (menu) menu.open = !menu.open;
+        case "Escape":
+          openPopover.value = null;
           break;
-        }
+        case "d":
+        case "D":
+          // The toolbar owns which popover is open now, so this can no longer
+          // poke `details.open` directly — a controlled <details> would snap
+          // shut on the next render.
+          openPopover.value = openPopover.peek() === "download" ? null : "download";
+          break;
         case "s":
         case "S":
           e.preventDefault();
@@ -94,6 +114,32 @@ function useCanvasAnnouncer() {
   }, []);
 }
 
+function usePenToast() {
+  // DESIGN.md §3: "Apple Pencil detected — tune pressure in Brush." Fires on the
+  // false→true transition only, so a device where the latch is already set from
+  // a previous session is not nagged on every load. `penSeen` never goes back to
+  // false, so this can raise the toast at most once per session.
+  useEffect(() => {
+    let prev = S.penSeen.peek();
+    return effect(() => {
+      const seen = S.penSeen.value;
+      if (seen && !prev) {
+        showToast({
+          icon: <PenIcon />,
+          text: "Apple Pencil detected — tune pressure in Brush.",
+          cta: {
+            label: "Open Brush",
+            onClick: () => {
+              openPopover.value = "brush";
+            },
+          },
+        });
+      }
+      prev = seen;
+    });
+  }, []);
+}
+
 function useTheme() {
   // Initialize canvas/page theme from the OS preference once, then mirror the
   // `bg` signal onto <html data-theme> so design tokens switch with the canvas.
@@ -118,6 +164,7 @@ function Studio() {
         <h1 class="visually-hidden">Kaleidoscope drawing studio</h1>
         <Canvas />
       </main>
+      <ToastHost />
       <SaveDialog />
     </div>
   );
@@ -126,6 +173,7 @@ function Studio() {
 export function App() {
   useGlobalKeys();
   useTheme();
+  usePenToast();
   useCanvasAnnouncer();
   useEffect(() => {
     void S.initAuth();

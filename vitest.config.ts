@@ -8,5 +8,10 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["test/unit/**/*.test.ts", "test/worker/**/*.test.ts"],
+    // `contrast.test.ts` derives WCAG ratios from the real declarations in
+    // tokens.css via a `?raw` import. Vitest stubs CSS modules by default —
+    // including `?raw` — so without this the file arrives as an empty string and
+    // the test errors out rather than checking anything.
+    css: true,
   },
 });

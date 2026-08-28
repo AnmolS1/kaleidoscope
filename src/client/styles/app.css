@@ -132,10 +132,11 @@ button {
   outline-offset: 2px;
 }
 
-/* The studio toolbar is dense (tools + edit + export controls fill the row) at
-   every width, so there we show only the mark + barline — never the wordmark.
+/* The studio's top-actions row is dense (Download, Save, Gallery, Help, account)
+   at every width, so there we show only the mark + barline — never the wordmark.
    The full "ponderance" wordmark lives on the roomier PageNav (content pages). */
-.toolbar .pdr-word {
+.top-actions .pdr-word,
+.menu-panel .pdr-word {
   display: none;
 }
 
