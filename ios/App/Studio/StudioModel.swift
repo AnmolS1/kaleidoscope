@@ -527,7 +527,16 @@ final class StudioModel: ObservableObject {
     }
 
     init(layerCap: Int = 3) {
-        doc = DrawingDoc(layerCap: layerCap)
+        // A launch-env override, so the layers panel can be driven at either cap
+        // without pretending the free cap is something it is not. T12 needs both
+        // states: the locked Add with the Plus footnote at 3, and the unlocked
+        // panel at 8 for the App Store screenshots. Inert unless injected, like
+        // the other KALEIDO_* test hooks, so it cannot affect a real launch.
+        //
+        // T13 replaces the DEFAULT with the value from /api/me.plus; this
+        // override stays useful for tests either way.
+        let cap = ProcessInfo.processInfo.environment["KALEIDO_LAYER_CAP"].flatMap(Int.init) ?? layerCap
+        doc = DrawingDoc(layerCap: cap)
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: Keys.pressurePreset), let p = PressurePreset(rawValue: raw) {
             pressurePreset = p

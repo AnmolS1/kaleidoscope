@@ -308,3 +308,53 @@ describe("hitTestDrawing", () => {
     expect(hitTestDrawing(fat, 0.55, 0.06, 0)).not.toBeNull();
   });
 });
+
+describe("a hidden active layer refuses strokes", () => {
+  // The renderer skips hidden layers and the live overlay declines to draw
+  // there, so a stroke committed onto one is ink the user cannot see. Keeping it
+  // means the drawing silently carries invisible strokes, they count toward the
+  // piece, and it can be saved as an image that looks blank. Refusing is also
+  // what lets the UI say "nothing was drawn" and have that be true — DESIGN.md
+  // §3 specifies exactly that toast.
+  const docWithHiddenActive = () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.setLayerVisible(doc.activeLayerId, false);
+    return doc;
+  };
+
+  it("returns false and stores nothing", () => {
+    const doc = docWithHiddenActive();
+    const before = serialize(doc.drawing);
+    expect(doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]))).toBe(false);
+    expect(serialize(doc.drawing)).toBe(before);
+    expect(doc.activeLayer.strokes).toHaveLength(0);
+  });
+
+  // A refused stroke must not become an undo step either. If it did, the user
+  // would press undo and watch nothing happen — the classic symptom of a
+  // history entry that holds no change.
+  it("does not create an undo step", () => {
+    const doc = docWithHiddenActive();
+    const undoBefore = doc.canUndo;
+    doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]));
+    expect(doc.canUndo).toBe(undoBefore);
+  });
+
+  // The control. Without it, every assertion above passes just as well against
+  // a commitStroke that refuses EVERYTHING, which is a different bug.
+  it("...but a visible active layer still accepts them", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    expect(doc.activeLayer.visible).toBe(true);
+    expect(doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]))).toBe(true);
+    expect(doc.activeLayer.strokes).toHaveLength(1);
+    expect(doc.canUndo).toBe(true);
+  });
+
+  it("showing the layer again makes it accept strokes", () => {
+    const doc = docWithHiddenActive();
+    expect(doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]))).toBe(false);
+    doc.setLayerVisible(doc.activeLayerId, true);
+    expect(doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]))).toBe(true);
+    expect(doc.activeLayer.strokes).toHaveLength(1);
+  });
+});

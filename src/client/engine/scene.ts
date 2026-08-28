@@ -66,6 +66,14 @@ export interface SceneCallbacks {
    * announced rather than derived.
    */
   onPenSeen?: () => void;
+  /**
+   * Fires when a finished stroke was DISCARDED because the active layer is
+   * hidden. Carries that layer's name so the UI can say which one.
+   *
+   * The engine refuses rather than storing invisible ink; the nudge that tells
+   * the user is the UI's job, and without it the stroke just vanishes.
+   */
+  onHiddenLayerRefusal?: (layerName: string) => void;
 }
 
 export interface SceneOptions {
@@ -710,7 +718,15 @@ export class Scene {
     this.drawingStroke = null;
     this.lctx.clearRect(0, 0, this.cssW, this.cssH);
     if (stroke.pts.length > 0) {
-      this.doc.commitStroke(stroke);
+      const active = this.doc.activeLayer;
+      if (!this.doc.commitStroke(stroke)) {
+        // Refused: the active layer is hidden, so this stroke was never visible
+        // and is not kept. Tell the UI which layer so it can offer to show it.
+        this.cb.onHiddenLayerRefusal?.(active.name);
+        this.renderArt();
+        this.notify();
+        return;
+      }
       this.renderArt();
       this.notify();
     }

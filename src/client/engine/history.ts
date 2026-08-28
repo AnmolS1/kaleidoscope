@@ -357,11 +357,29 @@ export class DrawingDoc {
   }
 
   // --- strokes ---
+  /**
+   * Commit a stroke to the active layer.
+   *
+   * Returns false and commits NOTHING when that layer is hidden. The stroke was
+   * never rendered — `paintDrawing` skips hidden layers and the live overlay
+   * declines to draw there — so accepting it would store ink the user has no way
+   * to see, which then counts toward the drawing and can be saved as a picture
+   * that looks blank. Refusing is what lets the UI say "nothing was drawn" and
+   * have that be true.
+   *
+   * The caller is expected to tell the user which layer refused; silently
+   * dropping a stroke is only marginally better than silently keeping one.
+   */
   commitStroke(stroke: Stroke): boolean {
+    if (!this.activeLayerVisible()) return false;
     const next = addStrokeTo(this.hist.current, this.active, stroke);
     if (!next) return false;
     this.hist.commit(next);
     return true;
+  }
+
+  private activeLayerVisible(): boolean {
+    return this.activeLayer.visible;
   }
 
   deleteStroke(layerId: string, index: number): boolean {
