@@ -1,20 +1,20 @@
-/* Studio layout + controls. Leans on tokens.css; aims for the ponderance
-   blueprint / origami-workshop feel: graph-paper canvas, crease-blue accents,
-   crane-orange highlights. */
+/* Studio layout + controls, per `kaleidoscope-plan/design/DESIGN.md` (D01).
+   Direction: "blueprint instrument" — a full-bleed graph-paper canvas with the
+   chrome floating over it as a thin rail of line icons, mono readouts, hairline
+   dividers and two edge sliders. Leans entirely on tokens.css. */
 
 .studio {
-  display: grid;
-  grid-template-rows: auto 1fr;
+  position: relative;
   height: 100dvh;
   overflow: hidden;
 }
 
-/* The <main> landmark wraps the canvas and takes the stretch (1fr) grid row;
-   the canvas host fills it. min-height:0 stops the canvas from blowing the row. */
+/* The <main> landmark wraps the canvas and now fills the whole viewport: the
+   chrome floats above it rather than taking a grid row, so the mandala is
+   centred in the window and not in a leftover strip under a toolbar. */
 .studio-main {
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
+  position: absolute;
+  inset: 0;
 }
 
 .canvas-host {
@@ -25,19 +25,93 @@
   touch-action: none;
 }
 
-/* ---- toolbar ---- */
-.toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  padding: 8px 12px;
-  background: color-mix(in srgb, var(--color-graph-card) 88%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--color-crease-line-bold);
+/* ---- floating chrome layer ----------------------------------------------
+   One transparent layer over the canvas. It is `pointer-events: none` so a
+   stroke started anywhere the chrome does not actually occupy still reaches the
+   canvas; every interactive island below turns pointer events back on. Purely
+   decorative islands (the readout capsule, the shortcut strip) deliberately do
+   NOT, so they can sit over the drawing without stealing a stroke. */
+.studio-chrome {
+  position: absolute;
+  inset: 0;
   z-index: 10;
+  pointer-events: none;
+}
+.rail,
+.dock,
+.strip,
+.corner-strip,
+.top-actions,
+.edge-sliders,
+.zoom-badge,
+.toast {
+  pointer-events: auto;
 }
 
+/* Stacking, and why it needs saying: `.chrome` sets `backdrop-filter`, which
+   creates a stacking context — so a popover's `z-index: 20` is trapped INSIDE
+   its rail/dock and cannot lift above a later sibling that merely has
+   `z-index: auto`. Without these the More menu was painted over by the shortcut
+   strip. Islands that open panels sit above the ones that never do. */
+.readout,
+.shortcut-strip,
+.zoom-badge,
+.corner-strip,
+.edge-sliders {
+  z-index: 1;
+}
+.rail,
+.dock,
+.top-actions {
+  z-index: 20;
+}
+/* Above the dock: the strip's chips open bottom sheets that deliberately cover
+   it, and a sheet's own z-index cannot escape the strip's stacking context. */
+.strip {
+  z-index: 30;
+}
+
+/* Absorbs the tap that dismisses an open popover, so closing a sheet cannot
+   also land a stroke on the canvas beneath it. Sits under the rail/dock/strip
+   (z-index 20/30) so those stay live — tapping a different tool switches
+   directly instead of costing a dismissing tap first. */
+.pop-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: auto;
+}
+
+/* The chrome surface: --color-graph-card at 88% with an 8px blur. */
+.chrome {
+  background: color-mix(in srgb, var(--color-graph-card) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--color-crease-line-bold);
+}
+
+/* ---- mono type ----------------------------------------------------------
+   The two reusable readout styles. `.slider-label` was the original one-off
+   that already carried exactly the `.mono` spec; it shares the rule rather than
+   being replaced, so existing slider markup keeps working. */
+.mono,
+.slider-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-graphite-40);
+}
+.mono-lg {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  color: var(--color-graphite-60);
+}
+
+/* The brand lockup. The studio only uses the conic mark (on the rail); the
+   full lockup is PageNav's — `.tb-brand` / `.tb-mark` are consumed by
+   `PageNav.tsx` on the content pages, so these rules stay even though the
+   wrapped studio toolbar they were written for is gone. */
 .tb-brand {
   display: inline-flex;
   align-items: center;
@@ -47,33 +121,223 @@
   font-size: 15px;
   letter-spacing: 0.2px;
   color: var(--color-graphite);
-  padding-right: 6px;
 }
 .tb-mark {
+  flex: 0 0 auto;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background:
-    conic-gradient(from 0deg, var(--color-crane), var(--color-sax), #1d9e75, var(--color-orbit), var(--color-crane));
+  background: conic-gradient(
+    from 0deg,
+    var(--color-crane),
+    var(--color-sax),
+    #1d9e75,
+    var(--color-orbit),
+    var(--color-crane)
+  );
   box-shadow: inset 0 0 0 3px var(--color-graph-card);
 }
 
-.tb-group {
+/* ---- rail (regular width) ---- */
+.rail {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  bottom: 16px;
+  width: 56px;
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 0;
+  gap: 2px;
+}
+.rail-mark {
+  margin: 6px 0 10px;
+}
+.rail-hair {
+  width: 28px;
+  margin: 6px 0;
+  border: none;
+  border-top: 1px solid var(--color-crease-line);
+}
+.rail-spacer {
+  flex: 1 1 auto;
+}
+/* 44px unconditionally, not behind `@media (pointer: coarse)`: a desktop
+   browser at a tablet width is still a 44px target in the spec, and a media
+   query that never fires in a viewport-only test would make any touch-target
+   assertion vacuous. The 36px allowance is the top actions only. */
+.rail .icon-btn,
+.rail summary.icon-btn {
+  width: 44px;
+  height: 44px;
+}
+/* The symmetry button carries a 9px readout under its icon. */
+.rail-sym {
+  flex-direction: column;
+  gap: 1px;
+  height: 52px !important;
+}
+.rail-sub {
+  font-size: 9px;
+  letter-spacing: 0.2px;
+  /* NOT `inherit`: on the active crane tint, crane-strong text is 4.04:1 —
+     below AA for a 9px label. graphite-60 on that same tint is 5.13:1 light /
+     5.69:1 dark. See ACCESSIBILITY_CONTRAST.md. */
+  color: var(--color-graphite-60);
+}
+.swatch-current {
+  width: 22px;
+  height: 22px;
+  cursor: pointer;
+}
+
+/* ---- top bar ---- */
+.top-bar {
+  position: absolute;
+  left: 88px;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.readout {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+
+/* ---- edge sliders (the two values you set without looking) ----
+   Inset 24px from the right edge: ≥20px is the requirement, and 24px also
+   clears the iPad system-gesture edge so dragging Size does not start a
+   swipe-from-edge instead. */
+.edge-sliders {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 22px;
+}
+.vslider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.vrange {
+  appearance: none;
+  -webkit-appearance: none;
+  /* The standard vertical range: `direction: rtl` puts the minimum at the
+     bottom, which is what a "more is higher" slider means. */
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 22px;
+  height: 180px;
+  margin: 0;
+  background: transparent;
+}
+.vrange::-webkit-slider-runnable-track {
+  width: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to top,
+    var(--color-crease) var(--fill, 0%),
+    var(--color-crease-line-bold) var(--fill, 0%)
+  );
+}
+.vrange::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-inset);
+  /* Solid crease, not the frame's hairline: the thumb IS the slider's visual
+     boundary (SC 1.4.11 wants 3:1 for that), and a crease-line-bold ring is
+     1.51:1 against the graph ground where solid crease is 5.91:1 / 6.72:1. */
+  border: 1px solid var(--color-crease);
+  box-shadow: var(--shadow-card);
+}
+.vrange::-moz-range-track {
+  width: 4px;
+  border-radius: 2px;
+  background: var(--color-crease-line-bold);
+}
+.vrange::-moz-range-progress {
+  width: 4px;
+  border-radius: 2px;
+  background: var(--color-crease);
+}
+.vrange::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--color-crease);
+  border-radius: 50%;
+  background: var(--color-inset);
+}
+
+/* ---- zoom badge + shortcut strip ---- */
+.zoom-badge {
+  position: absolute;
+  right: 24px;
+  bottom: 20px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  color: var(--color-graphite-60);
+  cursor: pointer;
+}
+/* Quiet, not hidden: DESIGN.md's frames all show the badge at 100%. */
+.zoom-badge.is-default {
+  opacity: 0.75;
+}
+
+.shortcut-strip {
+  position: absolute;
+  left: 88px;
+  bottom: 20px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-graphite-60);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.shortcut-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 0 8px;
-  border-left: 1px solid var(--color-crease-line);
 }
-.tb-group:first-of-type {
-  border-left: none;
-}
-.tb-spacer {
-  flex: 1 1 auto;
+.shortcut-strip kbd {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-bottom-width: 1px;
 }
 
 /* ---- swatches ---- */
 .swatch {
+  position: relative;
   width: 24px;
   height: 24px;
   border-radius: 50%;
@@ -82,6 +346,14 @@
   cursor: pointer;
   padding: 0;
   transition: transform 0.08s ease;
+}
+/* A 24px dot with a 44px hit area — the visual stays exactly as specified while
+   the touch target clears the minimum. */
+.swatch::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
 }
 .swatch:hover {
   transform: scale(1.1);
@@ -93,7 +365,6 @@
   background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
 }
 .swatch-picker {
-  position: relative;
   overflow: hidden;
   background: var(--color-inset);
   display: grid;
@@ -131,7 +402,8 @@
   background: var(--color-crease-line);
   color: var(--color-graphite);
 }
-.icon-btn.is-active {
+.icon-btn.is-active,
+.pop[open] > summary.icon-btn {
   background: color-mix(in srgb, var(--color-crane) 16%, transparent);
   /* crane-strong lifts the active icon well past the 3:1 non-text minimum. */
   color: var(--color-crane-strong);
@@ -163,6 +435,14 @@
 .btn-ghost {
   background: transparent;
 }
+.btn-icon {
+  padding: 0;
+  width: 36px;
+  justify-content: center;
+}
+.btn-icon .btn-text {
+  display: none;
+}
 .btn-primary {
   /* crane-dark (not base crane) so white label text clears WCAG AA (5.36:1) in
      both themes — base crane gives only 3.86:1 (light) / 3.15:1 (dark). */
@@ -178,31 +458,149 @@
   font-size: 13px;
 }
 
-/* ---- sliders ---- */
+/* ---- chips + segmented + toggles (popover furniture) ---- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--color-crease-line-bold);
+  background: var(--color-inset);
+  color: var(--color-graphite);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* The frame prints an "on" chip's label in crane. It cannot ship that way in
+   dark: crane-strong on a crane-tinted inset is 4.06:1 at 12px, and no tint
+   strength fixes it (6% only reaches 4.25). The state is carried by the crane
+   border — 3.86:1 light / 4.53:1 dark against the inset, past the 3:1 non-text
+   minimum — plus the tint and the heavier weight; the LABEL stays graphite so it
+   clears AA in both themes. See ACCESSIBILITY_CONTRAST.md. */
+.chip.is-on {
+  border-color: var(--color-crane);
+  color: var(--color-graphite);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-crane) 10%, var(--color-inset));
+}
+.chip:disabled {
+  cursor: default;
+}
+.chip-sm {
+  height: 22px;
+  font-size: 11px;
+  padding: 0 8px;
+}
+.chip-wide {
+  width: 100%;
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid var(--color-crease-line-bold);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.seg {
+  flex: 1;
+  min-height: 32px;
+  border: none;
+  border-left: 1px solid var(--color-crease-line-bold);
+  background: transparent;
+  color: var(--color-graphite);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.seg:first-child {
+  border-left: none;
+}
+.seg.is-on {
+  background: var(--color-crease);
+  /* Never #fff: on the dark theme's lighter crease that is 2.47:1. */
+  color: var(--color-on-crease);
+}
+.pressure-preview {
+  display: block;
+  margin-top: 8px;
+  color: var(--color-crease);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-graphite);
+  font-family: var(--font-body);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+/* Its own line under the label: inline, the hint ("off · fingers pan") wraps
+   mid-phrase inside a 280px popover. */
+.toggle-hint {
+  display: block;
+  margin-top: 2px;
+}
+.toggle-track {
+  display: inline-block;
+  flex: 0 0 auto;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--color-crease-line-bold);
+  transition: background 0.12s ease;
+}
+.toggle-track.is-on {
+  background: var(--color-crease);
+}
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-on-crease);
+  transition: transform 0.12s ease;
+}
+.toggle-track.is-on .toggle-knob {
+  transform: translateX(14px);
+}
+
+/* ---- sliders (horizontal, inside popovers) ---- */
 .slider {
   display: inline-flex;
   flex-direction: column;
   gap: 2px;
   min-width: 96px;
 }
-.slider-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--color-graphite-40);
-}
 .slider input[type="range"] {
   width: 100%;
+  min-height: 24px;
   accent-color: var(--color-crane);
 }
 
-/* ---- download menu ---- */
+/* ---- menus + popovers ---- */
 .menu {
   position: relative;
 }
 .menu > summary {
   list-style: none;
+  cursor: pointer;
 }
 .menu > summary::-webkit-details-marker {
   display: none;
@@ -221,8 +619,12 @@
   box-shadow: var(--shadow-card);
   z-index: 20;
 }
-.menu-panel button,
-.menu-panel a {
+/* Menu ROWS only. Scoped to `[role="menuitem"]` rather than to every
+   descendant button: the settings popovers share `.menu-panel` for the card
+   chrome, and a bare `.menu-panel button` rule silently overrode `display` on
+   every chip, segment and switch inside them (a flex switch laid out as a
+   block collapses its track to zero width — which is exactly what happened). */
+.menu-panel [role="menuitem"] {
   display: block;
   text-align: left;
   padding: 8px 10px;
@@ -234,12 +636,139 @@
   text-decoration: none;
   cursor: pointer;
 }
-.menu-panel button:hover:not(:disabled),
-.menu-panel a:hover {
+.menu-panel [role="menuitem"]:hover:not(:disabled) {
   background: var(--color-crease-line);
 }
-.menu-panel button:disabled {
+.menu-panel [role="menuitem"]:disabled {
   opacity: 0.4;
+}
+
+/* Settings popovers. Deliberately NOT `role="menu"`: they hold sliders,
+   switches and swatches, none of which are menu items. */
+.pop-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
+  padding: 14px;
+  left: 0;
+  right: auto;
+}
+.pop-panel .slider {
+  min-width: 0;
+  width: 100%;
+}
+.pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.pop-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+}
+.pop-row {
+  display: flex;
+  gap: 6px;
+}
+/* The frame draws the popover tool trio at 40px; shipped at 44 so the
+   "every touch target ≥ 44px" rule has no exception hiding inside a popover. */
+.pop-row .icon-btn {
+  width: 44px;
+  height: 44px;
+}
+.pop-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pop-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.pop-keys {
+  display: inline-flex;
+  gap: 4px;
+}
+.pop-swatches {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: auto;
+  min-width: 176px;
+}
+.hair {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--color-crease-line);
+}
+
+/* Rail popovers hang off the rail at left: 88px — 16 (inset) + 56 (rail) + 16. */
+.rail .menu-panel {
+  left: calc(100% + 16px);
+  top: 0;
+  right: auto;
+}
+/* …except the More menu at the very bottom, which would run off-screen. */
+.rail .overflow-menu .menu-panel {
+  top: auto;
+  bottom: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pop[open] > .menu-panel,
+  .menu[open] > .menu-panel {
+    animation: pop-in 120ms ease;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- toasts ---- */
+.toast-host {
+  position: absolute;
+  left: 88px;
+  bottom: 60px;
+  z-index: 30;
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--color-graph-card);
+  border: 1px solid var(--color-crease-line-bold);
+  box-shadow: var(--shadow-card);
+  font-size: 13px;
+  color: var(--color-graphite);
+}
+.toast-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--color-crane-strong);
+}
+.toast-text {
+  line-height: 1.35;
+}
+.toast .toast-close {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
 }
 
 /* ---- overlay / dialog ---- */
@@ -327,6 +856,8 @@
 }
 .shortcut dt {
   margin: 0;
+  display: inline-flex;
+  gap: 4px;
 }
 .shortcut dd {
   margin: 0;
@@ -351,103 +882,185 @@ kbd {
   color: var(--color-graphite-60);
 }
 
-/* ===== responsive toolbar (tablet + phone) =====
-   Desktop (≥1024) renders the original .toolbar above, untouched. The compact
-   branches add their own classes; all rules here are scoped so they never reach
-   the desktop path. */
+/* ===== compact width (phone portrait, ≤640) =============================
+   Top bar + a horizontally scrolling strip + a docked tool bar. */
+.is-phone .top-bar {
+  left: 16px;
+  right: 16px;
+  top: calc(16px + env(safe-area-inset-top));
+  align-items: center;
+}
+.is-phone .readout {
+  height: 32px;
+  padding: 0 10px;
+}
+.is-phone .btn-primary {
+  height: 32px;
+}
 
-/* Tablet + phone share a single non-wrapping row / bar. */
-.toolbar-compact,
-.toolbar-phone-top {
-  flex-wrap: nowrap;
-  overflow: visible; /* never clip the absolute popovers */
-}
-/* Keep the compact tablet row narrow enough to fit at 641px: icon-only buttons. */
-.toolbar-compact .btn-text {
-  display: none;
-}
-
-/* Popover triggers/panels reuse the existing .menu pattern. Give slider panels
-   a sensible width and a column layout. */
-.pop > summary {
-  list-style: none;
-}
-.pop > summary::-webkit-details-marker {
-  display: none;
-}
-.pop-panel {
-  display: grid;
-  gap: 10px;
-  min-width: 200px;
+.strip {
+  position: absolute;
   left: 0;
-  right: auto;
-}
-.pop-panel .slider {
-  min-width: 0;
-  width: 100%;
-}
-.pop-row {
+  right: 0;
+  bottom: calc(98px + env(safe-area-inset-bottom));
+  height: 44px;
   display: flex;
-  gap: 4px;
-}
-.pop-swatches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 168px;
-}
-
-/* Phone: slim top bar + a bottom tool dock placed in the studio grid. */
-.dock-brand {
-  display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 15px;
-  color: var(--color-graphite);
+  padding: 0 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
 }
+.strip::-webkit-scrollbar {
+  display: none;
+}
+.strip .swatch {
+  flex: 0 0 auto;
+}
+.strip .chip {
+  flex: 0 0 auto;
+}
+
 .dock {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(26px + env(safe-area-inset-bottom));
+  height: 64px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: space-around;
-  gap: 4px;
-  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
-  background: color-mix(in srgb, var(--color-graph-card) 92%, transparent);
-  backdrop-filter: blur(8px);
-  border-top: 1px solid var(--color-crease-line-bold);
-  /* Sit above the canvas (later in DOM) so upward popovers aren't painted under it. */
-  position: relative;
-  z-index: 10;
+  padding: 0 4px;
 }
-/* Popovers in the bottom dock open upward and anchor to their trigger. */
+.dock .icon-btn,
+.dock summary.icon-btn {
+  width: 44px;
+  height: 44px;
+}
+/* Dock menus open upward and are anchored to the right edge of the dock. */
 .dock .menu-panel {
   top: auto;
   bottom: calc(100% + 8px);
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
+  right: 0;
+  left: auto;
 }
 
-@media (max-width: 640px) {
-  /* Add a third row for the dock; pin the canvas to the stretch row so the dock
-     never collapses it. Desktop/tablet keep the base `auto 1fr` grid. */
-  .studio {
-    grid-template-rows: auto 1fr auto;
+/* A chip in the scrolling strip cannot host an absolutely-positioned panel —
+   the strip clips it — so those popovers become real bottom sheets. Capped
+   well under half the viewport so the drawing's centre is never covered. */
+.chip-pop > .pop-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: auto;
+  max-height: 45dvh;
+  overflow: auto;
+  border-radius: 16px 16px 0 0;
+  padding: 14px 16px calc(18px + env(safe-area-inset-bottom));
+  z-index: 40;
+}
+
+.is-phone .toast-host {
+  left: 12px;
+  right: 12px;
+  bottom: calc(152px + env(safe-area-inset-bottom));
+}
+
+.corner-strip {
+  position: absolute;
+  right: 24px;
+  bottom: 14px;
+  display: none;
+  align-items: center;
+  gap: 10px;
+}
+.corner-strip .readout {
+  height: 26px;
+  padding: 0 8px;
+}
+
+/* ===== compact height (phone landscape) =================================
+   Same rail DOM, restyled: a narrower rail, no edge sliders, the readout and
+   the palette moved to the bottom-right corner, Save as the only top action. */
+@media (max-height: 500px) and (min-width: 641px) {
+  .rail {
+    width: 48px;
+    left: 12px;
+    top: 12px;
+    bottom: 12px;
+    justify-content: center;
+    gap: 0;
   }
-  .studio-main {
-    grid-row: 2;
+  .rail-mark,
+  .rail-hair,
+  .rail-spacer,
+  .rail-color,
+  .rail-sub {
+    display: none;
   }
-  .dock {
-    grid-row: 3;
+  .rail-sym {
+    height: 44px !important;
   }
-  .toolbar-phone-top {
-    gap: 8px;
-    padding: 8px 12px;
+  .top-bar {
+    left: 72px;
+    right: 12px;
+    top: 12px;
+    /* The readout moves to the corner strip, so the actions are the only child
+       left — without this they would slide to where the readout used to be. */
+    justify-content: flex-end;
+  }
+  .top-bar .readout,
+  .top-actions #download-menu,
+  .top-actions .icon-btn,
+  .top-actions .pdr-link {
+    display: none;
+  }
+  .edge-sliders,
+  .shortcut-strip,
+  .zoom-badge {
+    /* DESIGN.md: the badge is "not shown" in either phone layout; double-tap
+       resets the view there. */
+    display: none;
+  }
+  .corner-strip {
+    display: flex;
+  }
+  .toast-host {
+    left: 72px;
+    bottom: 12px;
   }
 }
 
-/* Coarse pointers (touch): enforce comfortable ≥44px targets. */
+/* The shortcut strip is the wide-screen affordance only (DESIGN.md: WebDesktop). */
+@media (max-width: 1023px) {
+  .shortcut-strip {
+    display: none;
+  }
+}
+/* Keep the top actions on one line on a narrow regular-width window. */
+@media (max-width: 900px) {
+  .top-actions #download-menu .btn-text {
+    display: none;
+  }
+  .top-actions #download-menu > summary {
+    padding: 0;
+    width: 36px;
+    justify-content: center;
+  }
+}
+@media (max-width: 780px) {
+  .top-actions .pdr-link {
+    display: none;
+  }
+}
+
+/* Coarse pointers (touch): the remaining 36px controls get the comfortable
+   minimum too. The rail and dock are already 44px unconditionally. */
 @media (pointer: coarse) {
   .icon-btn,
   .menu > summary.icon-btn {
@@ -458,17 +1071,14 @@ kbd {
   .menu > summary.btn {
     min-height: 44px;
   }
-  .dock .swatch,
-  .pop-swatches .swatch {
-    width: 32px;
-    height: 32px;
-  }
 }
 
 /* Honour reduced-motion: drop hover/transform transitions. */
 @media (prefers-reduced-motion: reduce) {
   .icon-btn,
-  .swatch {
+  .swatch,
+  .toggle-track,
+  .toggle-knob {
     transition: none;
   }
   .swatch:hover {
@@ -481,7 +1091,10 @@ kbd {
    would vanish. Re-express active/pressed with a system-color outline that
    survives the mode, and keep the active swatch ring visible. */
 @media (forced-colors: active) {
-  .icon-btn.is-active {
+  .icon-btn.is-active,
+  .pop[open] > summary.icon-btn,
+  .chip.is-on,
+  .seg.is-on {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }
@@ -489,8 +1102,12 @@ kbd {
     outline: 3px solid Highlight;
     outline-offset: 2px;
   }
+  .toggle-track.is-on {
+    outline: 2px solid Highlight;
+  }
   .icon-btn:disabled,
-  .menu-panel button:disabled,
+  .menu-panel [role="menuitem"]:disabled,
+  .chip:disabled,
   .btn:disabled {
     /* forced-colors ignores opacity for conveying state; use GrayText. */
     color: GrayText;

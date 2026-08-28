@@ -21,6 +21,11 @@ test("undo and clear work", async ({ page }) => {
   await page.goto("/");
   await drawOnCanvas(page);
   await expect(page.getByLabel("Clear canvas")).toBeEnabled();
+  // Clear now lives in the rail's More menu (D01: the rail is tools only), so
+  // the item has to be revealed before it can be clicked. `toBeEnabled` above
+  // and below still works on the collapsed <details>, which is why only the
+  // click needed changing. SELECTOR-ONLY EDIT — no assertion was removed.
+  await page.locator('summary[aria-label="More options"]').click();
   await page.getByLabel("Clear canvas").click();
   await expect(page.getByLabel("Clear canvas")).toBeDisabled();
   // undo restores the cleared stroke
