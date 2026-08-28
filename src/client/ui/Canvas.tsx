@@ -35,6 +35,12 @@ export function Canvas() {
         // a view onto the active layer rather than a global setting. The write
         // back is safe because setSegments/setMirror are no-ops when the value
         // already matches, so this cannot loop.
+        // The engine owns the view; these are read-only mirrors for the zoom
+        // badge (T06b). Writing back from here would fight the gesture handlers.
+        onViewChange: (view) => {
+          S.viewScale.value = view.scale;
+          S.viewIsDefault.value = view.scale === 1 && view.tx === 0 && view.ty === 0;
+        },
         onLayersChange: (layers, activeLayerId) => {
           S.layers.value = layers;
           S.activeLayerId.value = activeLayerId;
@@ -45,7 +51,7 @@ export function Canvas() {
           }
         },
       },
-      { layerCap: S.layerCap.value },
+      { layerCap: S.layerCap.value, drawWithFinger: S.drawWithFinger.value },
     );
     S.scene.value = scene;
 
@@ -62,6 +68,10 @@ export function Canvas() {
       // which no task's ownership list claimed.)
       effect(() => scene.setPressurePreset(S.pressurePreset.value)),
       effect(() => scene.setPressureOpacity(S.pressureOpacity.value)),
+      // Whether a bare finger draws or pans. Same shape as the two above: the
+      // signal is persisted by state.ts, the popover that writes it is T06b's,
+      // and this is the bridge that makes it reach the input path.
+      effect(() => scene.setDrawWithFinger(S.drawWithFinger.value)),
       effect(() => scene.setSegments(S.segments.value)),
       effect(() => scene.setMirror(S.mirror.value)),
       effect(() => scene.setBackground(S.bg.value)),
@@ -90,6 +100,13 @@ export function Canvas() {
       disposers.forEach((d) => d());
       scene.destroy();
       S.scene.value = null;
+      // The view mirrors have to go back to the default with the engine that
+      // owned them. A fresh Scene starts at the identity view and never fires
+      // onViewChange for it (setViewInternal is a no-op when nothing changed),
+      // so leaving these behind means navigating away at 4x and back shows a
+      // badge reading 400% over a canvas that is at 1x.
+      S.viewScale.value = 1;
+      S.viewIsDefault.value = true;
     };
   }, []);
 
