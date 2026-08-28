@@ -53,14 +53,26 @@ jobs:
           ALLOW_TEST_LOGIN=true
           EOF
 
+      # The e2e dev server runs the Worker against a LOCAL miniflare D1, which on
+      # a fresh runner has no schema at all. Without this the failure is badly
+      # misleading: /api/auth/test-login answers 500 (D1_ERROR: no such table:
+      # users), the specs only assert `res.ok()`, and four tests fail looking
+      # exactly like the ALLOW_TEST_LOGIN bypass was switched off. Every test
+      # that avoids D1 passes, which reinforces the wrong diagnosis.
+      #
+      # It does not show up locally because .wrangler/state persists a migrated
+      # database from earlier work, so a dev box is never in the state CI starts
+      # in every single time.
+      - name: Apply D1 migrations to the local dev database
+        run: npm run db:migrate:local
+
       - run: npx playwright install --with-deps chromium
 
       - name: End-to-end tests
-        # The Workers AI binding reaches real infrastructure even under `vite
-        # dev`, so the dev server needs account credentials to bind it. Nothing
-        # asserts on AI output. Secrets are unavailable to pull_request runs from
-        # a fork, in which case the dev server has to manage without them — which
-        # is itself worth knowing before release day.
+        # Passed through for the AI binding, which reaches real infrastructure
+        # even under `vite dev`. Nothing asserts on AI output — alt text and name
+        # suggestions both degrade to empty rather than failing — so a run
+        # without working credentials degrades rather than breaks.
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
