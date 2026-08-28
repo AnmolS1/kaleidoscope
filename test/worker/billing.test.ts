@@ -367,6 +367,25 @@ describe("POST /api/billing/apple — gates", () => {
     const res = await postApple(env, 12345);
     expect(res.status).toBe(400);
   });
+
+  it("does NOT share its rate-limit budget with /checkout", async () => {
+    // A single `billing:<user>` key would give both routes ONE 10/h budget, so
+    // ten checkout fetches would 429 the purchase report — paid, not granted.
+    const { DB, env } = ctx({
+      PLUS_ENABLED: "true",
+      LS_STORE_ID: "ponderance",
+      LS_VARIANT_ID: VARIANT,
+    });
+    for (let i = 0; i < 10; i++) {
+      expect((await app.request("/api/billing/checkout", { headers: bearer("s1") }, env as never)).status).toBe(200);
+    }
+    // Checkout's own budget is now spent…
+    expect((await app.request("/api/billing/checkout", { headers: bearer("s1") }, env as never)).status).toBe(429);
+    // …and the grant path is untouched.
+    H.stub = async () => validTx();
+    expect((await postApple(env, "x")).status).toBe(200);
+    expect(rows(DB)).toHaveLength(1);
+  });
 });
 
 describe("POST /api/billing/apple — transaction field checks", () => {
@@ -391,6 +410,35 @@ describe("POST /api/billing/apple — transaction field checks", () => {
       expect(rows(DB)).toHaveLength(0);
     });
   }
+
+  it("accepts an UPPERCASE appAccountToken against a lowercase user id", async () => {
+    // Not a nicety. `newUserId()` is crypto.randomUUID() (lowercase), but
+    // StoreKit's appAccountToken is a Swift UUID and `UUID.uuidString` is
+    // UPPERCASE. Exact equality would reject every real purchase as
+    // `wrong_account`. Every other test here uses the same string on both
+    // sides and so is structurally blind to this.
+    const DB = makeD1();
+    const SESSIONS = makeKV();
+    const uuid = "3f2a1b4c-5d6e-4f70-8901-a2b3c4d5e6f7";
+    seedUser(DB, uuid);
+    seedSession(SESSIONS, "s1", uuid);
+    const env = makeEnv({ DB, SESSIONS, RATELIMIT: makeKV(), ...PLUS_VARS });
+    H.stub = async () => validTx({ appAccountToken: uuid.toUpperCase() });
+    expect((await postApple(env, "x")).status).toBe(200);
+    expect(rows(DB)[0]).toMatchObject({ user_id: uuid });
+  });
+
+  it("still rejects a DIFFERENT uuid, so the case-insensitive compare is not a wildcard", async () => {
+    const DB = makeD1();
+    const SESSIONS = makeKV();
+    const uuid = "3f2a1b4c-5d6e-4f70-8901-a2b3c4d5e6f7";
+    seedUser(DB, uuid);
+    seedSession(SESSIONS, "s1", uuid);
+    const env = makeEnv({ DB, SESSIONS, RATELIMIT: makeKV(), ...PLUS_VARS });
+    H.stub = async () => validTx({ appAccountToken: "3F2A1B4C-5D6E-4F70-8901-A2B3C4D5E6F8" });
+    expect((await postApple(env, "x")).status).toBe(400);
+    expect(rows(DB)).toHaveLength(0);
+  });
 
   it("CONTROL: the unperturbed fixture is accepted and writes exactly one row", async () => {
     // Without this, every rejection above could be caused by the fixture itself.

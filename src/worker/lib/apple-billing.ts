@@ -217,7 +217,15 @@ export function checkTransaction(
   }
   // The app stamps our user id into appAccountToken at purchase time. Without
   // this, a captured JWS could be replayed by a different signed-in user.
-  if (str(tx.appAccountToken) !== o.userId) {
+  //
+  // Compared case-INSENSITIVELY, which is not sloppiness. `newUserId()` is
+  // `crypto.randomUUID()`, so our ids are lowercase UUIDs, but StoreKit's
+  // `appAccountToken` is a Swift `UUID` and `UUID.uuidString` is UPPERCASE.
+  // Exact equality would therefore reject every real purchase with
+  // `wrong_account` — a paid-but-not-granted failure that no test using the
+  // same string on both sides can see. Case carries no meaning in a UUID.
+  const token = str(tx.appAccountToken);
+  if (!token || token.toLowerCase() !== o.userId.toLowerCase()) {
     return { ok: false, reason: "wrong_account" };
   }
 

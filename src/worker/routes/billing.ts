@@ -110,7 +110,11 @@ billing.post("/apple", requireAuth, requireCsrf, async (c) => {
   // otherwise match a transaction that carries no productId at all.
   if (!productId || !bundleId) return c.json({ error: "not_configured" }, 503);
 
-  if (!(await checkAll(c.env, [{ key: `billing:${user.id}:h`, rule: BILLING_RULE }]))) {
+  // Keyed per ROUTE, not just per user. A shared `billing:<id>` key would give
+  // the grant path and the checkout path ONE 10/h budget between them, so ten
+  // checkout-URL fetches would 429 the purchase report — the one failure mode
+  // that means "paid, not granted".
+  if (!(await checkAll(c.env, [{ key: `billing:apple:${user.id}:h`, rule: BILLING_RULE }]))) {
     return c.json({ error: "rate_limited" }, 429);
   }
 
@@ -297,7 +301,7 @@ billing.get("/checkout", requireAuth, async (c) => {
   // would be much worse than recording one that is not yet useful.
   if (!envFlag(c.env.PLUS_ENABLED)) return c.json({ error: "not_enabled" }, 503);
 
-  if (!(await checkAll(c.env, [{ key: `billing:${user.id}:h`, rule: BILLING_RULE }]))) {
+  if (!(await checkAll(c.env, [{ key: `billing:checkout:${user.id}:h`, rule: BILLING_RULE }]))) {
     return c.json({ error: "rate_limited" }, 429);
   }
 
