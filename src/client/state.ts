@@ -76,6 +76,12 @@ export const scene = signal<Scene | null>(null);
 export const canUndo = signal<boolean>(false);
 export const canRedo = signal<boolean>(false);
 export const strokeCount = signal<number>(0);
+/**
+ * Strokes on VISIBLE layers. Use this for "is there anything to save or
+ * export" — `strokeCount` includes hidden layers, so a drawing whose only ink
+ * is hidden would otherwise pass a not-empty guard and save as a blank image.
+ */
+export const visibleStrokeCount = signal<number>(0);
 
 // --- auth + entitlement ---
 export const me = signal<SessionUser | null>(null);

@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import { DrawingDoc, defaultLayerName } from "../../src/client/engine/history";
 import { hitTestDrawing } from "../../src/client/engine/scene";
+import { strokeSegments } from "../../src/client/engine/brush";
 import {
   MAX_LAYERS,
   emptyDrawing,
@@ -306,5 +307,183 @@ describe("hitTestDrawing", () => {
     const fat = withStroke({ segments: 4, mirror: false }, { ...bar, size: 200 });
     expect(hitTestDrawing(thin, 0.55, 0.06, 0)).toBeNull();
     expect(hitTestDrawing(fat, 0.55, 0.06, 0)).not.toBeNull();
+  });
+});
+
+describe("a hidden active layer refuses strokes", () => {
+  // The renderer skips hidden layers and the live overlay declines to draw
+  // there, so a stroke committed onto one is ink the user cannot see. Keeping it
+  // means the drawing silently carries invisible strokes, they count toward the
+  // piece, and it can be saved as an image that looks blank. Refusing is also
+  // what lets the UI say "nothing was drawn" and have that be true — DESIGN.md
+  // §3 specifies exactly that toast.
+  const docWithHiddenActive = () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.setLayerVisible(doc.activeLayerId, false);
+    return doc;
+  };
+
+  it("returns false and stores nothing", () => {
+    const doc = docWithHiddenActive();
+    const before = serialize(doc.drawing);
+    expect(doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]))).toBe(false);
+    expect(serialize(doc.drawing)).toBe(before);
+    expect(doc.activeLayer.strokes).toHaveLength(0);
+  });
+
+  // A refused stroke must not become an undo step either. If it did, the user
+  // would press undo and watch nothing happen — the classic symptom of a
+  // history entry that holds no change.
+  it("does not create an undo step", () => {
+    const doc = docWithHiddenActive();
+    const undoBefore = doc.canUndo;
+    doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]));
+    expect(doc.canUndo).toBe(undoBefore);
+  });
+
+  // The control. Without it, every assertion above passes just as well against
+  // a commitStroke that refuses EVERYTHING, which is a different bug.
+  it("...but a visible active layer still accepts them", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    expect(doc.activeLayer.visible).toBe(true);
+    expect(doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]))).toBe(true);
+    expect(doc.activeLayer.strokes).toHaveLength(1);
+    expect(doc.canUndo).toBe(true);
+  });
+
+  it("showing the layer again makes it accept strokes", () => {
+    const doc = docWithHiddenActive();
+    expect(doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]))).toBe(false);
+    doc.setLayerVisible(doc.activeLayerId, true);
+    expect(doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]))).toBe(true);
+    expect(doc.activeLayer.strokes).toHaveLength(1);
+  });
+});
+
+describe("hit-testing follows the drawn curve, not the raw polyline", () => {
+  // A smoothed stroke is RENDERED as Béziers but used to be hit-tested against
+  // its `pts` polyline, so on a tight curl the drawn ink bows away from the
+  // chord and a tap that visibly lands on the stroke missed it.
+  //
+  // The test has to discriminate: a point merely "on the stroke" is near BOTH
+  // shapes and would pass either way. So it picks the point where they differ
+  // most — the curve's midpoint — and first PROVES that point is too far from
+  // the polyline for the old implementation to have found it.
+  const curl: Stroke["pts"] = [
+    [-0.30, 0.00, 1],
+    [-0.05, -0.28, 1],
+    [0.22, 0.02, 1],
+    [0.30, 0.30, 1],
+  ];
+
+  const distToPolyline = (pts: Stroke["pts"], x: number, y: number) => {
+    let best = Infinity;
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = pts[i - 1];
+      const [bx, by] = pts[i];
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len = dx * dx + dy * dy;
+      const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len));
+      best = Math.min(best, Math.hypot(x - (ax + t * dx), y - (ay + t * dy)));
+    }
+    return best;
+  };
+
+  // Midpoint of the middle cubic — where a curve departs furthest from its chord.
+  const curveMidpoint = () => {
+    const smoothed = { ...stroke("#111111", curl), sm: 1 as const };
+    const segs = strokeSegments(smoothed);
+    const seg = segs[1];
+    const a = curl[seg.i];
+    const t = 0.5;
+    const u = 1 - t;
+    const w0 = u * u * u;
+    const w1 = 3 * u * u * t;
+    const w2 = 3 * u * t * t;
+    const w3 = t * t * t;
+    return {
+      x: w0 * a[0] + w1 * seg.c1x! + w2 * seg.c2x! + w3 * seg.x,
+      y: w0 * a[1] + w1 * seg.c1y! + w2 * seg.c2y! + w3 * seg.y,
+    };
+  };
+
+  const REACH_SIZE = 2; // → reach of size/2/REFERENCE_HALF = 0.001 normalized
+
+  it("the chosen probe point genuinely separates the two shapes", () => {
+    const q = curveMidpoint();
+    const reach = REACH_SIZE / 2 / 1000;
+    // If this ever stops holding, the test below proves nothing and the fixture
+    // needs a sharper curl.
+    expect(distToPolyline(curl, q.x, q.y)).toBeGreaterThan(reach);
+  });
+
+  it("finds a smoothed stroke at a point on its drawn curve", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.setLayerSym(doc.activeLayerId, { segments: 3, mirror: false });
+    doc.commitStroke({ ...stroke("#111111", curl), size: REACH_SIZE, sm: 1 });
+    const q = curveMidpoint();
+    expect(hitTestDrawing(doc.drawing, q.x, q.y, 0)).not.toBeNull();
+  });
+
+  // Control: the same points WITHOUT `sm` really are a polyline, and the same
+  // probe must then miss — otherwise the test above could be passing because
+  // the reach is simply generous.
+  it("...and misses that same point when the stroke is not smoothed", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.setLayerSym(doc.activeLayerId, { segments: 3, mirror: false });
+    doc.commitStroke({ ...stroke("#111111", curl), size: REACH_SIZE });
+    const q = curveMidpoint();
+    expect(hitTestDrawing(doc.drawing, q.x, q.y, 0)).toBeNull();
+  });
+
+  it("still finds a stroke at one of its recorded points", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.setLayerSym(doc.activeLayerId, { segments: 3, mirror: false });
+    doc.commitStroke({ ...stroke("#111111", curl), size: REACH_SIZE, sm: 1 });
+    expect(hitTestDrawing(doc.drawing, curl[1][0], curl[1][1], 0)).not.toBeNull();
+  });
+});
+
+describe("visibleStrokes vs totalStrokes", () => {
+  // These must NOT be the same number, and conflating them is what lets a
+  // drawing whose only ink is hidden pass a not-empty guard and upload a blank
+  // image. Undo and Clear want the total; anything asking "is there a picture
+  // here" wants the visible count.
+  it("diverge as soon as a layer with strokes is hidden", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]));
+    expect(doc.totalStrokes).toBe(1);
+    expect(doc.visibleStrokes).toBe(1);
+
+    doc.setLayerVisible(doc.activeLayerId, false);
+    expect(doc.totalStrokes).toBe(1); // the ink is still in the document
+    expect(doc.visibleStrokes).toBe(0); // ...but there is no picture
+  });
+
+  it("counts only the visible layers when several exist", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.1, 0.1, 1]]));
+    const first = doc.activeLayerId;
+    doc.addLayer();
+    doc.commitStroke(stroke("#222222", [[0.2, 0.2, 1], [0.3, 0.3, 1]]));
+    doc.commitStroke(stroke("#333333", [[0.4, 0.4, 1], [0.5, 0.5, 1]]));
+    expect(doc.totalStrokes).toBe(3);
+    expect(doc.visibleStrokes).toBe(3);
+
+    doc.setLayerVisible(first, false);
+    expect(doc.totalStrokes).toBe(3);
+    expect(doc.visibleStrokes).toBe(2);
+  });
+
+  // Showing it again restores the count — the strokes were never lost, which is
+  // the whole reason hiding is not an undo step.
+  it("comes back when the layer is shown again", () => {
+    const doc = new DrawingDoc(fresh(), 8);
+    doc.commitStroke(stroke("#111111", [[0, 0, 1], [0.2, 0.2, 1]]));
+    doc.setLayerVisible(doc.activeLayerId, false);
+    expect(doc.visibleStrokes).toBe(0);
+    doc.setLayerVisible(doc.activeLayerId, true);
+    expect(doc.visibleStrokes).toBe(1);
   });
 });

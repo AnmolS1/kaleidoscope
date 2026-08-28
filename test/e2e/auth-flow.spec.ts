@@ -26,7 +26,10 @@ test("save → permalink → gallery → remix → delete", async ({ page }) => 
   // remix loads it back into the studio
   await page.goto(`/p/${id}`);
   await page.getByRole("button", { name: "Remix" }).click();
-  await page.waitForURL("http://localhost:5173/");
+  // Match on the PATH, not an absolute URL: the dev-server port is overridable
+  // (KALEIDO_E2E_PORT) so that parallel worktrees do not share one, and a
+  // hardcoded origin turns that into a mystery timeout.
+  await page.waitForURL((u) => u.pathname === "/");
   await expect(page.getByLabel("Clear canvas")).toBeEnabled();
 
   // delete from My pieces

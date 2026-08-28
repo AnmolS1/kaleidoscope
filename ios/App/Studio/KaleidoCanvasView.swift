@@ -182,7 +182,10 @@ final class KaleidoCanvasView: UIView {
             return
         }
         guard let touch = preferredTouch(touches) else { return }
-        if touch.type == .pencil { model.notePencilUsed() }
+        if touch.type == .pencil {
+            model.notePencilSeen()
+            model.notePencilUsed()
+        }
 
         // Two fingers down together is a zoom/pan, never a stroke.
         if (event?.allTouches?.count ?? 1) > 1 { return }
@@ -374,6 +377,10 @@ final class KaleidoCanvasView: UIView {
     @objc private func onHover(_ g: UIHoverGestureRecognizer) {
         switch g.state {
         case .began, .changed:
+            // A hovering Pencil is very much a Pencil having been seen, and on
+            // iPad that happens before the user ever touches down. The web
+            // latches on pointermove for the same reason.
+            model?.notePencilSeen()
             let n = normalizedPoint(g.location(in: self))
             hoverPoint = CGPoint(x: n.x, y: n.y)
         default:

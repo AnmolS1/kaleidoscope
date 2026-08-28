@@ -503,6 +503,27 @@ final class StudioModel: ObservableObject {
     }
     /// Shown once, the first time a Pencil touches the canvas, offering to turn
     /// `drawWithFinger` off. Dismissal is persisted.
+    /// Whether a Pencil has ever been used on this device.
+    ///
+    /// The brush popover keeps its pressure controls hidden until this is true:
+    /// the preset and `po` are both pencil-only, so on a finger those controls
+    /// would be settings that shape nothing.
+    ///
+    /// Deliberately SEPARATE from `pencilBannerSeen`, which means "we have shown
+    /// the one-time banner". The two happen to latch at the same moment today,
+    /// and conflating them would break the first time either grows a reason to
+    /// reset — and the banner only ever fires on a touch, where this must also
+    /// catch a hover. Same key as the web's `kal.penSeen`.
+    @Published private(set) var pencilSeen: Bool = false {
+        didSet { UserDefaults.standard.set(pencilSeen, forKey: Keys.pencilSeen) }
+    }
+
+    /// Latch the Pencil. Safe to call on every pencil touch AND hover.
+    func notePencilSeen() {
+        guard !pencilSeen else { return }
+        pencilSeen = true
+    }
+
     @Published var showPencilBanner: Bool = false
 
     // View transform (1–8×). Owned here rather than by the view so an export or
@@ -524,10 +545,20 @@ final class StudioModel: ObservableObject {
         static let drawWithFinger = "kal.drawWithFinger"
         static let smoothStrokes = "kal.smoothStrokes"
         static let pencilBannerSeen = "kal.pencilBannerSeen"
+        static let pencilSeen = "kal.penSeen"
     }
 
     init(layerCap: Int = 3) {
-        doc = DrawingDoc(layerCap: layerCap)
+        // A launch-env override, so the layers panel can be driven at either cap
+        // without pretending the free cap is something it is not. T12 needs both
+        // states: the locked Add with the Plus footnote at 3, and the unlocked
+        // panel at 8 for the App Store screenshots. Inert unless injected, like
+        // the other KALEIDO_* test hooks, so it cannot affect a real launch.
+        //
+        // T13 replaces the DEFAULT with the value from /api/me.plus; this
+        // override stays useful for tests either way.
+        let cap = ProcessInfo.processInfo.environment["KALEIDO_LAYER_CAP"].flatMap(Int.init) ?? layerCap
+        doc = DrawingDoc(layerCap: cap)
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: Keys.pressurePreset), let p = PressurePreset(rawValue: raw) {
             pressurePreset = p
@@ -541,6 +572,7 @@ final class StudioModel: ObservableObject {
         if defaults.object(forKey: Keys.smoothStrokes) != nil {
             smoothStrokes = defaults.bool(forKey: Keys.smoothStrokes)
         }
+        pencilSeen = defaults.bool(forKey: Keys.pencilSeen)
     }
 
     // MARK: Forwarding surface
@@ -849,12 +881,56 @@ func hitTestDrawing(_ drawing: DrawingV2, x: Double, y: Double, tolerance: Doubl
     return nil
 }
 
+/// Subdivisions per curved segment when hit-testing. A segment spans one
+/// captured move — capture drops anything under ~1.1px — so the curve across it
+/// is short and shallow, and eight chords put the sampling error far below
+/// `reach` (at least the stroke's half-width plus a finger's tolerance).
+/// Mirrors HIT_CURVE_SAMPLES on the web.
+private let hitCurveSamples = 8
+
+/// Is (x, y) within `reach` of this stroke, in the stroke's own frame?
+///
+/// A smoothed stroke is DRAWN as Béziers, so measuring against the raw polyline
+/// tests a shape that is not on screen: on a tight curl the ink bows away from
+/// its chord and a tap that visibly lands on the stroke misses. This walks the
+/// same curve the renderer builds, via the engine's `smoothStroke`.
 private func strokeContains(_ stroke: Stroke, x: Double, y: Double, reach: Double) -> Bool {
     let pts = stroke.pts
     if pts.isEmpty { return false }
     if pts.count == 1 { return hypot(x - pts[0].x, y - pts[0].y) <= reach }
-    for i in 1..<pts.count {
-        if distToSegment(x, y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= reach { return true }
+
+    guard stroke.sm, let cubics = smoothStroke(pts) else {
+        for i in 1..<pts.count where distToSegment(x, y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= reach {
+            return true
+        }
+        return false
+    }
+
+    for seg in cubics {
+        let a = pts[seg.i]
+        // A cubic lies inside the convex hull of its four control points, so the
+        // hull's bounding box grown by `reach` is an exact reject — and far
+        // cheaper than sampling. Most segments of most strokes fail it.
+        if x < min(a.x, seg.c1x, seg.c2x, seg.x) - reach { continue }
+        if x > max(a.x, seg.c1x, seg.c2x, seg.x) + reach { continue }
+        if y < min(a.y, seg.c1y, seg.c2y, seg.y) - reach { continue }
+        if y > max(a.y, seg.c1y, seg.c2y, seg.y) + reach { continue }
+
+        var px = a.x
+        var py = a.y
+        for k in 1...hitCurveSamples {
+            let t = Double(k) / Double(hitCurveSamples)
+            let u = 1 - t
+            let w0 = u * u * u
+            let w1 = 3 * u * u * t
+            let w2 = 3 * u * t * t
+            let w3 = t * t * t
+            let qx = w0 * a.x + w1 * seg.c1x + w2 * seg.c2x + w3 * seg.x
+            let qy = w0 * a.y + w1 * seg.c1y + w2 * seg.c2y + w3 * seg.y
+            if distToSegment(x, y, px, py, qx, qy) <= reach { return true }
+            px = qx
+            py = qy
+        }
     }
     return false
 }
