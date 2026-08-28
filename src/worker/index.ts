@@ -6,6 +6,7 @@ import { auth } from "./routes/auth";
 import { artworks } from "./routes/artworks";
 import { gallery } from "./routes/gallery";
 import { admin } from "./routes/admin";
+import { billing } from "./routes/billing";
 import { og } from "./routes/og";
 import { permalink } from "./routes/permalink";
 import { listArtworkIdsByUser, deleteUser, plusSources, countPublicSince } from "./lib/db";
@@ -110,6 +111,7 @@ app.route("/api/auth", auth);
 app.route("/api/artworks", artworks);
 app.route("/api", gallery); // /api/gallery, /api/users/me/artworks
 app.route("/api/admin", admin);
+app.route("/api/billing", billing); // Plus: StoreKit, ASSN, LS webhook, checkout
 app.route("/og", og);
 app.route("/", permalink); // /p/:id (OG injection) + /sitemap.xml
 
