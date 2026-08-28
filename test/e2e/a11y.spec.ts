@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { drawOnCanvas, submitSavePiece } from "./helpers";
+import { drawOnCanvas, submitSavePiece, testLogin, uniqueSub } from "./helpers";
 
 // WCAG 2.1 A + AA. axe runs in-page against the live dev server (vite + workerd),
 // asserting zero violations on every primary surface and overlay.
@@ -38,12 +38,9 @@ test("gallery has no axe violations", async ({ page }) => {
 
 test("save dialog has no axe violations", async ({ page }) => {
   await page.goto("/");
-  const res = await page.request.post("/api/auth/test-login", { data: { name: "A11y User" } });
-  expect(res.ok()).toBeTruthy();
-  await page.reload();
-  await expect(page.locator(".avatar-btn")).toBeVisible();
+  await testLogin(page, uniqueSub("a11y-dialog"));
 
-  await drawOnCanvas(page);
+  await drawOnCanvas(page, 2);
   await page.getByLabel("Save to gallery").click();
   await expect(page.getByRole("dialog", { name: "Save to gallery" })).toBeVisible();
   await scan(page, { exclude: ".ts-widget" });
@@ -51,12 +48,9 @@ test("save dialog has no axe violations", async ({ page }) => {
 
 test("artwork permalink has no axe violations", async ({ page }) => {
   await page.goto("/");
-  const res = await page.request.post("/api/auth/test-login", { data: { name: "A11y User" } });
-  expect(res.ok()).toBeTruthy();
-  await page.reload();
-  await expect(page.locator(".avatar-btn")).toBeVisible();
+  await testLogin(page, uniqueSub("a11y-permalink"));
 
-  await drawOnCanvas(page);
+  await drawOnCanvas(page, 3);
   await page.getByLabel("Save to gallery").click();
   await expect(page.getByRole("dialog", { name: "Save to gallery" })).toBeVisible();
   await page.getByLabel("Title").fill("A11y Mandala");

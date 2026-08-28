@@ -1,17 +1,14 @@
 import { test, expect } from "@playwright/test";
-import { drawOnCanvas, submitSavePiece } from "./helpers";
+import { drawOnCanvas, submitSavePiece, testLogin, uniqueSub } from "./helpers";
 
 test("save → permalink → gallery → remix → delete", async ({ page }) => {
   await page.goto("/");
 
   // dev-only session bypass (shares the page's cookie jar)
-  const res = await page.request.post("/api/auth/test-login", { data: { name: "E2E User" } });
-  expect(res.ok()).toBeTruthy();
-  await page.reload();
-  await expect(page.locator(".avatar-btn")).toBeVisible();
+  await testLogin(page, uniqueSub("auth-flow"));
 
   // draw + open save
-  await drawOnCanvas(page);
+  await drawOnCanvas(page, 1);
   await page.getByLabel("Save to gallery").click();
   await expect(page.getByRole("dialog", { name: "Save to gallery" })).toBeVisible();
   await page.getByLabel("Title").fill("E2E Mandala");

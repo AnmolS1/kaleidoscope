@@ -1,13 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { drawOnCanvas, submitSavePiece } from "./helpers";
+import { drawOnCanvas, submitSavePiece, testLogin, uniqueSub } from "./helpers";
 
 test.use({ viewport: { width: 390, height: 844 } });
 
 test("mobile: docked toolbar, bottom-sheet save, gallery 2-col + brand, initials fallback", async ({ page }) => {
   await page.goto("/");
-  const res = await page.request.post("/api/auth/test-login", { data: { name: "Mobile User" } });
-  expect(res.ok()).toBeTruthy();
-  await page.reload();
+  await testLogin(page, uniqueSub("mobile"));
 
   // Phone toolbar splits into a slim top bar + a bottom dock — not a wrapped block.
   await expect(page.locator(".toolbar-phone-top")).toBeVisible();
@@ -36,7 +34,7 @@ test("mobile: docked toolbar, bottom-sheet save, gallery 2-col + brand, initials
 
   // Draw, then open Save — it docks as a bottom sheet with the action in view
   // (the bug this fixes pushed Save/Cancel off-screen).
-  await drawOnCanvas(page);
+  await drawOnCanvas(page, 4);
   await page.getByLabel("Save to gallery").click();
   await expect(page.getByRole("dialog", { name: "Save to gallery" })).toBeVisible();
   await page.getByLabel("Title").fill("Mobile Mandala");
