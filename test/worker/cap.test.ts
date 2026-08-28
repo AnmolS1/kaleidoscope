@@ -403,10 +403,12 @@ describe("free public cap — PATCH publish path", () => {
     expect(row.title).toBe("Renamed");
   });
 
-  it("moving to private leaves published_at alone and frees a slot (SQL semantics)", async () => {
-    // PLAN §2.4's SQL counts CURRENTLY-public rows, so unpublishing frees a
-    // slot even though §1's prose describes a lifetime counter. The SQL is the
-    // normative artifact; this test pins which of the two shipped.
+  it("unpublishing frees a slot — the cap is 10 CONCURRENTLY public, not 10 ever", async () => {
+    // Settled with Anmol 2026-08-28: §2.4's SQL is the spec. The cap counts
+    // currently-public pieces, so taking one down deliberately gives the slot
+    // back. `published_at` still records FIRST publication (see the COALESCE
+    // test below) — that timestamp is what `>= CAP_EPOCH` tests, and it is a
+    // different question from whether the piece is public right now.
     const { DB, env } = ctx(CAP_ON);
     for (let i = 0; i < 10; i++) seedArtwork(DB, { id: `p${i}`, user_id: "u1", visibility: "public" });
 
@@ -422,6 +424,47 @@ describe("free public cap — PATCH publish path", () => {
     );
     const ok = await save(env, saveForm({ drawing: drawingV1(2) }));
     expect(((await ok.json()) as { visibility: string }).visibility).toBe("public");
+  });
+
+  it("a pre-epoch piece stays grandfathered across unpublish → re-publish (COALESCE)", async () => {
+    // The consequence of `published_at = COALESCE(published_at, ?now)` that is
+    // easiest to break later: re-publishing must NOT restamp the timestamp,
+    // because that would drag a grandfathered piece over CAP_EPOCH and quietly
+    // charge the user a slot for something they already had. Taking a piece
+    // down and putting it back returns it to a state it already occupied.
+    const { DB, env } = ctx({ ...CAP_ON, CAP_EPOCH: "5000" });
+    // 9 pieces that DO count, plus one published long before the epoch.
+    for (let i = 0; i < 9; i++) {
+      seedArtwork(DB, { id: `p${i}`, user_id: "u1", visibility: "public", published_at: 9000 });
+    }
+    seedArtwork(DB, { id: "old", user_id: "u1", visibility: "public", published_at: 4999 });
+
+    const patch = (id: string, visibility: string) =>
+      app.request(
+        `/api/artworks/${id}`,
+        { method: "PATCH", headers: bearer("s1"), body: JSON.stringify({ visibility }) },
+        env as never,
+      );
+    const publishedAt = (id: string) =>
+      (DB._db.prepare("SELECT published_at FROM artworks WHERE id=?").get(id) as { published_at: number })
+        .published_at;
+
+    expect((await patch("old", "private")).status).toBe(200);
+    expect(publishedAt("old")).toBe(4999); // unpublishing never clears it
+
+    expect((await patch("old", "public")).status).toBe(200);
+    // The load-bearing assertion: still 4999, NOT Date.now().
+    expect(publishedAt("old")).toBe(4999);
+
+    // And it demonstrably still costs nothing: 10 rows are public, but only 9
+    // count, so a new public save fits — and the one after it does not.
+    expect(
+      (DB._db.prepare("SELECT COUNT(*) AS n FROM artworks WHERE visibility='public'").get() as { n: number }).n,
+    ).toBe(10);
+    const fits = await save(env, saveForm({ drawing: drawingV1(1) }));
+    expect(((await fits.json()) as { visibility: string }).visibility).toBe("public");
+    const capped = await save(env, saveForm({ drawing: drawingV1(2) }));
+    expect(((await capped.json()) as { capReached?: boolean }).capReached).toBe(true);
   });
 
   it("PATCH stamps updated_at", async () => {

@@ -229,13 +229,17 @@ export function findOtherByHash(env: Env, userId: string, hash: string): Promise
  * Publish a piece if the user is under their public cap — one statement, so the
  * count and the write cannot drift apart the way a read-then-write can.
  *
- * Returns false when the cap blocked it (`meta.changes === 0`). Note the
- * subquery counts CURRENTLY-public pieces, so unpublishing frees a slot; that is
- * PLAN §2.4's SQL, which disagrees with §1's "first publication counts" prose.
- * The SQL is the normative artifact — see HANDOFF.
+ * Returns false when the cap blocked it (`meta.changes === 0`).
  *
- * `published_at` is COALESCEd so re-publishing a piece that was public before
- * keeps its original publication time and does not count twice.
+ * The cap is 10 CONCURRENTLY-public pieces, not 10 publications ever (settled
+ * 2026-08-28): the subquery counts currently-public rows, so taking a piece
+ * down deliberately gives the slot back.
+ *
+ * `published_at` is a different question and is COALESCEd, so it keeps
+ * recording FIRST publication. That timestamp is what `>= epoch` tests, which
+ * is what keeps pre-epoch pieces grandfathered — restamping it on re-publish
+ * would drag one over the epoch and charge the user for something they already
+ * had.
  *
  * Callers MUST short-circuit an already-public row: at exactly the cap the
  * subquery counts the row being updated, so an idempotent re-publish would see
