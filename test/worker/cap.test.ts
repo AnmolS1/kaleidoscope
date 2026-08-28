@@ -321,10 +321,50 @@ describe("free public cap — CAP_EPOCH misconfiguration fails closed", () => {
     expect(res.status).toBe(500);
   });
 
-  it("GET /api/me also fails closed on a bad CAP_EPOCH", async () => {
+  // /api/me deliberately does NOT fail closed, unlike the two publish paths
+  // above. It carries the session and the CSRF token, so a 500 here costs the
+  // client its whole bootstrap — sign-in, gallery and drawing all break — over a
+  // var that governs only the public-post cap. Settled with Anmol 2026-08-28.
+  it("GET /api/me DEGRADES on a bad CAP_EPOCH instead of taking the app down", async () => {
     const { env } = ctx({ PLUS_ENABLED: "true", CAP_EPOCH: "xyz" });
     const res = await app.request("/api/me", { headers: bearer("s1") }, env as never);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      user: { id: string } | null;
+      csrf: string | null;
+      plus: { enabled: boolean; publicCap: number | null; layerCap: number };
+    };
+    // The things a 500 would have destroyed.
+    expect(body.user?.id).toBe("u1");
+    expect(body.csrf).toBeTruthy();
+    // Degraded to the PLUS_ENABLED=false shape: no cap reported, full layers.
+    expect(body.plus.enabled).toBe(false);
+    expect(body.plus.publicCap).toBeNull();
+    expect(body.plus.layerCap).toBe(8);
+  });
+
+  it("a degraded /api/me still reports a finite layerCap when PLUS_LAYER_CAP is the bad var", async () => {
+    // envInt returns NaN for a set-but-unparseable value, and NaN serializes as
+    // null — which would break the client's layer gate rather than degrade it.
+    const { env } = ctx({ PLUS_ENABLED: "true", CAP_EPOCH: "xyz", PLUS_LAYER_CAP: "eight" });
+    const res = await app.request("/api/me", { headers: bearer("s1") }, env as never);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { plus: { layerCap: number } };
+    expect(Number.isFinite(body.plus.layerCap)).toBe(true);
+    expect(body.plus.layerCap).toBe(8);
+  });
+
+  // The other half of the decision: degrading /api/me must NOT have loosened
+  // the paths where the cap actually bites. Without this, "degrade" could
+  // silently become "no cap".
+  it("degrading /api/me did not stop the publish paths failing closed", async () => {
+    const { env } = ctx({ PLUS_ENABLED: "true", CAP_EPOCH: "xyz" });
+    const save = await app.request(
+      "/api/artworks",
+      { method: "POST", headers: bearer("s1"), body: saveForm({ drawing: drawingV1(1) }) },
+      env as never,
+    );
+    expect(save.status).toBe(500);
   });
 });
 

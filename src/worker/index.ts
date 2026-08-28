@@ -64,7 +64,44 @@ app.get("/api/me", async (c) => {
     const sources = await plusSources(c.env, user.id);
     const active = sources.length > 0;
     const policy = capPolicy(c.env, active);
-    if (!policy.ok) return c.json({ error: "server_misconfigured" }, 500);
+    if (!policy.ok) {
+      // A malformed CAP_EPOCH or FREE_PUBLIC_CAP is a deploy error, and the cap
+      // must fail CLOSED — but not here. This response carries the session and
+      // the CSRF token, so answering 500 leaves the client unable to bootstrap
+      // at all: no sign-in, no gallery, no saving, over a typo in a var that
+      // governs only the public-post cap. The publish paths (POST /api/artworks
+      // and PATCH → public) still 500, so nothing is published against a cap
+      // nobody can compute; the rest of the app keeps working.
+      //
+      // Degrading to the same shape as PLUS_ENABLED=false is deliberate: that
+      // is the shipped state until the IAP is approved, so it is known-good,
+      // and it errs toward giving capability rather than removing it.
+      //
+      // Logged at error level because a silent degrade is how a config typo
+      // survives a release — this is the only place it would otherwise surface.
+      console.error(
+        "cap policy misconfigured — /api/me degraded to plus-disabled; publishes still fail closed",
+        { capEpoch: c.env.CAP_EPOCH, freePublicCap: c.env.FREE_PUBLIC_CAP },
+      );
+      const layers = plusLayerCap(c.env);
+      plus = {
+        active,
+        sources,
+        publicCount: 0,
+        publicCap: null,
+        // PLUS_LAYER_CAP may be the malformed var; envInt hands back NaN for a
+        // set-but-unparseable value, and NaN would serialize as null and break
+        // the client's layer gate.
+        layerCap: Number.isFinite(layers) ? layers : 8,
+        enabled: false,
+      };
+      return c.json({
+        user: out,
+        csrf: session?.data.csrf ?? null,
+        turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+        plus,
+      });
+    }
     plus = {
       active,
       sources,
