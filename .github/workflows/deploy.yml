@@ -3,14 +3,25 @@ name: Deploy
 # Deploys on push to prod. Requires repo secrets:
 #   CLOUDFLARE_API_TOKEN  (Workers Scripts + D1 + KV + R2 edit)
 #   CLOUDFLARE_ACCOUNT_ID
+#
+# Every gate runs BEFORE the D1 migration and the deploy, so a red suite leaves
+# the previously deployed Worker in place rather than half-migrating behind it.
 on:
   push:
     branches: [prod]
   workflow_dispatch:
 
+# Two pushes in quick succession must not deploy out of order. Deploys are not
+# cancelled once started — a half-finished migrate/deploy is worse than a slow
+# queue — so only queued runs wait.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,9 +30,60 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm test
       - run: npm run build
 
+      # --- end-to-end -----------------------------------------------------
+      # Playwright drives the real dev server (vite + the Worker in workerd),
+      # which reads .dev.vars. None of what goes in it is a secret:
+      #
+      #   * The Turnstile values are Cloudflare's PUBLISHED always-pass test
+      #     keys, documented at developers.cloudflare.com/turnstile/troubleshooting/testing/.
+      #     They are public constants, so they belong in the file rather than in
+      #     a repo secret that would have to be kept in sync by hand.
+      #   * e2e signs in through /api/auth/test-login, never through real
+      #     Google, so the Google values only have to be present and non-empty.
+      #   * SESSION_SECRET is generated per run. A fresh random value is
+      #     strictly better here than a stored one.
+      #
+      # ALLOW_TEST_LOGIN enables the session bypass and must never be set in
+      # production — it lives only in this file, which the deploy does not ship.
+      - name: Write .dev.vars for the e2e dev server
+        run: |
+          cat > .dev.vars <<EOF
+          GOOGLE_CLIENT_ID=e2e-not-used.apps.googleusercontent.com
+          GOOGLE_CLIENT_SECRET=e2e-not-used
+          SESSION_SECRET=$(openssl rand -hex 32)
+          TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+          TURNSTILE_SITE_KEY=1x00000000000000000000AA
+          PUBLIC_BASE_URL=http://localhost:5173
+          GOOGLE_REDIRECT_URI=http://localhost:5173/api/auth/callback
+          ALLOW_TEST_LOGIN=true
+          EOF
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        # The Workers AI binding reaches real infrastructure even under `vite
+        # dev`, so the dev server needs account credentials to bind it. No
+        # assertion depends on AI output — alt text and name suggestions both
+        # degrade to empty rather than failing — but without these the dev
+        # server can fail to start at all.
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      # --- release --------------------------------------------------------
       - name: Apply D1 migrations
         # cloudflare/wrangler-action v3.15.0 (pinned to commit SHA)
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd

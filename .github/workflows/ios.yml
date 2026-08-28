@@ -1,0 +1,92 @@
+name: iOS
+
+# Builds the Swift engine and the app for the simulator.
+#
+# THIS WORKFLOW DOES NOT GATE THE WEB DEPLOY. Deploy runs on push to prod
+# (deploy.yml) and never waits on this; a red iOS build stops nothing from
+# shipping to the web. It exists to catch engine drift and compile breaks early,
+# on the branch where the work actually lands.
+#
+# Why `dev` only, and why the paths filter:
+#   * Waves merge straight to `dev` without PRs, so `pull_request` would never
+#     fire.
+#   * macOS minutes bill at 10x on a private repo. Running on `dev` AND
+#     `pull_request` AND `prod` would build the same tested tree three times and
+#     burn the included allowance — the symptom of running out is a job that
+#     never starts, with zero steps and no logs.
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "ios/**"
+      # The Swift engine is a second implementation of the shared vector format
+      # and is held to byte-identical output; golden.json is generated FROM the
+      # web serializer. So a change under src/shared can break Swift without
+      # touching a single file in ios/.
+      - "src/shared/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+# A burst of pushes should not run superseded macOS jobs to completion.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift engine tests
+        working-directory: ios/KaleidoEngine
+        run: swift test
+
+      - name: Install XcodeGen
+        # Auto-update alone costs 30-60s, billed at 10x.
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        # The .xcodeproj is gitignored and generated from project.yml.
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Resolve a simulator UDID
+        id: sim
+        # NEVER pin the destination by device name. `name=iPhone 16` breaks
+        # silently when GitHub refreshes the runner image: the device vanishes,
+        # xcodebuild exits 70 listing only placeholders, and the failed run
+        # still bills. Resolving at runtime is immune to that.
+        run: |
+          UDID=$(xcrun simctl list devices available --json | python3 -c "
+          import json, sys
+          runtimes = json.load(sys.stdin)['devices']
+          best = None
+          for rt in sorted(runtimes):
+              if 'iOS' not in rt:
+                  continue
+              for dev in runtimes[rt]:
+                  if dev.get('isAvailable') and dev['name'].startswith('iPhone'):
+                      best = (rt, dev['udid'], dev['name'])
+          if not best:
+              sys.exit('no available iPhone simulator')
+          print(best[1])
+          sys.stderr.write(f'using {best[2]} on {best[0]}\n')
+          ")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Build for testing
+        working-directory: ios
+        # The UDID goes through env rather than being interpolated straight into
+        # the script. It comes from simctl, not from webhook input, but keeping
+        # every `${{ }}` out of `run:` bodies is the habit that prevents the
+        # injection bug rather than arguing about each case.
+        env:
+          DEST_UDID: ${{ steps.sim.outputs.udid }}
+        run: |
+          xcodebuild build-for-testing \
+            -scheme Kaleidoscope \
+            -destination "id=$DEST_UDID"
