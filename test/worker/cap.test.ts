@@ -289,6 +289,27 @@ describe("free public cap — CAP_EPOCH misconfiguration fails closed", () => {
     expect(res.status).toBe(500);
   });
 
+  it("a non-integer FREE_PUBLIC_CAP is a 500, not a silent total blackout", async () => {
+    // The opposite failure direction to a bad epoch, and just as silent: a NaN
+    // cap binds as SQL NULL, `COUNT(*) < NULL` is NULL (falsy), so every public
+    // save would land unlisted with capReached — indistinguishable from a
+    // genuinely full account. Verified: node:sqlite binds NaN without throwing.
+    const { env } = ctx({ PLUS_ENABLED: "true", CAP_EPOCH: "0", FREE_PUBLIC_CAP: "ten" });
+    const res = await save(env, saveForm({ drawing: drawingV1(1) }));
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "server_misconfigured" });
+  });
+
+  it("an UNSET FREE_PUBLIC_CAP falls back to 10 rather than failing", async () => {
+    // A missing var is a different case from a garbage one: the default is the
+    // shipped policy, so it must not take saves down.
+    const { DB, env } = ctx({ PLUS_ENABLED: "true", CAP_EPOCH: "0" });
+    for (let i = 0; i < 10; i++) seedArtwork(DB, { id: `p${i}`, user_id: "u1", visibility: "public" });
+    const res = await save(env, saveForm({ drawing: drawingV1(1) }));
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { cap: number }).cap).toBe(10);
+  });
+
   it("PATCH → public also fails closed on a bad CAP_EPOCH", async () => {
     const { DB, env } = ctx({ PLUS_ENABLED: "true", CAP_EPOCH: "xyz" });
     seedArtwork(DB, { id: "a1", user_id: "u1", visibility: "private", published_at: null });

@@ -180,9 +180,18 @@ export function capPolicy(env: Env, plus: boolean): CapPolicy {
     return { ok: true, enforced: false, cap: NO_CAP, epoch: 0 };
   }
   const epoch = envInt(env.CAP_EPOCH, NaN);
-  // Fail closed. A NaN epoch in the comparison would silently make every
-  // `published_at >= epoch` false, i.e. an unlimited cap — the exact failure a
-  // paid feature must not have.
-  if (!Number.isFinite(epoch)) return { ok: false };
-  return { ok: true, enforced: true, cap: envInt(env.FREE_PUBLIC_CAP, 10), epoch };
+  const cap = envInt(env.FREE_PUBLIC_CAP, 10);
+  // Fail closed on BOTH, because each fails in an opposite and equally silent
+  // direction once bound into the conditional publish:
+  //
+  //   NaN epoch → every `published_at >= epoch` is false → nothing counts →
+  //     an unlimited cap, the one failure a paid feature must not have.
+  //   NaN cap   → binds as SQL NULL → `COUNT(*) < NULL` is NULL, i.e. falsy →
+  //     every public save silently lands unlisted with capReached, which the
+  //     client cannot tell apart from a genuinely full account.
+  //
+  // Only §2.4 required the epoch check; the cap is the same class of bug and
+  // costs one line.
+  if (!Number.isFinite(epoch) || !Number.isFinite(cap)) return { ok: false };
+  return { ok: true, enforced: true, cap, epoch };
 }
