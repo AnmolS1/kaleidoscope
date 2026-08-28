@@ -31,6 +31,16 @@ export const pressurePreset = signal<PressurePreset>(loadStored("kal.pressurePre
 export const pressureOpacity = signal<boolean>(loadStored("kal.pressureOpacity", false, isBool));
 /** Whether a bare finger draws. Off means fingers only pan/zoom. */
 export const drawWithFinger = signal<boolean>(loadStored("kal.drawWithFinger", true, isBool));
+/**
+ * Whether NEW strokes are smoothed. Default on.
+ *
+ * Per-stroke, not per-document: turning it off makes subsequent strokes omit
+ * `sm` and render as polylines, exactly as every v1 stroke already does, so the
+ * two kinds coexist in one drawing and nothing about the format changes. It
+ * cannot retroactively alter a stroke already committed — which is the point,
+ * since the stored PNG of any saved piece has to keep matching it.
+ */
+export const smoothStrokes = signal<boolean>(loadStored("kal.smoothStrokes", true, isBool));
 
 /** Pen hover position in normalized canvas coords, or null. */
 export const hoverPoint = signal<{ x: number; y: number } | null>(null);
@@ -199,6 +209,7 @@ if (typeof window !== "undefined") {
   pressurePreset.subscribe((v) => persist("kal.pressurePreset", v));
   pressureOpacity.subscribe((v) => persist("kal.pressureOpacity", v));
   drawWithFinger.subscribe((v) => persist("kal.drawWithFinger", v));
+  smoothStrokes.subscribe((v) => persist("kal.smoothStrokes", v));
 }
 
 export const PALETTE = [

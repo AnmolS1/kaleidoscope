@@ -244,6 +244,8 @@ export class Scene {
   private pressurePreset: PressurePreset = "normal";
   /** Whether pen pressure also drives alpha (`po`). Pen input only. */
   private pressureOpacity = false;
+  /** New strokes carry `sm` unless this is off. Mirrors S.smoothStrokes. */
+  private smoothStrokes = true;
   private liveDirty = false;
   private rafId = 0;
   private ro: ResizeObserver | null = null;
@@ -554,11 +556,18 @@ export class Scene {
     // have at 1×.
     const d = screenToDrawing(this.viewState, s.x, s.y);
     const { x, y } = toNormalized(d.x, d.y, this.cssW, this.cssH);
-    const raw = e.pressure > 0 ? e.pressure : DEFAULT_PRESSURE;
     // Gamma is applied HERE, at capture, and the adjusted value is what gets
     // stored — so the preset is a property of the hand that drew, not of the
-    // document. Note it therefore also shapes the 0.5 a mouse reports.
-    return [x, y, applyPressureGamma(raw, this.pressurePreset)];
+    // document.
+    //
+    // PEN ONLY, like `po`. A mouse or finger reports no pressure and falls back
+    // to a flat DEFAULT_PRESSURE, which has no dynamics for a preset to shape —
+    // it would just scale every stroke's width by a constant (Firm made a mouse
+    // draw ~16% thinner) from a control the UI never shows, since the brush
+    // popover hides the pressure section until a pen has been seen.
+    // Settled with Anmol 2026-08-28.
+    if (e.pointerType !== "pen" || !(e.pressure > 0)) return [x, y, DEFAULT_PRESSURE];
+    return [x, y, applyPressureGamma(e.pressure, this.pressurePreset)];
   }
 
   private onDown = (e: PointerEvent): void => {
@@ -603,11 +612,11 @@ export class Scene {
       color: this.state.color,
       size: this.state.size,
       opacity: this.state.opacity,
-      // Every new stroke is smoothed. Below 3 points there is no interior to
-      // smooth and the renderer falls back to the polyline, so the flag is
-      // harmless on a tap; setting it unconditionally is what makes "drawn in
-      // 1.2" and "drawn before" the only two rendering behaviours.
-      sm: 1,
+      // Below 3 points there is no interior to smooth and the renderer falls
+      // back to the polyline anyway, so the flag is harmless on a tap.
+      // Omitted entirely when the toggle is off, which renders exactly as a v1
+      // stroke does — the two kinds coexist in one drawing.
+      ...(this.smoothStrokes ? { sm: 1 as const } : {}),
       // Pressure-to-opacity is pen-only: a mouse or finger reports a constant
       // 0.5, so honouring it there would just dim every stroke by a fixed
       // amount for no expressive gain.
@@ -900,6 +909,10 @@ export class Scene {
     this.state.opacity = Math.max(0, Math.min(1, n));
   }
   /** Capture-time pressure curve for SUBSEQUENT strokes. Never retroactive. */
+  /** Whether new strokes carry `sm`. Does not affect strokes already drawn. */
+  setSmoothStrokes(on: boolean): void {
+    this.smoothStrokes = on;
+  }
   setPressurePreset(p: PressurePreset): void {
     this.pressurePreset = p;
   }

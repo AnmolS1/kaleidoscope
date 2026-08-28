@@ -68,6 +68,7 @@ export function Canvas() {
       // which no task's ownership list claimed.)
       effect(() => scene.setPressurePreset(S.pressurePreset.value)),
       effect(() => scene.setPressureOpacity(S.pressureOpacity.value)),
+      effect(() => scene.setSmoothStrokes(S.smoothStrokes.value)),
       // Whether a bare finger draws or pans. Same shape as the two above: the
       // signal is persisted by state.ts, the popover that writes it is T06b's,
       // and this is the bridge that makes it reach the input path.

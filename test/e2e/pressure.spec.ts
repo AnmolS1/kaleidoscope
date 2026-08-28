@@ -34,7 +34,7 @@ type Preset = keyof typeof GAMMA;
  */
 async function penStroke(
   page: import("@playwright/test").Page,
-  opts: { preset?: Preset; po?: boolean; pointerType?: string; size?: number } = {},
+  opts: { preset?: Preset; po?: boolean; pointerType?: string; size?: number; smooth?: boolean } = {},
 ) {
   return page.evaluate(async (o) => {
     const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
@@ -44,6 +44,7 @@ async function penStroke(
 
     S.pressurePreset.value = o.preset ?? "normal";
     S.pressureOpacity.value = o.po ?? false;
+    S.smoothStrokes.value = o.smooth ?? true;
     S.size.value = o.size ?? 24;
     scene.clear();
 
@@ -243,5 +244,70 @@ test.describe("smoothing reaches the pixels", () => {
     expect(polyline.length, "something was drawn").toBeGreaterThan(5000);
     expect(polylineAgain, "control: same input, same pixels").toBe(polyline);
     expect(smoothed, "sm: 1 curves the path").not.toBe(polyline);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Settled with Anmol 2026-08-28: the preset shapes PEN pressure only, and
+// smoothing is a toggle rather than unconditional.
+// ---------------------------------------------------------------------------
+
+test.describe("the pressure preset is pen-only", () => {
+  // A mouse or finger reports no usable pressure and falls back to a flat 0.5,
+  // which has no dynamics for a gamma to shape — applying it would just scale
+  // every stroke's width by a constant, from a control the brush popover never
+  // shows for a non-pen input.
+  test("a mouse stroke stores flat pressure whatever the preset says", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector(".canvas-host canvas");
+
+    const firm = await penStroke(page, { preset: "firm", pointerType: "mouse" });
+    const light = await penStroke(page, { preset: "light", pointerType: "mouse" });
+
+    // Flat 0.5 on both — and specifically NOT the gamma'd values, which is what
+    // would show if the preset were still reaching a non-pen input.
+    expect(new Set(firm.pressures)).toEqual(new Set([0.5]));
+    expect(new Set(light.pressures)).toEqual(new Set([0.5]));
+    expect(firm.pressures[0]).not.toBeCloseTo(0.5 ** GAMMA.firm, 6);
+    expect(light.pressures[0]).not.toBeCloseTo(0.5 ** GAMMA.light, 6);
+    // The injected 0.8 is ignored for a mouse too: browsers do not report
+    // meaningful mouse pressure, so trusting it would be trusting noise.
+    expect(firm.pressures[0]).not.toBeCloseTo(INJECTED ** GAMMA.firm, 6);
+  });
+
+  // The control. Without this the test above passes just as well if the preset
+  // stopped working for EVERY input, which is a different bug entirely.
+  test("...while a pen stroke still gets the gamma", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector(".canvas-host canvas");
+    const pen = await penStroke(page, { preset: "firm", pointerType: "pen" });
+    expect(pen.pressures[0]).toBeCloseTo(INJECTED ** GAMMA.firm, 6);
+    expect(pen.pressures[0]).not.toBeCloseTo(0.5, 6);
+  });
+});
+
+test.describe("smooth strokes toggle", () => {
+  test("off omits sm entirely, on sets it", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector(".canvas-host canvas");
+
+    expect((await penStroke(page, { smooth: true })).sm).toBe(1);
+    // Absent, not 0 or false — the parser rejects anything but the literal 1,
+    // and an absent flag is exactly what a v1 stroke carries.
+    expect((await penStroke(page, { smooth: false })).sm).toBeUndefined();
+  });
+
+  test("the toggle changes the pixels, and a repeat does not", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector(".canvas-host canvas");
+
+    const on = await penStroke(page, { smooth: true });
+    const off = await penStroke(page, { smooth: false });
+    const onAgain = await penStroke(page, { smooth: true });
+
+    // Same points, different path builder → different picture.
+    expect(off.png).not.toBe(on.png);
+    // Control: the difference is the toggle, not run-to-run noise.
+    expect(onAgain.png).toBe(on.png);
   });
 });

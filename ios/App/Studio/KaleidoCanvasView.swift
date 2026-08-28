@@ -209,7 +209,7 @@ final class KaleidoCanvasView: UIView {
             po: model.pressureOpacity && touch.type == .pencil,
             // Every stroke authored from here on is smoothed. Existing v1
             // strokes are never retrofitted, which is what pins the gallery.
-            sm: true,
+            sm: model.smoothStrokes,
             pts: []
         )
         appendPoints(for: touch, event: event)
@@ -302,9 +302,18 @@ final class KaleidoCanvasView: UIView {
 
     private func strokePoint(_ touch: UITouch, preset: PressurePreset) -> StrokePoint {
         let n = normalizedPoint(touch.location(in: self))
-        let raw = touch.force > 0 ? Double(touch.force / max(touch.maximumPossibleForce, 0.0001)) : defaultPressure
         // The preset is applied AT CAPTURE and the adjusted value is what gets
         // stored, so changing the setting later never repaints an old piece.
+        //
+        // PENCIL ONLY, like `po`, and matching the web. A finger reports no
+        // usable force and falls back to a flat value, which has no dynamics for
+        // a gamma to shape — it would just scale every stroke's width by a
+        // constant, from a control the brush popover only shows once a Pencil
+        // has been seen. Settled with Anmol 2026-08-28.
+        guard touch.type == .pencil, touch.force > 0 else {
+            return StrokePoint(x: n.x, y: n.y, pressure: defaultPressure)
+        }
+        let raw = Double(touch.force / max(touch.maximumPossibleForce, 0.0001))
         return StrokePoint(x: n.x, y: n.y, pressure: applyPressureGamma(min(1, raw), preset: preset))
     }
 

@@ -488,6 +488,16 @@ final class StudioModel: ObservableObject {
     }
     /// When off, a finger pans and zooms and only a Pencil draws. Persisted and
     /// never inferred per session (PLAN §1).
+    /// Whether NEW strokes are smoothed. Default on, mirroring the web.
+    ///
+    /// Per-stroke rather than per-document: turning it off makes later strokes
+    /// omit `sm` and render as polylines, exactly as every v1 stroke does, so
+    /// both kinds coexist in one drawing. It never alters a committed stroke —
+    /// the stored PNG of a saved piece has to keep matching it.
+    @Published var smoothStrokes: Bool = true {
+        didSet { UserDefaults.standard.set(smoothStrokes, forKey: Keys.smoothStrokes) }
+    }
+
     @Published var drawWithFinger: Bool = true {
         didSet { UserDefaults.standard.set(drawWithFinger, forKey: Keys.drawWithFinger) }
     }
@@ -512,6 +522,7 @@ final class StudioModel: ObservableObject {
         static let pressurePreset = "kal.pressurePreset"
         static let pressureOpacity = "kal.pressureOpacity"
         static let drawWithFinger = "kal.drawWithFinger"
+        static let smoothStrokes = "kal.smoothStrokes"
         static let pencilBannerSeen = "kal.pencilBannerSeen"
     }
 
@@ -526,6 +537,9 @@ final class StudioModel: ObservableObject {
         }
         if defaults.object(forKey: Keys.drawWithFinger) != nil {
             drawWithFinger = defaults.bool(forKey: Keys.drawWithFinger)
+        }
+        if defaults.object(forKey: Keys.smoothStrokes) != nil {
+            smoothStrokes = defaults.bool(forKey: Keys.smoothStrokes)
         }
     }
 
