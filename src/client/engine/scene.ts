@@ -18,9 +18,7 @@ import {
   applyImageTransform,
   inverseTransformPoint,
 } from "./symmetry";
-import {
-  drawStroke,
-} from "./brush";
+import { drawStroke, strokeSegments } from "./brush";
 import { DrawingDoc, type LayerSummary } from "./history";
 import {
   REFERENCE_HALF,
@@ -1379,15 +1377,74 @@ export function hitTestDrawing(
   return null;
 }
 
+/**
+ * Subdivisions per curved segment when hit-testing.
+ *
+ * A segment spans one captured move — capture drops anything under ~1.1px — so
+ * the curve across it is short and shallow. Eight chords put the sampling error
+ * far below `reach`, which is at least the stroke's own half-width plus the
+ * caller's tolerance (a finger). More samples would cost time a tap cannot
+ * spare on a large drawing; fewer would start to matter on the tightest curls.
+ */
+const HIT_CURVE_SAMPLES = 8;
+
+/**
+ * Is (x, y) within `reach` of this stroke, in the stroke's own frame?
+ *
+ * Goes through `strokeSegments` — the SAME path builder the canvas and the SVG
+ * exporter use — rather than walking `pts` directly. A smoothed stroke is drawn
+ * as Béziers, so measuring against the raw polyline tests a shape that is not on
+ * screen: on a tight curl the drawn curve bows away from its chord and a tap
+ * that visibly lands on the ink misses, or one beside it hits.
+ *
+ * Sharing the builder is what stops rendering and hit-testing drifting apart
+ * again the next time either changes.
+ */
 function strokeContains(stroke: Stroke, x: number, y: number, reach: number): boolean {
   const pts = stroke.pts;
   if (pts.length === 0) return false;
   if (pts.length === 1) {
     return Math.hypot(x - pts[0][0], y - pts[0][1]) <= reach;
   }
-  for (let i = 1; i < pts.length; i++) {
-    if (distToSegment(x, y, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) <= reach) {
-      return true;
+
+  for (const seg of strokeSegments(stroke)) {
+    const a = pts[seg.i];
+    if (seg.c1x === undefined) {
+      if (distToSegment(x, y, a[0], a[1], seg.x, seg.y) <= reach) return true;
+      continue;
+    }
+
+    // A cubic lies inside the convex hull of its four control points, so the
+    // hull's bounding box expanded by `reach` is an exact reject test — and a
+    // far cheaper one than sampling. Most segments of most strokes fail it.
+    const c1x = seg.c1x;
+    const c1y = seg.c1y!;
+    const c2x = seg.c2x!;
+    const c2y = seg.c2y!;
+    const minX = Math.min(a[0], c1x, c2x, seg.x) - reach;
+    if (x < minX) continue;
+    const maxX = Math.max(a[0], c1x, c2x, seg.x) + reach;
+    if (x > maxX) continue;
+    const minY = Math.min(a[1], c1y, c2y, seg.y) - reach;
+    if (y < minY) continue;
+    const maxY = Math.max(a[1], c1y, c2y, seg.y) + reach;
+    if (y > maxY) continue;
+
+    // Flatten to chords and measure against those.
+    let px = a[0];
+    let py = a[1];
+    for (let k = 1; k <= HIT_CURVE_SAMPLES; k++) {
+      const t = k / HIT_CURVE_SAMPLES;
+      const u = 1 - t;
+      const w0 = u * u * u;
+      const w1 = 3 * u * u * t;
+      const w2 = 3 * u * t * t;
+      const w3 = t * t * t;
+      const qx = w0 * a[0] + w1 * c1x + w2 * c2x + w3 * seg.x;
+      const qy = w0 * a[1] + w1 * c1y + w2 * c2y + w3 * seg.y;
+      if (distToSegment(x, y, px, py, qx, qy) <= reach) return true;
+      px = qx;
+      py = qy;
     }
   }
   return false;

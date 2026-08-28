@@ -858,12 +858,56 @@ func hitTestDrawing(_ drawing: DrawingV2, x: Double, y: Double, tolerance: Doubl
     return nil
 }
 
+/// Subdivisions per curved segment when hit-testing. A segment spans one
+/// captured move — capture drops anything under ~1.1px — so the curve across it
+/// is short and shallow, and eight chords put the sampling error far below
+/// `reach` (at least the stroke's half-width plus a finger's tolerance).
+/// Mirrors HIT_CURVE_SAMPLES on the web.
+private let hitCurveSamples = 8
+
+/// Is (x, y) within `reach` of this stroke, in the stroke's own frame?
+///
+/// A smoothed stroke is DRAWN as Béziers, so measuring against the raw polyline
+/// tests a shape that is not on screen: on a tight curl the ink bows away from
+/// its chord and a tap that visibly lands on the stroke misses. This walks the
+/// same curve the renderer builds, via the engine's `smoothStroke`.
 private func strokeContains(_ stroke: Stroke, x: Double, y: Double, reach: Double) -> Bool {
     let pts = stroke.pts
     if pts.isEmpty { return false }
     if pts.count == 1 { return hypot(x - pts[0].x, y - pts[0].y) <= reach }
-    for i in 1..<pts.count {
-        if distToSegment(x, y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= reach { return true }
+
+    guard stroke.sm, let cubics = smoothStroke(pts) else {
+        for i in 1..<pts.count where distToSegment(x, y, pts[i - 1].x, pts[i - 1].y, pts[i].x, pts[i].y) <= reach {
+            return true
+        }
+        return false
+    }
+
+    for seg in cubics {
+        let a = pts[seg.i]
+        // A cubic lies inside the convex hull of its four control points, so the
+        // hull's bounding box grown by `reach` is an exact reject — and far
+        // cheaper than sampling. Most segments of most strokes fail it.
+        if x < min(a.x, seg.c1x, seg.c2x, seg.x) - reach { continue }
+        if x > max(a.x, seg.c1x, seg.c2x, seg.x) + reach { continue }
+        if y < min(a.y, seg.c1y, seg.c2y, seg.y) - reach { continue }
+        if y > max(a.y, seg.c1y, seg.c2y, seg.y) + reach { continue }
+
+        var px = a.x
+        var py = a.y
+        for k in 1...hitCurveSamples {
+            let t = Double(k) / Double(hitCurveSamples)
+            let u = 1 - t
+            let w0 = u * u * u
+            let w1 = 3 * u * u * t
+            let w2 = 3 * u * t * t
+            let w3 = t * t * t
+            let qx = w0 * a.x + w1 * seg.c1x + w2 * seg.c2x + w3 * seg.x
+            let qy = w0 * a.y + w1 * seg.c1y + w2 * seg.c2y + w3 * seg.y
+            if distToSegment(x, y, px, py, qx, qy) <= reach { return true }
+            px = qx
+            py = qy
+        }
     }
     return false
 }
