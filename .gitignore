@@ -37,6 +37,9 @@ google-oauth.json
 
 # AI plan/working dirs — never publish (see working-with-anmol memory note)
 /kaleidoscope-plan
+# Local operator scripts (e.g. comp-entitlement grants). Never committed — they
+# carry account ids and are run by hand against production.
+/scripts
 .claude/
 .cursor/
 .cursorrules
@@ -49,3 +52,5 @@ google-oauth.json
 /.playwright-mcp
 /coverage
 *.tsbuildinfo
+# local plan + design spec for Claude Code (never published)
+/kaleidoscope-plan/

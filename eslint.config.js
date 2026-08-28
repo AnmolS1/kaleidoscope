@@ -18,6 +18,10 @@ export default tseslint.config(
       // worktree copy) unless named here.
       ".claude/**",
       "kaleidoscope-plan/**",
+      // Gitignored operator scripts. They are Node programs, so linting them
+      // under the browser/worker globals reports `process` and `console` as
+      // undefined and turns the gate red for a file that is never shipped.
+      "scripts/**",
     ],
   },
   js.configs.recommended,
