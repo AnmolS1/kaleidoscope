@@ -197,11 +197,15 @@ public func emptyDrawingV2(bg: Background, sym: Symmetry) -> DrawingV2 {
 /// count, so checking before it would let a 41-unit name through or reject a
 /// legal 40-unit one.
 ///
-/// Rejected: C0 controls, DEL, C1 controls. (The web also rejects lone
-/// surrogates; a Swift `String` cannot hold one, and `JSONSerialization`
-/// substitutes U+FFFD for `"\uD800"` in input rather than surfacing it — so
-/// that clause has no Swift equivalent and no Swift test. See the note in
-/// `deserializeV2`.)
+/// Rejected: C0 controls, DEL, C1 controls.
+///
+/// The web's fourth clause — reject lone surrogates — has no counterpart HERE,
+/// but the outcome still matches, one layer earlier: `JSONSerialization` THROWS
+/// on `"\uD800"` ("expected low-surrogate code point but did not find one"),
+/// where JS `JSON.parse` accepts it and leaves the unpaired unit for this
+/// function to catch. Both platforms therefore reject the same document; only the
+/// error message differs. Verified both directions — see
+/// `testLoneSurrogateIsRejectedAtTheJSONLayer`.
 ///
 /// The empty string is ALLOWED — vacuously "printable scalars only", and
 /// refusing it would fail a whole save over something the UI can render blank.

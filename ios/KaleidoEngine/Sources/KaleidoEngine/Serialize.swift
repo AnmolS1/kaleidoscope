@@ -210,11 +210,22 @@ public struct DrawingParseError: Error, CustomStringConvertible {
     public var description: String { message }
 }
 
-private let hexColor = try! NSRegularExpression(pattern: "^#[0-9a-fA-F]{6}$")
-
+/// `/^#[0-9a-fA-F]{6}$/` — matched over UTF-8 bytes rather than with
+/// `NSRegularExpression`, because ICU's `$` and JavaScript's `$` are not the same
+/// anchor. ICU matches `$` before a trailing line terminator, so the same pattern
+/// ACCEPTED "#ff00aa\n", "#ff00aa\r\n" and "#ff00aa" + U+2028, all of which JS
+/// rejects. Swift would then have re-emitted the terminator inside the color
+/// string, producing bytes and a content hash the web could never generate.
+/// (The character class itself was fine: explicit ranges never matched full-width
+/// or Arabic-Indic digits. It was only the anchor.)
 private func isHexColor(_ s: String) -> Bool {
-    let range = NSRange(s.startIndex..<s.endIndex, in: s)
-    return hexColor.firstMatch(in: s, range: range) != nil
+    let bytes = Array(s.utf8)
+    guard bytes.count == 7, bytes[0] == UInt8(ascii: "#") else { return false }
+    return bytes[1...].allSatisfy { b in
+        (b >= UInt8(ascii: "0") && b <= UInt8(ascii: "9"))
+            || (b >= UInt8(ascii: "a") && b <= UInt8(ascii: "f"))
+            || (b >= UInt8(ascii: "A") && b <= UInt8(ascii: "F"))
+    }
 }
 
 /// JSONSerialization represents both booleans and numbers as NSNumber; this
@@ -309,11 +320,12 @@ private func parseFlag(_ raw: Any?, _ message: String) throws -> Bool {
 /// 1, id "l1", name "Layer 1" — the same shape a fresh drawing starts as on every
 /// platform.
 ///
-/// One clause of the web validator has no Swift equivalent: it rejects lone
-/// surrogates in layer names. `JSONSerialization` decodes `"\uD800"` to U+FFFD
-/// rather than surfacing the unpaired unit, and a Swift `String` cannot represent
-/// one at all, so there is nothing here to reject. A payload carrying one is
-/// refused by the Worker (which runs the TS validator) before it is ever stored.
+/// Lone surrogates are rejected, but one layer earlier than on the web:
+/// `JSONSerialization` throws outright on `"\uD800"` ("expected low-surrogate
+/// code point but did not find one"), so it surfaces here as "invalid JSON"
+/// rather than as "bad name". JS `JSON.parse` instead accepts the unpaired unit
+/// and leaves `normalizeLayerName` to refuse it. Same verdict on the same
+/// document, different message — and the message is not part of the contract.
 public func deserializeV2(_ json: String) throws -> DrawingV2 {
     // Byte length, not character count: layer names are user text and may be
     // multi-byte, and the cap is a storage cap.
