@@ -37,6 +37,11 @@ google-oauth.json
 
 # AI plan/working dirs — never publish (see working-with-anmol memory note)
 /kaleidoscope-plan
+.claude/
+.cursor/
+.cursorrules
+.aider*
+.github/copilot-instructions.md
 
 # test artifacts
 /test-results
