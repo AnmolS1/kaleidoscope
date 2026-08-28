@@ -60,7 +60,14 @@ struct EdgeSlider: View {
                     .frame(width: 4, height: max(0, trackHeight * fraction))
                 Circle()
                     .fill(Blueprint.inset)
-                    .overlay(Circle().stroke(Blueprint.creaseLineBold, lineWidth: 1))
+                    // DEVIATION from the frame, deliberate. It draws this border
+                    // as `rgba(46,94,140,.28)`, which puts a white thumb on the
+                    // light graph ground at 1.15:1 with a 1.51:1 outline — a
+                    // slider handle you cannot see, and a WCAG 1.4.11 fail at the
+                    // 3:1 bar for a UI component. Solid `crease` is the same hue
+                    // at 5.91 / 6.72 against the ground and 6.78 / 5.79 against
+                    // the thumb's own fill.
+                    .overlay(Circle().stroke(Blueprint.crease, lineWidth: 1))
                     .shadow(color: Blueprint.cardShadowNear.color,
                             radius: Blueprint.cardShadowNear.radius, y: Blueprint.cardShadowNear.y)
                     .frame(width: thumb, height: thumb)

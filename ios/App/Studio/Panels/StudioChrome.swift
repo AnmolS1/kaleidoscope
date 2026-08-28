@@ -88,6 +88,7 @@ struct IconButton: View {
     let action: () -> Void
 
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: action) {
@@ -95,11 +96,22 @@ struct IconButton: View {
                 Image(systemName: systemImage)
                     .font(.system(size: size * 0.4, weight: .regular))
                     .symbolRenderingMode(.monochrome)
-                if let caption {
+                // The rail caption is dropped at accessibility sizes rather than
+                // scaled: `9 · D` in a 44pt-wide button becomes `9 · …`, which
+                // tells a reader nothing. The value is not lost — the button's
+                // `accessibilityValue` says "9 segments, mirrored" in full, and
+                // the top readout still spells it out.
+                if let caption, !dynamicTypeSize.isAccessibilitySize {
                     Text(caption)
                         .font(Blueprint.mono(.caption2))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
+                        // Pinned to graphite rather than inheriting the active
+                        // crane tint. `craneStrong` on the 16% crane fill is
+                        // 4.25:1 in dark — a fail for 10pt text, and this caption
+                        // is a READOUT (`9 · D`), not part of the active-state
+                        // indication. graphite @0.8 clears it at 6.45 / 7.57.
+                        .foregroundStyle(Blueprint.graphite.opacity(0.8))
                 }
                 if isActive && differentiateWithoutColor {
                     Circle().frame(width: 3, height: 3)
@@ -134,7 +146,12 @@ struct CountBadge: View {
 
     var body: some View {
         Text(text)
-            .font(Blueprint.mono(.caption2))
+            // Fixed size, not a text style. The badge is a graphical count in a
+            // 14pt disc pinned to a 44pt button's corner; scaling it to
+            // accessibility sizes bursts the disc and covers the glyph it is
+            // annotating. The count is spoken in full by the button's
+            // `accessibilityValue`, so nothing is lost by not scaling it.
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
             .foregroundStyle(.white)
             .padding(.horizontal, 3)
             .frame(minWidth: 14, minHeight: 14)

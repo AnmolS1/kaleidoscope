@@ -11,7 +11,16 @@ final class AccessibilityUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launch() -> XCUIApplication {
+    /// Orientation is PINNED, not inherited.
+    ///
+    /// `XCUIDevice.orientation` is simulator state that survives between test
+    /// runs, so after a landscape run these tests would launch into the
+    /// compact-HEIGHT studio — which shows Save only and no Symmetry button — and
+    /// fail on controls that are correctly absent. They passed in isolation and
+    /// failed in the suite, which is the signature of exactly this. Every launch
+    /// here now states the orientation it means.
+    private func launch(_ orientation: UIDeviceOrientation = .portrait) -> XCUIApplication {
+        XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["KALEIDO_DEMO"] = "1"
         app.launch()
@@ -100,6 +109,7 @@ final class AccessibilityUITests: XCTestCase {
     /// renders byte-identical to no-arg, and `…AccessibilityXL` renders identical
     /// to the OS global `accessibility-extra-large` setting).
     func testAccessibility3Screens() {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         // Force .accessibility3 for this launch only (no global sim setting).
         app.launchArguments += ["-UIPreferredContentSizeCategoryName",
@@ -201,6 +211,7 @@ final class AccessibilityUITests: XCTestCase {
     /// — used to refresh 01/02 after the controls-panel reflow without disturbing
     /// the network-backed screens.
     func testAccessibility3StudioReflow() {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName",
                                 "UICTContentSizeCategoryAccessibilityXL"]
@@ -218,6 +229,7 @@ final class AccessibilityUITests: XCTestCase {
     /// Focused .accessibility3 capture of the About screen (text-heavy), separate
     /// so a flaky navigation in the main walk can't drop it.
     func testAccessibility3About() {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName",
                                 "UICTContentSizeCategoryAccessibilityXL"]
@@ -239,6 +251,7 @@ final class AccessibilityUITests: XCTestCase {
     }
 
     func testAccessibility3FrendalistArtwork() {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName",
                                 "UICTContentSizeCategoryAccessibilityXL"]
@@ -277,6 +290,7 @@ final class AccessibilityUITests: XCTestCase {
     /// (suspect) `…AccessibilityExtraLarge` string and the no-arg default, and
     /// tell whether the committed set is truly .accessibility3.
     private func captureStudio(category: String?, name: String) {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         if let category {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", category]

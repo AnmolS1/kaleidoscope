@@ -178,9 +178,17 @@ struct StudioView: View {
             removeStrokeBar
             toast
                 .padding(.leading, metrics.popoverAnchor)
-                .padding(.bottom, 20)
+                // In portrait the layers panel occupies this same corner, so the
+                // toast rides above it. `layersCardHeight` is already measured
+                // for the card's own frame, so this is not a second guess at it.
+                .padding(.bottom, 20 + (layersDocksBottomLeading(in: geo) && showLayers
+                                        ? layersCardHeight + 12 : 0))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
+    }
+
+    private func layersDocksBottomLeading(in geo: GeometryProxy) -> Bool {
+        geo.size.height > geo.size.width
     }
 
     /// Rail-anchored cards. The layers panel docks top-right and everything else
@@ -196,15 +204,28 @@ struct StudioView: View {
         let maxLayersHeight = max(200, geo.size.height / 2 - 64 - 24)
 
         if showLayers {
-            scrollableCard(maxHeight: maxLayersHeight, measured: $layersCardHeight) {
+            let card = scrollableCard(maxHeight: maxLayersHeight, measured: $layersCardHeight) {
                 LayersPanel(model: model,
                             onEditSymmetry: { panel = .symmetry($0) },
                             onNudge: { nudges.show($0) })
             }
-            .padding(.trailing, 80)
-            .padding(.top, 64)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .transition(cardTransition)
+            // DESIGN.md §2: top-right on a landscape regular-width screen,
+            // bottom-left in portrait (frame `IPadPortrait`). Portrait has the
+            // height to spare down there and none to spare beside the edge
+            // sliders, which are vertically centred.
+            if geo.size.height > geo.size.width {
+                card
+                    .padding(.leading, metrics.popoverAnchor)
+                    .padding(.bottom, 20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .transition(cardTransition)
+            } else {
+                card
+                    .padding(.trailing, 80)
+                    .padding(.top, 64)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .transition(cardTransition)
+            }
         }
 
         if hasLeadingPanel {

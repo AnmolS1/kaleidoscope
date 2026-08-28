@@ -73,6 +73,10 @@ final class StudioScreenshotUITests: XCTestCase {
         let app = launch(.portrait)
         snap("iphone-portrait-01-main")
 
+        // The value chips sit past the palette in the scrolling strip, so on a
+        // 430pt phone they start off screen.
+        app.descendants(matching: .any).matching(identifier: "studio-strip")
+            .firstMatch.swipeLeft()
         app.buttons["Brush size"].firstMatch.tap()
         snap("iphone-portrait-02-brush-sheet")
         app.swipeDown() // dismiss the sheet

@@ -142,3 +142,106 @@ and dark themes:
 
 Remaining sub-threshold rows are decorative frames/placeholders (not text, not
 operable UI) and are out of scope per WCAG 1.4.3 / 1.4.11.
+
+---
+
+# 1.2 — the blueprint-instrument studio (T12)
+
+The 1.2 studio replaces the controls panel with chrome floating over a full-bleed
+canvas, which adds four grounds a control can sit on. Every ratio below was
+computed by alpha-compositing the foreground over the ground first (an
+`.opacity()` foreground dims *toward its backdrop*, so the raw token's ratio is
+not the one on screen).
+
+**The chrome surface is itself a composite.** `--color-graph-card` at 88% over
+the canvas ground resolves to **#F5F6F3** light / **#17242F** dark; those are the
+grounds used for anything on the rail, the readout capsule, the zoom badge and
+the top actions.
+
+**The studio's colour scheme follows the CANVAS, not the system.** Every
+`Blueprint` token is a light/dark pair keyed on `userInterfaceStyle`, so a dark
+canvas under a light system appearance put graphite ink on a near-black ground —
+about 1.2:1 for the edge-slider labels. `StudioView` now sets
+`environment(\.colorScheme,)` from `model.background`, so the numbers below are
+the ones that actually render in both canvas modes.
+
+## Studio chrome
+
+| Pair | Light | Dark | Bar | |
+|---|---:|---:|:---:|:---:|
+| `graphite` on `graph-card` (panel body, 13pt) | 13.70 | 13.09 | 4.5 | PASS |
+| `graphite` @0.85 on chrome (readout capsule) | 8.56 | 9.91 | 4.5 | PASS |
+| `graphite` @0.70 on `graph-card` (mono labels) | 5.33 | 7.09 | 4.5 | PASS |
+| `graphite` @0.70 on `graph` (SIZE / OPAC labels) | 5.23 | 7.44 | 4.5 | PASS |
+| `graphite` @0.72 on chrome (rail glyphs) | 5.69 | 7.50 | 3.0 | PASS |
+| `graphite` @0.85 on `inset` (chip labels) | 9.13 | 9.06 | 4.5 | PASS |
+| `graphite` @0.80 on the active crane fill (rail caption) | 6.45 | 7.57 | 4.5 | PASS |
+| `craneStrong` on `graph-card` (active rail glyph) | 6.09 | 5.17 | 3.0 | PASS |
+| white on `creaseButton` (layer-count badge) | 6.78 | 5.10 | 4.5 | PASS |
+| white on `craneButton` (Save) | 5.36 | 5.36 | 4.5 | PASS |
+| `crease` slider fill vs its `creaseLineBold` track | 3.92 | 3.78 | 3.0 | PASS |
+| `crease` tick vs `graph-card` (dial, filled) | 6.31 | 6.33 | 3.0 | PASS |
+| `crane` handle ring vs `graph-card` (dial) | 3.59 | 4.95 | 3.0 | PASS |
+
+`craneStrong` is DESIGN.md §1's "crane as text". It resolves to the existing
+`craneText` token, **not** to the spec's literal `#C23A1C`, which is only 4.10:1
+on the light graph ground. §1 also says the rules in this document still hold, so
+where the two disagree the contrast rule wins.
+
+## Two fixes this pass
+
+- **The rail's mono caption** (`9 · D` under the symmetry glyph) inherited the
+  active button's `craneStrong` tint, which on the 16% crane fill is **4.25:1 in
+  dark** — a fail for 10pt text. It is a readout, not part of the active-state
+  indication, so it is now pinned to `graphite` @0.8 (6.45 / 7.57).
+- **The edge-slider thumb.** The frame draws its border as `rgba(46,94,140,.28)`,
+  which puts a white thumb on the light graph ground at **1.15:1** behind a
+  **1.51:1** outline — a slider handle that is not visible, and a WCAG 1.4.11 fail
+  at the 3:1 bar for an operable component. The border is now solid `crease`:
+  5.91 / 6.72 against the ground, 6.78 / 5.79 against the thumb's own fill. A
+  deliberate deviation from the frame, recorded here.
+
+## Sub-threshold rows that are deliberate, and why
+
+These are the rows a naive sweep flags. Each is a *reinforcement* of a state that
+is carried elsewhere at threshold, not the state's only signal.
+
+- **Active-button wash — crane 16% fill, 1.23 / 1.22 vs the surface.** DESIGN.md
+  fixes this at 16% fill + 35% border. The state's perceivable signals are the
+  glyph turning `craneStrong` (6.09 / 5.17 against the surface), the `.isSelected`
+  accessibility trait, and — because a colour change alone is a colour-only cue —
+  a filled dot under the glyph when **Differentiate Without Color** is on. The
+  wash is the fourth signal, not the first.
+- **Dial ticks below the current value — `creaseLineBold`, 1.52 / 1.78 vs the
+  card.** These are the *unfilled* part of a scale, the same category as a
+  slider's empty track. The value is read from the handle (3.59 / 4.95), from the
+  filled ticks (6.31 / 6.33, and 4.14 / 3.56 against the unfilled ones), from the
+  `12 segments · mirrored` caption under it, and from the dial's own
+  `accessibilityValue`.
+- **Card and hairline borders vs the ground.** A panel is separated by its fill
+  plus `--shadow-card`; the 1pt hairline is a refinement of that edge rather than
+  the edge itself.
+
+## Where the moved controls kept their labels
+
+Every VoiceOver string the 1.1 audit fixed still exists, on the same control, at
+its new location — `Clear canvas`, `Dark canvas` and `Symmetry guides` in the
+More menu; `teal` / `crane orange` / `Rainbow spectrum brush` in the colour
+popover (the strip, on a phone); `Mirror symmetry` on the dial's centre disc;
+`Download PNG`, `Save`, `Glow brush`, `Undo`, `Redo` unchanged. `AccessibilityUITests`
+asserts each one through its new path rather than dropping the assertion.
+
+New in 1.2: the dial is one `accessibilityAdjustableAction` element whose value is
+DESIGN.md §3's `aria-valuetext` form verbatim (`12 segments, mirrored`); the edge
+sliders are adjustable elements rather than rotated `Slider`s (a rotated Slider
+keeps its original hit rectangle and drags VoiceOver's coordinate space with it);
+each layer row carries Move up / Move down / Rename as custom actions, because
+reordering by drag is not an interaction a screen-reader user has; and every touch
+target is ≥44pt, including the 26pt swatches and the 4pt slider tracks.
+
+At accessibility Dynamic Type sizes the rail widens to 76pt, the edge sliders give
+way to the Brush popover's own Size and Opacity rows (a 10pt label and a 4pt track
+cannot scale), the rail's `9 · D` caption is dropped rather than truncated to
+`9 · …` (the value stays in the button's `accessibilityValue` and in the readout),
+and the palette wraps to a grid — as a single row it overflowed the 260pt card and
+clipped crane orange and teal off the ends.

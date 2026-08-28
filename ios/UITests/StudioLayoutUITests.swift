@@ -71,6 +71,15 @@ final class StudioRailLayoutUITests: XCTestCase {
         // And emphatically not a dock.
         XCTAssertLessThan(brush.frame.maxY, screen.height * 0.8,
                           "rail tools must not sit in the dock's band")
+
+        // Not the COMPACT-HEIGHT rail either. A landscape phone also gets a
+        // leading rail, so everything above passes there too — these two are what
+        // separate the 56pt/44pt regular rail from the 48pt/40pt short one, and
+        // without them this test was green on an iPhone.
+        XCTAssertEqual(brush.frame.width, 44, accuracy: 1,
+                       "regular-width rail buttons are 44pt; the short rail's are 40")
+        XCTAssertTrue(app.buttons["Redo"].exists,
+                      "only the regular rail carries Redo — the short rail drops it for height")
     }
 
     func testEdgeSlidersAreVerticalAndInsetFromTheRightEdge() {
@@ -106,15 +115,19 @@ final class StudioRailLayoutUITests: XCTestCase {
         // Measured on the panel's own contents rather than on the container:
         // SwiftUI publishes the identifier on more than one node, so the
         // container query is ambiguous and `.frame` on it throws.
-        let addButton = app.buttons["Add layer"]
+        // Anchored on Delete rather than Add: at the free cap the Add button's
+        // label is "Add layer, locked at the layer limit", so an exact-match
+        // lookup for "Add layer" finds nothing — which is the state the demo is
+        // actually in (3 layers, cap 3).
+        let footer = app.buttons["Delete layer"]
         let topRow = app.staticTexts["Gold"]
-        XCTAssertTrue(addButton.exists && topRow.exists)
+        XCTAssertTrue(footer.exists && topRow.exists)
 
         XCTAssertGreaterThan(topRow.frame.minX, screen.midX,
                              "the layers panel docks to the trailing side")
-        XCTAssertGreaterThan(addButton.frame.minX, screen.midX)
+        XCTAssertGreaterThan(footer.frame.minX, screen.midX)
         // The rule the whole layout obeys: the drawing's centre stays clear.
-        let panelBounds = topRow.frame.union(addButton.frame)
+        let panelBounds = topRow.frame.union(footer.frame)
         XCTAssertFalse(panelBounds.contains(CGPoint(x: screen.midX, y: screen.midY)),
                        "no panel may cover the drawing's centre (DESIGN.md §2)")
     }
@@ -122,6 +135,10 @@ final class StudioRailLayoutUITests: XCTestCase {
     /// The demo fixture's three layers, read off the panel rather than the canvas
     /// — this is what would catch the panel dropping a row or listing the array
     /// bottom-first.
+    ///
+    /// Deliberately layout-independent: it passes in this class's cross-run on an
+    /// iPhone too, because it is a claim about CONTENT rather than about where
+    /// the content sits. The layout claims are the two tests above it.
     func testLayersPanelListsEveryDemoLayerTopFirst() {
         let app = launch()
         app.buttons["Layers"].firstMatch.tap()
