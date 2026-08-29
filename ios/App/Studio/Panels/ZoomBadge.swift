@@ -6,8 +6,12 @@ import SwiftUI
 /// Always visible, including at 100%. That is what the spec says and what every
 /// iPad frame shows; a badge that appears only once you are already lost is not a
 /// readout, and its fixed corner is the affordance that teaches people tapping it
-/// resets the view. It is disabled at 1× so it does not advertise an action that
-/// would do nothing.
+/// resets the view.
+///
+/// NOT disabled at 1×, though that is the state it spends most of its life in: a
+/// disabled control renders system-dimmed, and dimming a readout by default means
+/// the number it exists to show is hardest to read exactly when it is on screen.
+/// `resetView()` already no-ops at 1×, so the tap costs nothing.
 struct ZoomBadge: View {
     let scale: CGFloat
     let action: () -> Void
@@ -25,7 +29,6 @@ struct ZoomBadge: View {
             .chromeBackground(cornerRadius: Blueprint.rSm)
         }
         .buttonStyle(.plain)
-        .disabled(scale == 1)
         .accessibilityLabel("Zoom")
         .accessibilityValue(Readout.percent(Double(scale)))
         .accessibilityHint("Resets the view to 100 percent")

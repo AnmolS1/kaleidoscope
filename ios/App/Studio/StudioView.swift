@@ -101,7 +101,11 @@ struct StudioView: View {
             Button("Clear strokes", role: .destructive) { model.clear() }
             Button("Keep drawing", role: .cancel) {}
         } message: {
-            Text("Removes every stroke. Your \(model.layers.count) layers, their names and symmetry stay. You can undo this.")
+            // DESIGN.md's copy is written for the 3-layer case; a fresh canvas
+            // has one, and "Your 1 layers" is not a sentence.
+            Text(model.layers.count == 1
+                 ? "Removes every stroke. Your layer, its name and symmetry stay. You can undo this."
+                 : "Removes every stroke. Your \(model.layers.count) layers, their names and symmetry stay. You can undo this.")
         }
         .onChange(of: model.showPencilBanner) { _, shown in
             guard shown else { return }
@@ -110,10 +114,10 @@ struct StudioView: View {
             // spec's toast instead, so the copy and the CTA match DESIGN.md §3
             // without editing the canvas.
             model.dismissPencilBanner()
-            nudges.show(.pencilDetected)
+            nudges.show(.pencilDetected, atRevision: model.revision)
         }
         .onChange(of: model.drawWithFinger) { _, canDraw in
-            if !canDraw { nudges.show(.fingersPan) }
+            if !canDraw { nudges.show(.fingersPan, atRevision: model.revision) }
         }
         .onChange(of: model.activeLayerId) { _, id in
             // Remove-stroke retargets the active layer to whatever it hit. Say so
@@ -121,13 +125,15 @@ struct StudioView: View {
             // somewhere the user did not expect.
             guard model.removeStrokeMode,
                   let name = model.layers.first(where: { $0.id == id })?.name else { return }
-            nudges.show(.switchedLayer(name))
+            nudges.show(.switchedLayer(name), atRevision: model.revision)
         }
-        .onChange(of: model.revision) { _, _ in
+        .onChange(of: model.revision) { _, revision in
             // "Dismiss on the next stroke" (DESIGN.md §3). `revision` moves on
             // every pixel-affecting edit, which is the closest signal the studio
-            // has to "the user got on with it".
-            if case .switchedLayer = nudges.current {} else { nudges.dismissOnEdit() }
+            // has to "the user got on with it". `NudgeCenter` decides which
+            // nudges that applies to — a nudge the in-flight stroke raised is not
+            // one of them.
+            nudges.dismissOnEdit(revision: revision)
         }
     }
 
@@ -207,7 +213,7 @@ struct StudioView: View {
             let card = scrollableCard(maxHeight: maxLayersHeight, measured: $layersCardHeight) {
                 LayersPanel(model: model,
                             onEditSymmetry: { panel = .symmetry($0) },
-                            onNudge: { nudges.show($0) })
+                            onNudge: { nudges.show($0, atRevision: model.revision) })
             }
             // DESIGN.md §2: top-right on a landscape regular-width screen,
             // bottom-left in portrait (frame `IPadPortrait`). Portrait has the
@@ -445,7 +451,7 @@ struct StudioView: View {
                 if showLayers {
                     LayersPanel(model: model,
                                 onEditSymmetry: { showLayers = false; panel = .symmetry($0) },
-                                onNudge: { nudges.show($0) })
+                                onNudge: { nudges.show($0, atRevision: model.revision) })
                 }
             }
         }

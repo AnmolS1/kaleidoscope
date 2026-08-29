@@ -19,6 +19,15 @@ enum StudioNudge: Equatable {
     /// Remove-stroke retargeted the active layer.
     case switchedLayer(String)
     /// A stroke was refused because the active layer is hidden.
+    ///
+    /// **UNWIRED.** Nothing raises this. The refusal it reports does not exist:
+    /// `StudioModel.commit` appends to the active layer whatever its `visible`
+    /// flag, and `StudioModel.swift` is T11's file. The copy is kept verbatim
+    /// here — with its CTA and its handler in `StudioView.nudgeAction` — so that
+    /// adding `guard activeLayer.visible` to `commit` is the only change needed
+    /// to switch it on. It is deliberately NOT raised in the meantime: "nothing
+    /// was drawn" is a false statement while the stroke is landing, which is
+    /// worse than showing no nudge at all.
     case hiddenLayer(String)
 
     var systemImage: String {
@@ -63,6 +72,22 @@ enum StudioNudge: Equatable {
         default: return 6
         }
     }
+
+    /// Whether "dismiss on the next stroke" applies.
+    ///
+    /// It cannot apply to a nudge the current stroke RAISED. `pencilDetected`
+    /// fires from `touchesBegan`; the same touch then commits, `revision` moves,
+    /// and the nudge would dismiss itself before anyone could read it — visible
+    /// for the length of one stroke, in the only flow that ever shows it.
+    /// `switchedLayer` is the same shape mid-remove-gesture. Both fall back to
+    /// their timer, which DESIGN.md §3 offers as the alternative ("dismiss on the
+    /// next stroke or 6s").
+    var dismissesOnEdit: Bool {
+        switch self {
+        case .pencilDetected, .switchedLayer: return false
+        default: return true
+        }
+    }
 }
 
 /// Holds the one visible nudge and its auto-dismiss timer.
@@ -73,9 +98,12 @@ enum StudioNudge: Equatable {
 final class NudgeCenter: ObservableObject {
     @Published private(set) var current: StudioNudge?
     private var token = 0
+    /// The document revision when the current nudge was shown.
+    private var shownAtRevision = 0
 
-    func show(_ nudge: StudioNudge) {
+    func show(_ nudge: StudioNudge, atRevision revision: Int) {
         current = nudge
+        shownAtRevision = revision
         token += 1
         let mine = token
         let delay = nudge.dismissAfter
@@ -91,6 +119,15 @@ final class NudgeCenter: ObservableObject {
         current = nil
     }
 
-    /// "Dismiss on the next stroke". Called when the document's revision moves.
-    func dismissOnEdit() { dismiss() }
+    /// "Dismiss on the next stroke" (DESIGN.md §3).
+    ///
+    /// Two guards, for two different races. `dismissesOnEdit` excludes nudges the
+    /// in-flight stroke itself raised. The revision comparison excludes the edit
+    /// that raised the nudge SYNCHRONOUSLY — adding a layer bumps `revision` and
+    /// then shows `newLayerSymmetry`, and SwiftUI may deliver the `onChange` for
+    /// that same bump afterwards, which would dismiss a nudge one frame old.
+    func dismissOnEdit(revision: Int) {
+        guard let nudge = current, nudge.dismissesOnEdit, revision != shownAtRevision else { return }
+        dismiss()
+    }
 }
