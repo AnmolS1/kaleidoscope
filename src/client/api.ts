@@ -49,11 +49,23 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
+    /**
+     * The parsed error body, when there was one.
+     *
+     * The cap responses carry numbers the UI has to print — `402 {cap, count}`
+     * on PATCH, `409 {of}` on POST — and a bare code cannot say "10 of 10" or
+     * link to the twin. Throwing the code alone forced every caller to re-read
+     * a body that had already been consumed.
+     */
+    public data: Record<string, unknown> = {},
     message?: string,
   ) {
     super(message ?? code);
   }
 }
+
+/** Capabilities this client announces. `v2` = layers + a real title field. */
+const CLIENT_CAPS = "v2";
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -61,17 +73,22 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (method !== "GET" && method !== "HEAD") {
     headers.set("Content-Type", headers.get("Content-Type") ?? "application/json");
     if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+    // Announce the title field. The worker rejects an empty or "Untitled" title
+    // ONLY for clients that send this, because a shipped iOS 1.1 has no field to
+    // type into and rejecting its saves would break the app in the store.
+    headers.set("X-Client-Caps", CLIENT_CAPS);
   }
   const res = await fetch(path, { ...init, headers, credentials: "same-origin" });
   if (!res.ok) {
     let code = "error";
+    let data: Record<string, unknown> = {};
     try {
-      const body = (await res.json()) as { error?: string };
-      code = body.error ?? code;
+      data = (await res.json()) as Record<string, unknown>;
+      if (typeof data.error === "string") code = data.error;
     } catch {
       /* non-json */
     }
-    throw new ApiError(res.status, code);
+    throw new ApiError(res.status, code, data);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -166,7 +183,27 @@ export interface SaveInput {
   remixOf?: string | null;
 }
 
-export async function saveArtwork(input: SaveInput): Promise<{ id: string; url: string }> {
+/**
+ * What the create endpoint can answer with. Three shapes, one 200/201 status
+ * family, and the client renders a different dialog state for each:
+ *
+ * - `deduped` (200): the same user already has this exact picture. Nothing was
+ *   written — re-saving is not an edit and never flips the existing visibility.
+ * - `capReached` (201): the piece IS saved, as unlisted, because the public wall
+ *   was full. `cap`/`count` are the numbers the cap copy prints.
+ * - plain 201: saved as `visibility`.
+ */
+export interface SaveResult {
+  id: string;
+  url: string;
+  deduped?: boolean;
+  visibility?: "public" | "unlisted" | "private";
+  capReached?: boolean;
+  cap?: number;
+  count?: number;
+}
+
+export async function saveArtwork(input: SaveInput): Promise<SaveResult> {
   const fd = new FormData();
   fd.set("drawing", input.drawingJson);
   fd.set("image", input.image, "image.webp");
@@ -177,8 +214,11 @@ export async function saveArtwork(input: SaveInput): Promise<{ id: string; url: 
   fd.set("turnstile", input.turnstileToken);
   if (input.remixOf) fd.set("remixOf", input.remixOf);
 
+  // Hand-rolled rather than routed through `request`, because the body is
+  // FormData: setting Content-Type would clobber the multipart boundary.
   const headers = new Headers();
   if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+  headers.set("X-Client-Caps", CLIENT_CAPS);
   const res = await fetch("/api/artworks", {
     method: "POST",
     body: fd,
@@ -187,14 +227,84 @@ export async function saveArtwork(input: SaveInput): Promise<{ id: string; url: 
   });
   if (!res.ok) {
     let code = "error";
+    let data: Record<string, unknown> = {};
     try {
-      code = ((await res.json()) as { error?: string }).error ?? code;
+      data = (await res.json()) as Record<string, unknown>;
+      if (typeof data.error === "string") code = data.error;
     } catch {
       /* */
     }
-    throw new ApiError(res.status, code);
+    // `409 duplicate_of_other` comes in TWO shapes and they are different
+    // states: with `of` there is a viewable twin to name and link; without it,
+    // someone else holds this drawing privately and there is nothing to show
+    // but the refusal. `data` is what lets the dialog tell them apart.
+    throw new ApiError(res.status, code, data);
   }
-  return (await res.json()) as { id: string; url: string };
+  return (await res.json()) as SaveResult;
+}
+
+// ---- save pre-flight ----
+
+/**
+ * Does this exact picture already exist?
+ *
+ * Asked the moment the save dialog opens, so "you already saved this" or
+ * "someone else has this drawing" is on screen before the user types a title.
+ * `other` is omitted for a private match — deliberately, since naming it would
+ * leak both its existence and its title — so a private twin is invisible here
+ * and only surfaces as a bare `409` on the POST.
+ */
+export interface HashLookup {
+  mine: string | null;
+  other: { id: string; title: string; author: string | null } | null;
+}
+
+export function hashLookup(sha: string): Promise<HashLookup> {
+  return request<HashLookup>(`/api/artworks/hash/${sha}`);
+}
+
+// ---- AI name suggestions ----
+
+export interface SuggestInput {
+  thumb: Blob;
+  /** topSym's segments, or 0 when the visible layers disagree ("layered"). */
+  segments: number;
+  mirror: boolean;
+  palette: string[];
+}
+
+/**
+ * Title suggestions for the save dialog's chips.
+ *
+ * Never throws: naming is a convenience and the endpoint answers `{names: []}`
+ * for every internal failure, so a transport failure has to degrade the same
+ * way or a dead AI binding would block saving.
+ */
+export async function suggestNames(input: SuggestInput): Promise<string[]> {
+  const fd = new FormData();
+  fd.set("thumb", input.thumb, "thumb.webp");
+  fd.set("segments", String(input.segments));
+  fd.set("mirror", input.mirror ? "1" : "0");
+  fd.set("palette", input.palette.join(","));
+
+  const headers = new Headers();
+  if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+  headers.set("X-Client-Caps", CLIENT_CAPS);
+  try {
+    const res = await fetch("/api/artworks/suggest-names", {
+      method: "POST",
+      body: fd,
+      headers,
+      credentials: "same-origin",
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { names?: unknown };
+    return Array.isArray(body.names)
+      ? body.names.filter((n): n is string => typeof n === "string").slice(0, 3)
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 export function getArtwork(id: string): Promise<ArtworkMeta> {
