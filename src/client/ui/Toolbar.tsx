@@ -13,7 +13,6 @@ import {
   RedoIcon,
   DownloadIcon,
   SaveIcon,
-  MirrorIcon,
   GuidesIcon,
   GlowIcon,
   BrushIcon,
@@ -34,6 +33,7 @@ import { stripShortcuts } from "./HelpOverlay";
 import { showToast } from "./Toast";
 import { LayersPanel, layersOpen } from "./LayersPanel";
 import { RemoveStrokeOverlay, clearRemoveHighlight, removeMode } from "./RemoveStroke";
+import { SymmetryDial } from "./SymmetryDial";
 
 const STAMP = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 
@@ -342,31 +342,12 @@ export function Toolbar() {
         <span class="pop-title">Symmetry</span>
         <span class="chip chip-sm">{activeLayer?.name || `Layer ${activeIndex}`}</span>
       </div>
-      {/* T06d INSERTION POINT — SymmetryDial replaces this slider. The range
-          input below is what the dial's visually-hidden control becomes, so the
-          `aria-label="Symmetry segments"` contract carries over unchanged. */}
-      <label class="slider" title="Symmetry segments">
-        <span class="slider-label">Segments {S.segments.value}</span>
-        <input
-          type="range"
-          min="3"
-          max="24"
-          step="1"
-          value={S.segments.value}
-          onInput={(e) => (S.segments.value = +(e.target as HTMLInputElement).value)}
-          aria-label="Symmetry segments"
-          aria-valuetext={`${S.segments.value} segments`}
-        />
-      </label>
+      {/* The dial IS the segments control and the mirror toggle (its centre
+          disc): both the slider and the mirror `.icon-btn` that used to stand
+          here moved inside it, keeping their `aria-label`s verbatim. The guides
+          toggle is not part of the dial and stays. */}
+      <SymmetryDial />
       <div class="pop-row">
-        <button
-          class={"icon-btn" + (S.mirror.value ? " is-active" : "")}
-          aria-label="Mirror (dihedral symmetry)"
-          aria-pressed={S.mirror.value}
-          onClick={() => (S.mirror.value = !S.mirror.value)}
-        >
-          <MirrorIcon />
-        </button>
         <button
           class={"icon-btn" + (S.showGuides.value ? " is-active" : "")}
           aria-label="Toggle guide axes"

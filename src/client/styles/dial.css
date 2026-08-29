@@ -1,0 +1,125 @@
+/* The symmetry dial (DESIGN.md §3, frame `Dial`). Geometry is in
+   `SymmetryDial.tsx`; this file only carries paint, hit behaviour and motion.
+
+   Every colour is a token. The artboard's literals (#2e5e8c, #e84a27,
+   rgba(46,94,140,.28)) are what these tokens resolve to in light mode — using
+   them directly would leave the dial stuck in light mode inside a dark panel. */
+
+.dial {
+  position: relative;
+  width: 220px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.dial-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Without this a touch drag on the ring scrolls the phone sheet instead. */
+  touch-action: none;
+  cursor: grab;
+}
+.dial-svg:active {
+  cursor: grabbing;
+}
+
+.dial-ring {
+  fill: none;
+  stroke: var(--color-crease-line);
+  stroke-width: 1;
+}
+
+/* Ticks at or below the current count are "filled in"; the rest stay hairline.
+   Majors (every 3, the ones that carry a label) are longer and heavier. */
+.dial-tick {
+  stroke: var(--color-crease-line-bold);
+  stroke-width: 1;
+}
+.dial-tick.is-major {
+  stroke-width: 1.5;
+}
+.dial-tick.is-on {
+  stroke: var(--color-crease);
+}
+
+.dial-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  fill: var(--color-graphite-40);
+}
+
+/* The live preview: one ray per image the current fold count produces. */
+.dial-guides {
+  opacity: 0.9;
+}
+.dial-guide {
+  stroke: var(--color-crease-line-bold);
+  stroke-width: 1;
+}
+
+/* Painted after the guides so it masks their inner ends, exactly as the frame
+   does — the mirror button sits on top of it as a real, 44px control. */
+.dial-disc {
+  fill: var(--color-inset);
+  stroke: var(--color-crease-line-bold);
+  stroke-width: 1;
+}
+
+/* The handle is rotated rather than repositioned so it sweeps along the ring
+   when the count changes from somewhere else (the `,`/`.` keys, VoiceOver, a
+   layer switch).
+
+   The origin is written as an explicit length, and the viewBox is anchored at
+   0,0 for it (see the note in SymmetryDial.tsx): Chromium resolves this length
+   against the raw user coordinates rather than against the viewBox's min-x/y,
+   so on a centred box `50% 50%` silently rotates about a corner. */
+.dial-handle {
+  transform-box: view-box;
+  transform-origin: 110px 110px;
+  transition: transform 180ms ease;
+}
+.dial-knob {
+  fill: var(--color-inset);
+  stroke: var(--color-crane);
+  stroke-width: 2;
+}
+
+/* 30px of disc, but a 44px target: "every touch target ≥ 44px" has no
+   exception for a control that happens to be drawn small. */
+.dial-mirror {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--color-graphite-40);
+  cursor: pointer;
+}
+.dial-mirror[aria-pressed="true"] {
+  color: var(--color-crane-strong);
+}
+
+/* The visible focus affordance for the hidden range: it is clipped to a pixel,
+   so its own focus ring would be invisible and the dial would look inert under
+   keyboard control. */
+.dial:has(.dial-range:focus-visible) .dial-svg {
+  outline: 2px solid var(--color-crease);
+  outline-offset: -6px;
+  border-radius: 50%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No sweep: the handle and the preview both snap. */
+  .dial-handle {
+    transition: none;
+  }
+}
