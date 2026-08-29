@@ -62,6 +62,12 @@ export function Canvas() {
             },
           });
         },
+        // T07: a hovering Apple Pencil. The engine is the only thing that sees
+        // `pointerType`/`pressure`, so — like onPenSeen — this has to be
+        // announced rather than derived.
+        onHoverChange: (p) => {
+          S.hoverPoint.value = p;
+        },
         onViewChange: (view) => {
           S.viewScale.value = view.scale;
           S.viewIsDefault.value = view.scale === 1 && view.tx === 0 && view.ty === 0;
@@ -138,6 +144,9 @@ export function Canvas() {
       // badge reading 400% over a canvas that is at 1x.
       S.viewScale.value = 1;
       S.viewIsDefault.value = true;
+      // A ring belongs to the engine that reported it. Left behind, it would be
+      // drawn over the next Scene at a position that engine never saw.
+      S.hoverPoint.value = null;
     };
   }, []);
 
@@ -159,5 +168,42 @@ export function Canvas() {
     : `${S.segments.value}-fold ${S.mirror.value ? "mirror" : "rotational"} symmetry`;
   const label = `Drawing canvas: ${symLabel}, ${n} ${n === 1 ? "stroke" : "strokes"}`;
 
-  return <div ref={host} class="canvas-host" aria-label={label} role="img" />;
+  // T07 hover ring (DESIGN.md §3). The engine holds the authoritative size,
+  // symmetry and view — `hoverRings` reads all three — so these reads exist to
+  // SUBSCRIBE this component to them: without them a pen parked over the canvas
+  // while `[`/`]` changes the brush, or `,`/`.` the fold count, would keep
+  // showing the ring the previous value drew.
+  void S.size.value;
+  void S.viewScale.value;
+  const rings = S.scene.value?.hoverRings(S.hoverPoint.value) ?? [];
+
+  return (
+    <div ref={host} class="canvas-host" aria-label={label} role="img">
+      {/* Always rendered, never conditional: the Scene appends its three
+          canvases to this same host imperatively, and a child that comes and
+          goes would be re-inserted relative to them. An empty <svg> costs
+          nothing and keeps Preact's one child in one place. Inline styles
+          rather than a rule in studio.css, which three other agents are in.
+          `stroke` is inherited by the circles. */}
+      <svg
+        class="hover-ring"
+        aria-hidden="true"
+        data-rings={rings.length}
+        style="position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;stroke:var(--color-crane);fill:none"
+      >
+        {rings.map((r, i) => (
+          <circle
+            key={i}
+            cx={r.x}
+            cy={r.y}
+            r={r.r}
+            stroke-width="1"
+            // The image under the pen is opaque; its reflections are at 55%.
+            opacity={r.primary ? 1 : 0.55}
+            data-primary={r.primary ? "1" : "0"}
+          />
+        ))}
+      </svg>
+    </div>
+  );
 }

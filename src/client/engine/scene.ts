@@ -17,6 +17,7 @@ import {
   forEachImage,
   applyImageTransform,
   inverseTransformPoint,
+  transformPoint,
 } from "./symmetry";
 import { drawStroke, strokeSegments } from "./brush";
 import { DrawingDoc, type LayerSummary } from "./history";
@@ -77,6 +78,17 @@ export interface SceneCallbacks {
    * which is worse than either alternative.
    */
   onHiddenLayerRefusal?: (layerId: string, layerName: string) => void;
+  /**
+   * A pen HOVERING over the canvas, in normalized drawing coordinates — or
+   * `null` the moment it touches down, leaves, or any other input moves.
+   *
+   * Normalized rather than screen coordinates because that is the frame the
+   * symmetry group acts in; the ring positions come back out of
+   * `hoverRings()`, which re-applies the view.
+   *
+   * Fires only on a real change, so a stationary pen at 120 Hz costs one call.
+   */
+  onHoverChange?: (p: { x: number; y: number } | null) => void;
 }
 
 export interface SceneOptions {
@@ -223,6 +235,57 @@ export function minPointDistance(half: number, scale: number): number {
   return MIN_POINT_DIST_PX / (half * scale);
 }
 
+/** One ring of the pen-hover cursor, in canvas-relative screen CSS px. */
+export interface HoverRing {
+  x: number;
+  y: number;
+  /** Half the brush's on-screen width, floored so a 1px brush still reads. */
+  r: number;
+  /**
+   * The image the pen is actually under. Exactly one ring per call carries it:
+   * image 0 is the identity element (angle 0, no reflection), so it maps the
+   * hover point to itself whatever the symmetry is. DESIGN.md §3 paints this
+   * one at full opacity and the rest at 55%.
+   */
+  primary: boolean;
+}
+
+/**
+ * Below this the ring is thinner than its own stroke and reads as a dot. The
+ * default brush is 6, which at a ~380px half-axis is 2.3px wide — a 1.1px
+ * radius. Deviation from a literal "brush-size ring", and a deliberate one.
+ */
+export const MIN_HOVER_RING_R = 3;
+
+/**
+ * Where to draw the hover ring: one per symmetry image, in screen space.
+ *
+ * Pure, and separated from the Scene for exactly that reason — "a ring appears"
+ * is satisfied by drawing ONE ring, so the property worth pinning is that the
+ * count and the positions match the symmetry, which is a unit test rather than
+ * a screenshot.
+ */
+export function hoverRingsFor(
+  p: { x: number; y: number },
+  sym: Symmetry,
+  sizePx: number,
+  view: Readonly<View>,
+  cssW: number,
+  cssH: number,
+): HoverRing[] {
+  const half = halfAxis(cssW, cssH);
+  // Same width formula as drawStroke: `size` is px at REFERENCE_HALF, scaled to
+  // this canvas, then to the screen by the zoom. Radius is half the width.
+  const r = Math.max(MIN_HOVER_RING_R, (sizePx * (half / REFERENCE_HALF) * view.scale) / 2);
+  const out: HoverRing[] = [];
+  forEachImage(sym.segments, sym.mirror, (image) => {
+    const t = transformPoint(image, p.x, p.y);
+    const s = drawingToScreen(view, t.x * half + cssW / 2, t.y * half + cssH / 2);
+    out.push({ x: s.x, y: s.y, r, primary: image.index === 0 });
+  });
+  return out;
+}
+
 // Self-contained canvas palette (mirrors tokens.css) so the engine never depends
 // on <html data-theme> being applied first.
 const THEME: Record<Background, { bg: string; fine: string; bold: string; guide: string }> = {
@@ -268,6 +331,8 @@ export class Scene {
   private smoothStrokes = true;
   /** Latches on the first pen event; see SceneCallbacks.onPenSeen. */
   private penSeen = false;
+  /** Where a hovering pen is, in normalized coords. See SceneCallbacks.onHoverChange. */
+  private hover: { x: number; y: number } | null = null;
   private liveDirty = false;
   private rafId = 0;
   private ro: ResizeObserver | null = null;
@@ -599,8 +664,54 @@ export class Scene {
     this.cb.onPenSeen?.();
   }
 
+  /**
+   * A pen reports `pressure === 0` exactly while it is hovering — the instant
+   * it touches down the pressure is positive. That single test IS the guard:
+   * without it the ring would sit under the nib for the whole stroke, drawn
+   * over the ink it is supposed to be predicting.
+   *
+   * Deliberately NOT also gated on "no stroke in progress". That would be a
+   * second, redundant guard which — being redundant — would keep the ring
+   * suppressed if the pressure test were ever removed, and quietly make this
+   * whole comment untestable.
+   */
+  private updateHover(e: PointerEvent): void {
+    this.setHover(
+      e.pointerType === "pen" && e.pressure === 0
+        ? this.screenToNormalized(e.clientX, e.clientY)
+        : null,
+    );
+  }
+
+  private setHover(p: { x: number; y: number } | null): void {
+    if (p === null && this.hover === null) return;
+    if (p && this.hover && p.x === this.hover.x && p.y === this.hover.y) return;
+    this.hover = p;
+    this.cb.onHoverChange?.(p);
+  }
+
+  /**
+   * Ring positions for a hover point, one per symmetry image of the ACTIVE
+   * layer — the same layer the guides describe, since that is the layer the
+   * next stroke will land on.
+   */
+  hoverRings(p: { x: number; y: number } | null): HoverRing[] {
+    if (!p) return [];
+    return hoverRingsFor(
+      p,
+      this.doc.activeLayer.sym,
+      this.state.size,
+      this.viewState,
+      this.cssW,
+      this.cssH,
+    );
+  }
+
   private onDown = (e: PointerEvent): void => {
     this.notePointer(e);
+    // Contact, so nothing is hovering any more — for the pen that just landed
+    // or for any other one.
+    this.setHover(null);
     const s = this.screenOf(e);
     if (e.pointerType === "touch") this.touches.set(e.pointerId, s);
 
@@ -661,6 +772,7 @@ export class Scene {
     // very much a pen having been seen, and on iPad that happens before the
     // user ever touches down.
     this.notePointer(e);
+    this.updateHover(e);
     if (e.pointerType === "touch" && this.touches.has(e.pointerId)) {
       this.touches.set(e.pointerId, this.screenOf(e));
     }
@@ -689,6 +801,10 @@ export class Scene {
   };
 
   private onUp = (e: PointerEvent): void => {
+    // Bound to pointerup, pointercancel AND pointerleave, which is what makes
+    // this the right place to drop the ring: a pen lifted out of hover range
+    // reaches us as a leave, never as a move.
+    this.setHover(null);
     if (e.pointerType === "touch") this.touches.delete(e.pointerId);
 
     if (this.pinch) {

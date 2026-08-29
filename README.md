@@ -145,6 +145,32 @@ bypass for dev and tests. Never set that in production.
 The dev server binds `host: true` and allows `.ts.net`, so you can open it on your
 phone over Tailscale.
 
+⚠️ **Over Tailscale you must reach it as `https://`, not `http://`.** The
+drawing's content hash goes through `crypto.subtle`, which the browser exposes
+only in a **secure context** — `localhost` counts, `http://<host>.ts.net` does
+not, and `window.crypto.subtle` is then simply `undefined`. Nothing errors
+visibly: `contentHash` throws, the save dialog catches it and skips the duplicate
+pre-flight (so every `Save*` state that depends on the hash is unreachable), and
+the artwork page can no longer tell a remix from its parent. Service workers have
+the same rule, so the whole PWA — offline shell and the "Update available"
+prompt — is inert there too. Testing any of that over `http` on a tailnet tests
+the degraded path, silently.
+
+Give Vite a certificate for the tailnet hostname and turn on `server.https` in
+`vite.config.ts`:
+
+```bash
+tailscale cert <host>.ts.net       # writes <host>.ts.net.crt / .key
+```
+
+```ts
+// vite.config.ts — server: { ... }
+https: { key: readFileSync("<host>.ts.net.key"), cert: readFileSync("<host>.ts.net.crt") },
+```
+
+`localhost` needs none of this and is the right target for everything that is not
+specifically about a phone or an iPad.
+
 ## Tests
 
 Vitest covers the symmetry group math (`forEachImage` for C_n and D_n), stroke

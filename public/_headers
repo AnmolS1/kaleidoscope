@@ -10,3 +10,11 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: geolocation=(), microphone=(), camera=()
   X-Frame-Options: DENY
+
+# The service worker is the one asset that must never be served stale: a cached
+# sw.js is a client that can no longer be updated at all, because the update
+# check re-fetches THIS url and would keep getting the old bytes. `no-cache`
+# means revalidate, not "don't store", so it still costs one 304.
+# (Cloudflare's _headers rules are additive — the /* block above still applies.)
+/sw.js
+  Cache-Control: no-cache

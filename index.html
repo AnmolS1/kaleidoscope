@@ -10,9 +10,31 @@
     <title>Kaleidoscope — draw mandalas</title>
     <meta name="description" content="A symmetry drawing toy. Scribble and watch it bloom into a mandala. Draw, download, and share for free." />
 
+    <!-- Add to Home Screen. iOS reads these link tags, not the manifest's
+         `icons`, and it composites any ALPHA onto black — the previous
+         apple-touch-icon was /icons/icon-192.png, which has transparent
+         corners, so the mark sat on a black tile. These three are cut from
+         icon-maskable-512.png, which is fully opaque and already carries the
+         safe-zone padding Apple's rounded-rect mask needs. 152 = iPad,
+         167 = iPad Pro, 180 = iPhone; iOS picks the nearest and the
+         unsized one is the fallback for anything else. -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- The manifest's `display: standalone` covers everything but iOS, which
+         still gates full-screen Add to Home Screen on this meta. Status bar
+         style stays `default` (opaque, content below it) rather than
+         `black-translucent`: translucent would put the studio's top bar under
+         the clock, and its glyphs do not follow the canvas theme, so they turn
+         invisible the moment the drawing background is switched to dark. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Kaleidoscope" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
     <meta property="og:title" content="Kaleidoscope" />
     <meta property="og:description" content="Draw mandalas with live symmetry. Free, no account needed." />
