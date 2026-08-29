@@ -24,12 +24,16 @@ import {
   ZoomIcon,
   HandIcon,
   TuneIcon,
+  LayersIcon,
+  RemoveStrokeIcon,
 } from "./Icons";
 import { AuthButton, AuthMenuItems } from "./AuthButton";
 import { Link } from "./Link";
 import { PonderanceBacklink } from "./PonderanceBacklink";
 import { stripShortcuts } from "./HelpOverlay";
 import { showToast } from "./Toast";
+import { LayersPanel, layersOpen } from "./LayersPanel";
+import { RemoveStrokeOverlay, clearRemoveHighlight, removeMode } from "./RemoveStroke";
 
 const STAMP = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 
@@ -110,8 +114,13 @@ export function Toolbar() {
   const symShort = `${S.segments.value} · ${S.mirror.value ? "D" : "C"}`;
   const zoomPct = Math.round(S.viewScale.value * 100);
   const opacityPct = Math.round(S.opacity.value * 100);
-  const readout = `L${activeIndex} · ${symShort} · ${S.size.value} PX · ${zoomPct}%`;
-  const readoutShort = `L${activeIndex} · ${symShort}`;
+  // Remove-stroke REPLACES the brush tail rather than appending to it — the
+  // `IPadRemoveStroke` frame reads `L2 · 6 · C · REMOVE STROKE`, and a brush
+  // size shown while no brush is armed would be a readout that lies.
+  const removing = removeMode.value;
+  const readoutTail = removing ? "REMOVE STROKE" : `${S.size.value} PX · ${zoomPct}%`;
+  const readout = `L${activeIndex} · ${symShort} · ${readoutTail}`;
+  const readoutShort = `L${activeIndex} · ${symShort}${removing ? " · REMOVE STROKE" : ""}`;
 
   // ---- shared control fragments ---------------------------------------------
 
@@ -144,29 +153,68 @@ export function Toolbar() {
     </>
   );
 
+  // The trio, and the reason its active states are not just `S.tool`:
+  // remove-stroke is a MODE that sits on top of the brush rather than a third
+  // member of the tool signal (see the header of LayersPanel.tsx — widening
+  // `BrushTool` would write "remove" into the saved wire format). So while it
+  // is armed neither brush is active, and leaving it restores whichever brush
+  // was already selected for free.
+  const brushActive = (t: "solid" | "glow") => S.tool.value === t && !removing;
+  const pickBrush = (t: "solid" | "glow") => {
+    removeMode.value = false;
+    S.tool.value = t;
+  };
+
   const toolTrio = (
     <>
       <button
-        class={"icon-btn" + (S.tool.value === "solid" ? " is-active" : "")}
+        class={"icon-btn" + (brushActive("solid") ? " is-active" : "")}
         aria-label="Solid brush"
-        aria-pressed={S.tool.value === "solid"}
-        onClick={() => (S.tool.value = "solid")}
+        aria-pressed={brushActive("solid")}
+        onClick={() => pickBrush("solid")}
       >
         <BrushIcon />
       </button>
       <button
-        class={"icon-btn" + (S.tool.value === "glow" ? " is-active" : "")}
+        class={"icon-btn" + (brushActive("glow") ? " is-active" : "")}
         aria-label="Glow brush"
-        aria-pressed={S.tool.value === "glow"}
-        onClick={() => (S.tool.value = "glow")}
+        aria-pressed={brushActive("glow")}
+        onClick={() => pickBrush("glow")}
       >
         <GlowIcon />
       </button>
-      {/* T06c INSERTION POINT — the remove-stroke tool button (`E`) belongs
-          here, third in the trio and third on the rail. It needs a `remove`
-          member of the tool signal, which is T06c's to add; flip the `E` entry
-          in HelpOverlay's SHORTCUTS to available at the same time. */}
+      <button
+        class={"icon-btn" + (removing ? " is-active" : "")}
+        aria-label="Remove stroke"
+        aria-pressed={removing}
+        onClick={() => {
+          // Disarming has to take the pending highlight with it, or the halo
+          // outlives the tool that can act on it.
+          if (removing) clearRemoveHighlight();
+          removeMode.value = !removing;
+        }}
+      >
+        <RemoveStrokeIcon />
+      </button>
     </>
+  );
+
+  // The layers button carries a crease count badge, per the rail anatomy. The
+  // count is in the aria-label too — the badge is `aria-hidden`, so a screen
+  // reader would otherwise hear only "Layers".
+  const layerCount = stack.length;
+  const layersButton = (
+    <button
+      class={"icon-btn layer-btn" + (layersOpen.value ? " is-active" : "")}
+      aria-label={`Layers, ${layerCount} of ${S.layerCap.value}`}
+      aria-pressed={layersOpen.value}
+      onClick={() => (layersOpen.value = !layersOpen.value)}
+    >
+      <LayersIcon />
+      <span class="layer-count-badge" aria-hidden="true">
+        {layerCount}
+      </span>
+    </button>
   );
 
   /** The live scribble under the pressure segmented control (decorative). */
@@ -527,15 +575,28 @@ export function Toolbar() {
           >
             {opacityPct}%
           </button>
-          {/* T06c INSERTION POINT — the layers chip (count badge) goes here. */}
+          {/* The layers chip opens the same panel the dock button does — one
+              panel, two triggers, exactly as the opacity chip re-triggers the
+              brush sheet rather than duplicating its controls. */}
+          <button
+            class={"chip" + (layersOpen.value ? " is-on" : "")}
+            aria-label={`Layers, ${layerCount} of ${S.layerCap.value}`}
+            aria-pressed={layersOpen.value}
+            onClick={() => (layersOpen.value = !layersOpen.value)}
+          >
+            <LayersIcon width="14" height="14" /> {layerCount}
+          </button>
         </div>
 
         <div class="dock chrome" role="toolbar" aria-label="Drawing tools">
           {toolTrio}
-          {/* T06c INSERTION POINT — layers button with its count badge. */}
+          {layersButton}
           {undoRedo}
           {moreMenu}
         </div>
+
+        <LayersPanel onOpenSym={() => setOpen("sym", true)} />
+        <RemoveStrokeOverlay />
       </div>
     );
   }
@@ -561,8 +622,7 @@ export function Toolbar() {
         </details>
         {symmetryPopover}
         {brushPopover}
-        {/* T06c INSERTION POINT — layers button with its count badge, directly
-            below symmetry per DESIGN.md's rail anatomy. */}
+        {layersButton}
         <div class="rail-spacer" />
         {undoRedo}
         <hr class="rail-hair" />
@@ -634,6 +694,9 @@ export function Toolbar() {
       </div>
 
       {zoomBadge}
+
+      <LayersPanel onOpenSym={() => setOpen("sym", true)} />
+      <RemoveStrokeOverlay />
 
       <div class="shortcut-strip chrome" aria-hidden="true">
         {stripShortcuts().map((s) => (

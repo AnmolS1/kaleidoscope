@@ -6,6 +6,8 @@ import { Toolbar, openPopover } from "./Toolbar";
 import { HelpOverlay } from "./HelpOverlay";
 import { SaveDialog } from "./SaveDialog";
 import { ToastHost, showToast } from "./Toast";
+import { layersOpen } from "./LayersPanel";
+import { removeMode, clearRemoveHighlight } from "./RemoveStroke";
 import { PenIcon } from "./Icons";
 import { Gallery } from "./Gallery";
 import { ArtworkPage } from "./ArtworkPage";
@@ -44,9 +46,17 @@ function useGlobalKeys() {
           // table is the single place both are written down.
           S.tool.value = "glow";
           break;
-        // T06c INSERTION POINT — `case "e"` selects the remove-stroke tool and
-        // `case "l"` toggles the layers panel. Flip their `available` flags in
-        // HelpOverlay's SHORTCUTS so the strip and the overlay pick them up.
+        case "e":
+        case "E":
+          // Disarming takes the pending highlight with it, or the halo outlives
+          // the tool that can act on it.
+          if (removeMode.peek()) clearRemoveHighlight();
+          removeMode.value = !removeMode.peek();
+          break;
+        case "l":
+        case "L":
+          layersOpen.value = !layersOpen.peek();
+          break;
         case "a":
         case "A":
           S.showGuides.value = !S.showGuides.value;

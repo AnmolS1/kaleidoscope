@@ -277,11 +277,12 @@ test.describe("regular width (rail)", () => {
     const strip = page.locator(".shortcut-strip");
     await expect(strip).toBeVisible();
     const keys = await strip.locator("kbd").allTextContents();
-    // DESIGN.md's strip. `E` (remove-stroke) and `L` (layers) are T06c's tool
-    // and panel; they are filtered out of the strip until their handlers exist
-    // rather than advertised as dead keys. This assertion is what fails if
-    // someone adds them to the strip without adding the handler.
-    expect(keys).toEqual(["B", "G", ",", ".", "[", "]", "⌘Z", "?"]);
+    // DESIGN.md's strip, in full now that T06c has landed `E` (remove-stroke)
+    // and `L` (layers) — they were filtered out while their handlers did not
+    // exist, rather than advertised as dead keys. This assertion is what fails
+    // if someone adds a key to the strip without adding the handler. The keys
+    // themselves are exercised in layers.spec.ts, which owns that tool and panel.
+    expect(keys).toEqual(["B", "G", "E", "L", ",", ".", "[", "]", "⌘Z", "?"]);
 
     // …and the keys the strip claims actually do something.
     // Scoped to the rail: the brush popover carries the same trio, so an
