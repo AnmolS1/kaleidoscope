@@ -2,6 +2,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { effect } from "@preact/signals";
 import { Scene } from "../engine/scene";
 import * as S from "../state";
+import { showHiddenLayerToast } from "./LayersPanel";
 
 // Mounts the framework-free Scene engine into a host div and keeps it in sync
 // with the tool signals. The engine owns the canvases and the render loop; this
@@ -43,6 +44,14 @@ export function Canvas() {
         // badge (T06b). Writing back from here would fight the gesture handlers.
         onPenSeen: () => {
           S.penSeen.value = true;
+        },
+        // The engine REFUSES a stroke drawn on a hidden active layer rather
+        // than storing invisible ink, and this is the only way the user learns
+        // it happened. Unwired, the callback fires into nothing and the stroke
+        // just vanishes — the same missing-bridge shape as the input-preference
+        // effects below, which no task's ownership list claimed either.
+        onHiddenLayerRefusal: (layerName) => {
+          showHiddenLayerToast(layerName);
         },
         onViewChange: (view) => {
           S.viewScale.value = view.scale;

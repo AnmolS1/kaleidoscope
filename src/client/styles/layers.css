@@ -1,0 +1,382 @@
+/* Layers panel + remove-stroke, per DESIGN.md §3 (frames `IPadLayers`,
+   `LayersStates`, `IPadRemoveStroke`, `IPadDark`, `Nudges`).
+
+   Imported by `LayersPanel.tsx` itself rather than from `main.tsx`, so the
+   panel's chrome travels with the component. Everything below leans on
+   `tokens.css` and reuses `studio.css`'s `.chip` / `.icon-btn` / `.hair` /
+   `.mono` furniture — nothing here re-declares a colour literal. */
+
+/* ---- the panel ----------------------------------------------------------
+   264px, docked top-right at regular width. It sits inside `.studio-chrome`,
+   which is `pointer-events: none`, so it turns them back on for itself. Its
+   z-index is the rail's: it opens no popovers of its own, but a tap on a row
+   must not fall through to the canvas. */
+.layers-panel {
+  position: absolute;
+  top: 68px;
+  right: 16px;
+  width: 264px;
+  padding: 10px;
+  border-radius: var(--r-md);
+  background: var(--color-graph-card);
+  border: 1px solid var(--color-crease-line-bold);
+  box-shadow: var(--shadow-card);
+  pointer-events: auto;
+  z-index: 20;
+}
+
+.layers-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 6px 8px;
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---- rows ---- */
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+}
+/* A row that is sliding out of the dragged row's way. The dragged row itself
+   gets no transition — it must track the finger exactly. */
+.layer-row {
+  transition: transform 0.12s ease;
+}
+.layer-row.is-dragging {
+  transition: none;
+}
+.layer-row.is-active {
+  background: color-mix(in srgb, var(--color-crane) 10%, transparent);
+  border-color: color-mix(in srgb, var(--color-crane) 35%, transparent);
+}
+.layer-row.is-hidden {
+  opacity: 0.55;
+}
+/* Lifted, per the `LayersStates` "drag in progress" artboard. An opaque card
+   background is what makes it read as picked UP rather than as a tinted row. */
+.layer-row.is-dragging {
+  background: var(--color-inset);
+  box-shadow: var(--shadow-card);
+  rotate: -1deg;
+  position: relative;
+  z-index: 1;
+}
+
+.layer-grip {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  min-height: 44px;
+  color: var(--color-graphite-40);
+  cursor: grab;
+  /* The grip owns the vertical gesture; without this a drag on a touch screen
+     scrolls the panel instead of moving the row. */
+  touch-action: none;
+}
+.layer-row.is-dragging .layer-grip {
+  cursor: grabbing;
+}
+.layer-grip:focus-visible {
+  outline: 2px solid var(--color-crane);
+  outline-offset: 1px;
+  border-radius: var(--r-sm);
+}
+
+.layer-well {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
+  background: var(--color-inset);
+  border: 1px solid var(--color-crease-line);
+  overflow: hidden;
+}
+.layer-thumb {
+  display: block;
+  width: 34px;
+  height: 34px;
+}
+
+.layer-mid {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+/* Both lines are buttons (select / open symmetry), so they have to shed every
+   default button style and keep the ellipsis a plain span would give them. */
+.layer-name,
+.layer-sym {
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.layer-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-graphite);
+}
+.layer-sym {
+  /* `.mono` supplies size, tracking, case and colour. */
+  text-transform: uppercase;
+}
+.layer-name:focus-visible,
+.layer-sym:focus-visible,
+.link-inline:focus-visible {
+  outline: 2px solid var(--color-crane);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.layer-rename {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid var(--color-crane);
+  border-radius: 4px;
+  background: var(--color-inset);
+  color: var(--color-graphite);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The eye is a real 44px target even though its glyph is 18px — the row is only
+   46px tall, so the button is allowed to be wider than it is tall. */
+.layer-eye {
+  flex: 0 0 auto;
+  width: 36px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--color-graphite-60);
+  cursor: pointer;
+}
+
+/* ---- footer + footnote ---- */
+.layer-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* The frames draw these at 28px. Shipped at 44, the same call T06b made for the
+   popover tool trio: DESIGN.md §2's "every touch target ≥ 44px" outranks the
+   mockup's proportions, and a control that only fails the rule inside a panel is
+   still a control that fails it. */
+.layer-foot .chip {
+  min-height: 44px;
+}
+.layer-foot .chip:disabled {
+  opacity: 0.6;
+}
+/* Scoped to `.layers-panel` for SPECIFICITY, not for tidiness: the element also
+   carries `.mono`, which sets `text-transform: uppercase` at the same weight, so
+   a bare `.layer-note` rule is decided by stylesheet order — and studio.css and
+   layers.css arrive in whichever order the bundler picks. It shipped shouting
+   LAYERS: 3 OF 3 · KALEIDOSCOPE PLUS UNLOCKS 8 until this was scoped. */
+.layers-panel .layer-note {
+  margin: 8px 0 0;
+  padding: 0 4px;
+  /* The footnote is a sentence, not a label: sentence case, looser tracking,
+     and it wraps. DESIGN.md §1 calls this the 11px footnote style. */
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0.2px;
+  line-height: 1.35;
+}
+.link-inline {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--color-crane-strong);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The phone sheet COVERS the dock and the strip — including both of the buttons
+   that opened it — so without something to absorb a tap outside it there is no
+   way to close it, and the tap lands on the canvas as a stroke instead. Same job
+   `.pop-scrim` does for the brush sheet, and it exists only on the phone: at
+   regular width the panel is a corner dock that hides nothing.
+
+   DECLARED BEFORE the media query that enables it, and that ordering is
+   load-bearing: `.layers-scrim` and `.layers-scrim` have identical specificity,
+   so a base `display: none` placed AFTER the media block wins over it at every
+   width and the scrim never appears. */
+.layers-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  pointer-events: auto;
+}
+
+/* ---- phone: the panel becomes a bottom sheet ----------------------------
+   DESIGN.md §2: no panel covers the drawing's centre, and phone sheets are
+   capped well under half the viewport (the 45dvh figure `studio.css` already
+   uses for the brush sheet). It sits ABOVE the strip's own sheets. */
+@media (max-width: 640px) {
+  .layers-panel {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 45dvh;
+    overflow: auto;
+    border-radius: 16px 16px 0 0;
+    padding: 14px 16px calc(18px + env(safe-area-inset-bottom));
+    z-index: 40;
+  }
+  .layers-scrim {
+    display: block;
+  }
+}
+
+/* Compact height (phone landscape): the rail is on the left, so the panel docks
+   to the right edge and takes what height there is. */
+@media (max-height: 500px) and (min-width: 641px) {
+  .layers-panel {
+    top: 60px;
+    bottom: 12px;
+    right: 12px;
+    overflow: auto;
+  }
+}
+
+/* ---- the layers rail/dock button's count badge --------------------------
+   A crease pill on the button's lower-right. Never white on crease — in dark
+   the crease token is #82a9ce and white is 2.47:1 (see tokens.css). */
+.layer-btn {
+  position: relative;
+}
+.layer-count-badge {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--color-crease);
+  color: var(--color-on-crease);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* ---- remove-stroke ------------------------------------------------------
+   The highlight is positioned in CLIENT coordinates (the geometry is built from
+   `getBoundingClientRect` + the engine's view), so it is fixed to the viewport
+   rather than to any positioned ancestor. It never takes a pointer event: the
+   tap that dismisses it is intercepted on `.canvas-host` instead. */
+.remove-highlight {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 12;
+  overflow: visible;
+}
+.remove-halo {
+  fill: none;
+  stroke: var(--color-crane);
+  stroke-opacity: 0.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.remove-outline {
+  fill: none;
+  stroke: var(--color-crane);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.remove-capsule {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--r-md);
+  background: var(--color-graph-card);
+  border: 1px solid var(--color-crease-line-bold);
+  box-shadow: var(--shadow-card);
+  font-size: 13px;
+  color: var(--color-graphite);
+  white-space: nowrap;
+  pointer-events: auto;
+  z-index: 31;
+}
+.remove-capsule .btn {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.remove-miss {
+  position: fixed;
+  transform: translate(12px, -34px);
+  padding: 5px 10px;
+  border-radius: var(--r-sm);
+  background: var(--color-graph-card);
+  border: 1px solid var(--color-crease-line-bold);
+  box-shadow: var(--shadow-card);
+  pointer-events: none;
+  z-index: 31;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layer-row {
+    transition: none;
+  }
+  .layer-row.is-dragging {
+    rotate: none;
+  }
+}
+
+/* Forced colors flattens background and border, so the active row and the
+   hidden row would both read as ordinary. Re-express them with system colours,
+   the same way `studio.css` rescues `.icon-btn.is-active`. */
+@media (forced-colors: active) {
+  .layer-row.is-active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .layer-row.is-hidden .layer-name,
+  .layer-row.is-hidden .layer-sym {
+    color: GrayText;
+  }
+  .layer-foot .chip:disabled {
+    color: GrayText;
+  }
+}
