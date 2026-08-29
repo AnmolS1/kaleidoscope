@@ -27,7 +27,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import * as S from "../state";
 import { paintStrokes, drawingToScreen, type StrokeHit } from "../engine/scene";
 import { strokeSegments } from "../engine/brush";
-import { forEachImage } from "../engine/symmetry";
+import { forEachImage, imageTransformSvg } from "../engine/symmetry";
 import { MAX_LAYERS, MAX_LAYER_NAME, REFERENCE_HALF, halfAxis } from "../../shared/vector";
 import { ClearIcon, EyeIcon, EyeOffIcon, LayersIcon } from "./Icons";
 import { showToast } from "./Toast";
@@ -598,7 +598,11 @@ export function RemoveStrokeOverlay() {
     let last = "";
     const step = () => {
       const v = S.scene.peek()?.getView();
-      const key = v ? `${v.scale}/${v.tx}/${v.ty}` : "";
+      // The host's SIZE is in the key as well as the view: a window resize moves
+      // the geometry through `getBoundingClientRect` without touching scale or
+      // pan, so a view-only key leaves the halo stranded off the ink.
+      const host = document.querySelector(".canvas-host") as HTMLElement | null;
+      const key = v ? `${v.scale}/${v.tx}/${v.ty}/${host?.clientWidth}x${host?.clientHeight}` : "";
       if (key !== last) {
         last = key;
         tick((n) => n + 1);
@@ -708,13 +712,16 @@ function highlightGeometry(hit: PendingHit): HighlightGeometry | null {
   const tx = origin.x + rect.left;
   const ty = origin.y + rect.top;
 
+  // `imageTransformSvg` rather than a hand-rolled rotate/scale string: it is the
+  // SAME builder the SVG exporter uses, and `symmetry.test.ts` already pins both
+  // the rotation direction and the reflect-then-rotate composition on it.
+  // Rebuilding the string here would duplicate a convention that no assertion of
+  // this task's could re-check — a negated rotation, or a reflection composed
+  // the other way round, maps a symmetry group's image set onto ITSELF, so no
+  // amount of position-based testing can see either mistake.
   const images: string[] = [];
   forEachImage(layer.sym.segments, layer.sym.mirror, (image) => {
-    const deg = (image.angle * 180) / Math.PI;
-    images.push(
-      `translate(${r(tx)},${r(ty)}) scale(${r(k)}) rotate(${r(deg)})` +
-        (image.mirror ? " scale(1,-1)" : ""),
-    );
+    images.push(`translate(${r(tx)},${r(ty)}) scale(${r(k)}) ${imageTransformSvg(image)}`);
   });
 
   // BUILT THROUGH `strokeSegments` — the same path builder the canvas and the

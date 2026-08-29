@@ -179,6 +179,21 @@ test("Add locks at the free cap of 3, is unlocked at 3 of 8, and locks again at 
   await expect(add).toBeDisabled();
   await expect(page.locator(".layer-note")).toHaveText("All 8 layers in use");
   await expect(page.locator(".layer-note .link-inline")).toHaveCount(0);
+
+  // A FULL STACK STILL HAS TO FIT. Eight rows plus header, hairline, footer and
+  // footnote come to ~595px, and from `top: 68px` that runs off the bottom of
+  // any viewport under ~680px CSS — which a 1366x768 laptop is, once browser
+  // chrome is taken out. `.studio` is `overflow: hidden`, so there is no page
+  // scroll to rescue it: the footnote, and on a shorter window the Delete chip,
+  // just become unreachable. Only this test ever builds eight rows, so this is
+  // the only place it can be caught.
+  await page.setViewportSize({ width: 1280, height: 650 });
+  const panel = (await page.locator(".layers-panel").boundingBox())!;
+  expect(panel.y + panel.height, "the panel runs past the bottom of the viewport").toBeLessThanOrEqual(650);
+  for (const label of ["Add layer, locked at 8", "Duplicate layer", "Delete layer"]) {
+    const chip = (await page.getByRole("button", { name: label }).boundingBox())!;
+    expect(chip.y + chip.height, `${label} is off-screen`).toBeLessThanOrEqual(650);
+  }
 });
 
 test("Duplicate is capped too, and Delete stops at the last layer", async ({ page }) => {
@@ -531,6 +546,100 @@ test("a highlight is dropped when an undo shifts the stroke it points at", async
   await page.mouse.click(outer.x, outer.y);
   await expect(page.locator(".remove-capsule")).toBeVisible();
   expect(await strokeCount(page)).toBe(2);
+});
+
+test("every halo image is drawn where the engine actually finds the stroke", async ({ page }) => {
+  // Counting `.remove-highlight g` and reading the capsule prove the right
+  // NUMBER of images and the right stroke identity. Neither says the transform
+  // puts those images in the right PLACES — and the 12·D screenshot cannot
+  // show it either, because there every image lands on some other image's ink
+  // and a wrong highlight still looks like a mandala.
+  //
+  // So: probe the canvas AT each halo image's own centre and require the
+  // engine's hit-test to come back with this same stroke. That ties the SVG
+  // geometry to the ink rather than to itself. Escape between probes, because
+  // a second tap on an already-armed stroke is the delete gesture.
+  //
+  // D_3 (6 images) rather than a cyclic group, because dropping the mirror
+  // composition is the mutation that positions can actually detect: any cyclic
+  // image set is closed under inverse, so a globally negated rotation maps the
+  // set onto itself and NO position-based assertion can see it. That one is
+  // covered by symmetry.test.ts, which pins `transformPoint` directly.
+  const canvas = page.locator(".canvas-host canvas").last();
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+
+  await openPanel(page);
+  for (let i = 0; i < 9; i++) await page.keyboard.press(",");
+  await expect(page.locator(".layer-sym").first()).toHaveText("3 · D · 100%");
+
+  // A short, straight, off-axis stroke: straight so its bounding-box centre is
+  // genuinely ON the ink, off-axis so no image coincides with another.
+  await page.mouse.move(cx + 170, cy - 60);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(cx + 170, cy - 60 + i * 5);
+  await page.mouse.up();
+  const tap = { x: cx + 170, y: cy - 60 + 5 * 5 };
+
+  await armRemove(page);
+  await page.mouse.click(tap.x, tap.y);
+  await expect(page.locator(".remove-capsule")).toContainText("6 images");
+
+  const read = () =>
+    page.locator(".remove-halo").evaluateAll((els) =>
+      els.map((e) => {
+        const r = e.getBoundingClientRect();
+        return [r.left + r.width / 2, r.top + r.height / 2] as [number, number];
+      }),
+    );
+
+  // Six DISTINCT places. Dropping `scale(1,-1)` from the image transform makes
+  // each mirrored image render on top of its rotational twin: still six paths,
+  // still all sitting on ink, but only three positions.
+  const atRest = await read();
+  expect(atRest).toHaveLength(6);
+  const distinct = new Set(atRest.map(([x, y]) => `${Math.round(x / 8)},${Math.round(y / 8)}`));
+  expect(distinct.size, `halo images overlap: ${JSON.stringify(atRest)}`).toBe(6);
+
+  // ZOOM WITH THE HIGHLIGHT UP, so the geometry is then read at a NON-IDENTITY
+  // view. At scale 1 / pan 0 the view transform IS the identity, so dropping
+  // `drawingToScreen` entirely changes nothing and that whole step goes
+  // unasserted — as it was until this. Zooming also exercises the rAF follow
+  // loop, since a pan or zoom never touches a signal the component subscribes
+  // to.
+  // OFF-CENTRE anchor, and that is the whole point of the coordinates. A
+  // ctrl+wheel pins the drawing point under the cursor, so zooming AT the centre
+  // leaves the centre exactly where it was — `drawingToScreen(view, w/2, h/2)`
+  // then returns w/2, h/2, identical to having no view transform at all, and
+  // dropping that step goes undetected. Anchoring away from the centre is what
+  // makes tx/ty actually move the origin.
+  //
+  // And a GENTLE zoom: at 272% four of the six images are already off the
+  // viewport and at 739% all six are, which would leave the probe loop below
+  // with nothing to check.
+  await page.mouse.move(cx - 150, cy + 100);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -30);
+  await page.keyboard.up("Control");
+  await expect(page.locator(".zoom-badge")).not.toHaveText(/\b100%/);
+  await expect(page.locator(".remove-capsule")).toBeVisible();
+
+  const onScreen = (await read()).filter(
+    ([x, y]) =>
+      x > box.x + 90 && x < box.x + box.width - 90 && y > box.y + 80 && y < box.y + box.height - 80,
+  );
+  expect(onScreen, "halo images left the viewport — lower the zoom").toHaveLength(6);
+
+  for (const [x, y] of onScreen) {
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".remove-capsule")).toHaveCount(0);
+    await page.mouse.click(x, y);
+    await expect(
+      page.locator(".remove-capsule"),
+      `no stroke under the halo image at ${Math.round(x)},${Math.round(y)}`,
+    ).toContainText("Stroke on Layer 1 · 6 images");
+  }
 });
 
 // ---------------------------------------------------------------------------

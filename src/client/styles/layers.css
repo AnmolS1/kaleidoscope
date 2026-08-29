@@ -16,6 +16,18 @@
   top: 68px;
   right: 16px;
   width: 264px;
+  /* A full Plus stack is eight ~57px rows plus a header, a hairline, the footer
+     and the footnote — about 595px, so from `top: 68px` the panel runs past the
+     bottom of any viewport under ~680px CSS. `.studio` is `overflow: hidden`, so
+     there is no page scroll to rescue it: the footnote, and on a shorter window
+     the Delete chip, simply become unreachable. Measured at 1280x650, where the
+     panel ended at y=663.
+     A laptop at 1440x900 has roughly 760px of viewport, and a 1366x768 one has
+     ~650 — well inside the range this hits, and eight layers is reachable by
+     every signed-in account. The compact-height block below already had the
+     right shape; the base rule needs it too. */
+  max-height: calc(100dvh - 84px);
+  overflow: auto;
   padding: 10px;
   border-radius: var(--r-md);
   background: var(--color-graph-card);
