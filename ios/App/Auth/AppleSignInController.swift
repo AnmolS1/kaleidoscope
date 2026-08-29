@@ -61,7 +61,10 @@ final class AppleSignInController: NSObject, ASAuthorizationControllerDelegate,
               let tokenData = credential.identityToken,
               let identityToken = String(data: tokenData, encoding: .utf8)
         else {
-            continuation?.resume(throwing: AuthError.badResponse(0))
+            // Not an HTTP failure at all — Apple handed back a credential we
+            // cannot read. It was `.badResponse(0)` before 1.2, which is a
+            // status code that never existed.
+            continuation?.resume(throwing: AuthError.decoding)
             continuation = nil
             return
         }
