@@ -137,31 +137,34 @@ final class PlusStoreKitTests: XCTestCase {
 
     // MARK: 🔴 what actually goes on the wire
 
-    func testTheReportPostsTheSignedRepresentation() async throws {
+    /// 🔴 Everything here goes through `PlusStore.purchase()`, never through a
+    /// purchase the test builds itself.
+    ///
+    /// The first version of this file called `product.purchase(options:)` in a
+    /// test helper and then asserted on the result. That passes with
+    /// `appAccountToken` deleted from the app — the helper was setting it. A
+    /// mutation run caught it: "drop the purchase option" survived, killing
+    /// nothing. So the app buys, the app posts, and the assertions read the body
+    /// off the wire.
+    func testTheReportPostsTheSignedRepresentationOfTheAppsOwnPurchase() async throws {
         let userId = UUID().uuidString.lowercased() // server ids are lowercase UUIDs
-        let result = try await buy(appAccountToken: XCTUnwrap(UUID(uuidString: userId)))
+        let store = try await purchaseThroughTheApp(userId: userId)
+        XCTAssertEqual(store.outcome, .purchased, "the purchase path did not complete")
 
-        let req = try BillingClient().appleRequest(
-            for: result,
-            session: BillingSession(userId: userId, token: "tok", csrf: "csrf"))
+        XCTAssertEqual(BillingStubProtocol.lastMethod, "POST")
+        XCTAssertEqual(BillingStubProtocol.lastURL?.path, "/api/billing/apple")
+        XCTAssertEqual(BillingStubProtocol.lastHeaders?["Authorization"], "Bearer tok")
+        XCTAssertEqual(BillingStubProtocol.lastHeaders?["X-CSRF-Token"], "csrf")
 
-        XCTAssertEqual(req.httpMethod, "POST")
-        XCTAssertEqual(req.url?.path, "/api/billing/apple")
-        XCTAssertEqual(req.value(forHTTPHeaderField: "Authorization"), "Bearer tok")
-        XCTAssertEqual(req.value(forHTTPHeaderField: "X-CSRF-Token"), "csrf")
-        XCTAssertEqual(req.value(forHTTPHeaderField: "Content-Type"), "application/json")
-
-        let body = try XCTUnwrap(req.httpBody)
-        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-        // The Worker reads `body.jws` and nothing else; anything else in here is
-        // ignored, so "we posted something" is not the assertion.
+        let json = try postedJSON()
+        // The Worker reads `body.jws` and nothing else, so "we posted something"
+        // is not the assertion.
         XCTAssertEqual(Array(json.keys), ["jws"])
         let jws = try XCTUnwrap(json["jws"] as? String)
 
-        // 🔴 The mutation this kills: unwrap the `Transaction` first and encode
-        // THAT as JSON. `jwsRepresentation` is on `VerificationResult`, not on
-        // `Transaction`, so the natural "fix" posts an unsigned object — which
-        // is not three dot-separated base64url segments and has no header.
+        // 🔴 The mutation this kills: unwrap the `Transaction` first and post
+        // `tx.jsonRepresentation` — the tempting property, and an UNSIGNED one.
+        // `jwsRepresentation` is on `VerificationResult`, not on `Transaction`.
         let parts = jws.split(separator: ".")
         XCTAssertEqual(parts.count, 3, "not a JWS: \(jws.prefix(120))")
 
@@ -176,8 +179,8 @@ final class PlusStoreKitTests: XCTestCase {
 
     func testTheSignedPayloadCarriesEverythingTheWorkerDecidesOn() async throws {
         let userId = UUID().uuidString.lowercased()
-        let result = try await buy(appAccountToken: XCTUnwrap(UUID(uuidString: userId)))
-        let payload = try postedPayload(for: result, userId: userId)
+        _ = try await purchaseThroughTheApp(userId: userId)
+        let payload = try postedPayload()
 
         // Every field `checkTransaction` reads. A missing one is not a rejection
         // the user can act on — it is the server unable to decide at all.
@@ -196,7 +199,7 @@ final class PlusStoreKitTests: XCTestCase {
         // red and tempt the next reader to "fix" the client by re-casing, which
         // puts the bug straight back.
         let token = try XCTUnwrap(payload["appAccountToken"] as? String,
-                                  "no appAccountToken — the purchase option was dropped")
+                                  "no appAccountToken — the app did not pass the purchase option")
         XCTAssertEqual(token.lowercased(), userId.lowercased())
         XCTAssertNotEqual(token.lowercased(), UUID().uuidString.lowercased(), "control")
     }
@@ -210,9 +213,8 @@ final class PlusStoreKitTests: XCTestCase {
     /// StoreKit-test one and the payload says so, in the same field a real
     /// Sandbox transaction would say `Sandbox` and a real purchase `Production`.
     func testTheEnvironmentTheWorkerGatesOnIsPresentAndNotProduction() async throws {
-        let userId = UUID().uuidString.lowercased()
-        let result = try await buy(appAccountToken: XCTUnwrap(UUID(uuidString: userId)))
-        let payload = try postedPayload(for: result, userId: userId)
+        _ = try await purchaseThroughTheApp(userId: UUID().uuidString.lowercased())
+        let payload = try postedPayload()
 
         let environment = try XCTUnwrap(payload["environment"] as? String,
                                         "no environment field — the sandbox gate is undecidable")
@@ -400,8 +402,40 @@ final class PlusStoreKitTests: XCTestCase {
 
     // MARK: helpers
 
-    /// Buy the product the way the app does — through `Product.purchase` with an
-    /// `appAccountToken`, not `SKTestSession.buyProduct`, which cannot set one.
+    /// Run the APP's purchase, against a stub server that grants it, and leave
+    /// the posted request in `BillingStubProtocol` for the caller to read.
+    @discardableResult
+    private func purchaseThroughTheApp(userId: String) async throws -> PlusStore {
+        let store = PlusStore(client: stubbedClient(status: 200, body: #"{"ok":true,"plus":true}"#))
+        store.start(BillingEnvironment(
+            session: { BillingSession(userId: userId, token: "tok", csrf: "csrf") },
+            refreshEntitlement: {},
+            owned: { true }))
+        await store.loadProduct()
+        await store.purchase()
+        return store
+    }
+
+    private func postedJSON() throws -> [String: Any] {
+        let body = try XCTUnwrap(BillingStubProtocol.lastBody, "the app POSTed nothing")
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+    }
+
+    private func postedPayload() throws -> [String: Any] {
+        let jws = try XCTUnwrap(postedJSON()["jws"] as? String)
+        let parts = jws.split(separator: ".")
+        // XCTFail, never XCTSkip: a skip is what a mutation would want, and a
+        // skipped test reports green.
+        guard parts.count == 3 else {
+            XCTFail("posted body is not a JWS: \(jws.prefix(120))")
+            throw CocoaError(.featureUnsupported)
+        }
+        return try XCTUnwrap(decodeSegment(parts[1]))
+    }
+
+    /// Create a StoreKit entitlement WITHOUT the app reporting it — the shape a
+    /// report that failed last launch, or a purchase on another device, leaves
+    /// behind. Never used to assert on what the app sends.
     private func buy(appAccountToken: UUID) async throws -> VerificationResult<Transaction> {
         let products = try await Product.products(for: [PlusStore.productID])
         let product = try XCTUnwrap(products.first, "no product in the test configuration")
@@ -411,24 +445,6 @@ final class PlusStoreKitTests: XCTestCase {
             throw CocoaError(.featureUnsupported)
         }
         return verification
-    }
-
-    /// The decoded payload of the JWS the app would actually POST — i.e. read
-    /// back out of `URLRequest.httpBody`, not off the `Transaction`.
-    private func postedPayload(for result: VerificationResult<Transaction>, userId: String) throws -> [String: Any] {
-        let req = try BillingClient().appleRequest(
-            for: result, session: BillingSession(userId: userId, token: "t", csrf: "c"))
-        let body = try XCTUnwrap(req.httpBody)
-        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
-        let jws = try XCTUnwrap(json["jws"] as? String)
-        let parts = jws.split(separator: ".")
-        // XCTFail, never XCTSkip: a skip is what a mutation would want, and a
-        // skipped test reports green.
-        guard parts.count == 3 else {
-            XCTFail("posted body is not a JWS: \(jws.prefix(120))")
-            throw CocoaError(.featureUnsupported)
-        }
-        return try XCTUnwrap(decodeSegment(parts[1]))
     }
 
     private func decodeSegment(_ segment: Substring) -> [String: Any]? {
@@ -473,6 +489,7 @@ final class PlusStoreKitTests: XCTestCase {
     /// purchase → report → finish path runs with a real StoreKit transaction and
     /// a chosen server answer.
     private func stubbedClient(status: Int, body: String) -> BillingClient {
+        BillingStubProtocol.reset()
         BillingStubProtocol.status = status
         BillingStubProtocol.body = Data(body.utf8)
         let config = URLSessionConfiguration.ephemeral
@@ -483,15 +500,50 @@ final class PlusStoreKitTests: XCTestCase {
     }
 }
 
-/// Answers every request with a canned status + body.
+/// Answers every request with a canned status + body, and records what was sent.
+///
+/// The recording is the point: it is the only way to see the bytes the APP put on
+/// the wire, as opposed to the bytes a test helper built. `URLProtocol` moves
+/// `httpBody` into `httpBodyStream`, so the stream is what has to be drained.
 final class BillingStubProtocol: URLProtocol {
     nonisolated(unsafe) static var status = 200
     nonisolated(unsafe) static var body = Data()
+    nonisolated(unsafe) static var lastBody: Data?
+    nonisolated(unsafe) static var lastHeaders: [String: String]?
+    nonisolated(unsafe) static var lastMethod: String?
+    nonisolated(unsafe) static var lastURL: URL?
+
+    static func reset() {
+        lastBody = nil
+        lastHeaders = nil
+        lastMethod = nil
+        lastURL = nil
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        Self.lastMethod = request.httpMethod
+        Self.lastURL = request.url
+        Self.lastHeaders = request.allHTTPHeaderFields
+        if let stream = request.httpBodyStream {
+            stream.open()
+            var data = Data()
+            let size = 4096
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: size)
+            while stream.hasBytesAvailable {
+                let read = stream.read(buffer, maxLength: size)
+                if read <= 0 { break }
+                data.append(buffer, count: read)
+            }
+            buffer.deallocate()
+            stream.close()
+            Self.lastBody = data
+        } else {
+            Self.lastBody = request.httpBody
+        }
+
         let response = HTTPURLResponse(
             url: request.url!, statusCode: Self.status, httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"])!
