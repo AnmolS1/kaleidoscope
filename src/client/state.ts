@@ -21,7 +21,7 @@ export const opacity = signal<number>(1);
 // segments/mirror are a VIEW onto the active layer, not a global. Canvas.tsx
 // pushes writes into the engine (which applies them to the active layer) and
 // writes the active layer's values back here whenever the active layer changes.
-export const segments = signal<number>(12);
+export const segments = signal<number>(8);
 export const mirror = signal<boolean>(true);
 /**
  * Whether the symmetry dial is mid-gesture. Read with `.peek()` — it is a

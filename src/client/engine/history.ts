@@ -277,7 +277,7 @@ export class DrawingDoc {
   private cap: number;
 
   constructor(drawing?: DrawingV2, layerCap = 3) {
-    const d = drawing ?? emptyDrawing("light", { segments: 12, mirror: true });
+    const d = drawing ?? emptyDrawing("light", { segments: 8, mirror: true });
     this.hist = new History(d);
     this.active = topVisibleLayerId(d);
     this.cap = clampCap(layerCap);

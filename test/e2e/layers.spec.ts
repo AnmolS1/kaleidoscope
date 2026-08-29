@@ -134,16 +134,26 @@ test("panel lists layers top-first, and the bottom row is the readout's L1", asy
   expect(await readoutLayer(page)).toBe("L3");
 });
 
+/**
+ * The fold count a NEW drawing opens at. Named once here because several
+ * assertions below are about how that value is DISPLAYED and how many symmetry
+ * images it produces — so when the product default moves (12 → 8, to match
+ * iOS), one line changes rather than four scattered literals, and a failure
+ * says "the default moved" instead of looking like four unrelated breakages.
+ */
+const DEFAULT_FOLD = 8;
+
 test("a row shows its own name, symmetry, mirror and opacity", async ({ page }) => {
   await openPanel(page);
   const row = page.locator(".layer-row").first();
   await expect(row.locator(".layer-name")).toHaveText("Layer 1");
-  await expect(row.locator(".layer-line")).toHaveText("12 · D · 100%");
+  await expect(row.locator(".layer-line")).toHaveText(`${DEFAULT_FOLD} · D · 100%`);
 
   // The line tracks the layer, not a global: change segments and drop mirror.
+  // One step DOWN from the default, so the expectation moves with it.
   await page.keyboard.press(",");
   await page.keyboard.press("m");
-  await expect(row.locator(".layer-line")).toHaveText("11 · C · 100%");
+  await expect(row.locator(".layer-line")).toHaveText(`${DEFAULT_FOLD - 1} · C · 100%`);
 });
 
 test("the eye hides a layer and the row says so", async ({ page }) => {
@@ -356,7 +366,8 @@ async function twoDistinguishableStrokes(page: Page) {
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
 
-  // Stroke A: Layer 1, 12 segments mirrored → 24 images. A short arc up-left.
+  // Stroke A: Layer 1, at the default fold count, mirrored → twice that many
+  // images. A short arc up-left.
   await page.mouse.move(cx - 150, cy - 40);
   await page.mouse.down();
   for (let i = 1; i <= 14; i++) await page.mouse.move(cx - 150 + i * 4, cy - 40 - i * 3);
@@ -366,11 +377,17 @@ async function twoDistinguishableStrokes(page: Page) {
   // Stroke B: a new layer at 6 segments, mirror off → 6 images. Down-right, and
   // far enough from A that neither arc's images land on the other's probe
   // point — which is what makes "still there / gone" a real discriminator.
+  //
+  // The COUNT is what matters (6 images, distinct from A's DEFAULT_FOLD * 2),
+  // so step down from the default to reach it rather than pressing a fixed
+  // number of times — a fixed 6 presses used to land on 6 from a default of 12
+  // and now clamps at the 3-segment floor instead.
+  const bFold = 6;
   await openPanel(page);
   await page.getByRole("button", { name: /^Add layer/ }).click();
-  for (let i = 0; i < 6; i++) await page.keyboard.press(",");
+  for (let i = 0; i < DEFAULT_FOLD - bFold; i++) await page.keyboard.press(",");
   await page.keyboard.press("m");
-  await expect(page.locator(".layer-line").first()).toHaveText("6 · C · 100%");
+  await expect(page.locator(".layer-line").first()).toHaveText(`${bFold} · C · 100%`);
 
   await page.mouse.move(cx + 40, cy + 150);
   await page.mouse.down();
@@ -401,10 +418,13 @@ test("remove-stroke highlights every symmetry image of the tapped stroke", async
   const box = (await page.locator(".canvas-host canvas").last().boundingBox())!;
   await page.mouse.click(box.x + box.width / 2 + Math.sin(4) * 70, box.y + box.height / 2 - 90 + 84);
 
-  // 12 segments mirrored = 24 images, and the halo is drawn on every one. A
-  // highlight that only marked the tapped image would render exactly 1.
-  await expect(page.locator(".remove-highlight g")).toHaveCount(24);
-  await expect(page.locator(".remove-capsule")).toContainText("24 images");
+  // Mirrored, so the image count is TWICE the fold count, and the halo is drawn
+  // on every one. A highlight that only marked the tapped image would render
+  // exactly 1. Expressed as the relationship rather than a magic 24, so it keeps
+  // asserting something real when the default fold count moves.
+  const images = DEFAULT_FOLD * 2;
+  await expect(page.locator(".remove-highlight g")).toHaveCount(images);
+  await expect(page.locator(".remove-capsule")).toContainText(`${images} images`);
 });
 
 test("Delete removes the stroke that was tapped, and leaves the other one alone", async ({
@@ -417,7 +437,9 @@ test("Delete removes the stroke that was tapped, and leaves the other one alone"
   // Identify A by its capsule before touching anything: layer name AND image
   // count, neither of which B shares.
   await page.mouse.click(aAt.x, aAt.y);
-  await expect(page.locator(".remove-capsule")).toContainText("Stroke on Layer 1 · 24 images");
+  await expect(page.locator(".remove-capsule")).toContainText(
+    `Stroke on Layer 1 · ${DEFAULT_FOLD * 2} images`,
+  );
   // Tapping a stroke on another layer switches to it and says so.
   await expect(page.locator(".toast-text")).toHaveText("Switched to Layer 1");
 
@@ -768,7 +790,7 @@ test("the row's percentage is a control: it discloses a slider that sets that la
   await addLayers(page, 1);
 
   // Closed, the row is exactly the line the frames draw.
-  await expect(page.locator(".layer-line").first()).toHaveText("12 · D · 100%");
+  await expect(page.locator(".layer-line").first()).toHaveText(`${DEFAULT_FOLD} · D · 100%`);
   await expect(opacityRange(page)).toHaveCount(0);
 
   await openOpacity(page, 0);
@@ -780,7 +802,7 @@ test("the row's percentage is a control: it discloses a slider that sets that la
   expect(pct, "the drag must move the value off 100").toBeLessThan(70);
   expect(pct).toBeGreaterThan(10);
   // The line still composes, with the new number in it.
-  await expect(page.locator(".layer-line").first()).toHaveText(`12 · D · ${pct}%`);
+  await expect(page.locator(".layer-line").first()).toHaveText(`${DEFAULT_FOLD} · D · ${pct}%`);
 
   // THE CONTROL: the OTHER layer is untouched. A control wired to the active
   // layer instead of to its own row would pass every assertion above.

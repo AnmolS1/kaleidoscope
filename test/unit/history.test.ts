@@ -178,15 +178,19 @@ describe("DrawingDoc — what is undoable", () => {
   it("a layer symmetry change is undoable", () => {
     const doc = new DrawingDoc();
     const id = doc.activeLayerId;
+    // Captured, not named. The fold count a NEW drawing opens at is a product
+    // default this test does not own — it moved 12 → 8 to match iOS — and a
+    // test pinning the literal fails for a reason unrelated to undo.
+    const before = { ...doc.activeLayer.sym };
     expect(doc.setLayerSym(id, { segments: 7, mirror: false })).toBe(true);
     expect(doc.activeLayer.sym).toEqual({ segments: 7, mirror: false });
     doc.undo();
-    expect(doc.activeLayer.sym).toEqual({ segments: 12, mirror: true });
+    expect(doc.activeLayer.sym).toEqual(before);
   });
 
   it("setting the symmetry a layer already has does nothing at all", () => {
     const doc = new DrawingDoc();
-    expect(doc.setLayerSym(doc.activeLayerId, { segments: 12, mirror: true })).toBe(false);
+    expect(doc.setLayerSym(doc.activeLayerId, { ...doc.activeLayer.sym })).toBe(false);
     expect(doc.canUndo).toBe(false);
   });
 
@@ -232,6 +236,7 @@ describe("DrawingDoc — what is undoable", () => {
   it("two dial sweeps are two undo steps", () => {
     const doc = new DrawingDoc();
     const id = doc.activeLayerId;
+    const before = doc.activeLayer.sym.segments;
 
     for (const v of [13, 14, 15]) doc.setLayerSym(id, { segments: v, mirror: true }, true);
     doc.endSymGesture();
@@ -242,7 +247,7 @@ describe("DrawingDoc — what is undoable", () => {
     doc.undo();
     expect(doc.activeLayer.sym.segments).toBe(15);
     doc.undo();
-    expect(doc.activeLayer.sym.segments).toBe(12);
+    expect(doc.activeLayer.sym.segments).toBe(before);
   });
 
   it("discrete symmetry changes stay separate steps", () => {
@@ -264,13 +269,14 @@ describe("DrawingDoc — what is undoable", () => {
     doc.addLayer();
     const second = doc.activeLayerId;
     expect(second).not.toBe(first);
+    const secondBefore = doc.layers.find((l) => l.id === second)!.sym.segments;
 
     // No endSymGesture between them: only the per-layer key separates these.
     doc.setLayerSym(first, { segments: 20, mirror: true }, true);
     doc.setLayerSym(second, { segments: 6, mirror: true }, true);
 
     doc.undo();
-    expect(doc.layers.find((l) => l.id === second)!.sym.segments).toBe(12);
+    expect(doc.layers.find((l) => l.id === second)!.sym.segments).toBe(secondBefore);
     expect(doc.layers.find((l) => l.id === first)!.sym.segments).toBe(20);
   });
 

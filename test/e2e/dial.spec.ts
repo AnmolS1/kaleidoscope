@@ -288,6 +288,7 @@ test("the mirror toggle is a real 44px control on the centre disc", async ({ pag
 
   // And it toggles the thing it claims to. The foot line is the independent
   // witness — aria-pressed alone could flip while nothing else moved.
+  const segmentsBefore = await segments(page);
   const before = await mirror.getAttribute("aria-pressed");
   await expect(page.locator(".pop-sym .pop-foot .mono-lg")).toHaveText(
     before === "true" ? /mirrored$/ : /rotational$/,
@@ -298,8 +299,10 @@ test("the mirror toggle is a real 44px control on the centre disc", async ({ pag
     before === "true" ? /rotational$/ : /mirrored$/,
   );
 
-  // Pressing the centre must not have spun the dial as a side effect.
-  expect(await segments(page)).toBe(12);
+  // Pressing the centre must not have spun the dial as a side effect. Compared
+  // against the count observed BEFORE the press, not against the product's
+  // default fold count — a literal this test does not own.
+  expect(await segments(page)).toBe(segmentsBefore);
 });
 
 test("the accessible control is a real range, and says what it is worth", async ({ page }) => {
@@ -310,16 +313,20 @@ test("the accessible control is a real range, and says what it is worth", async 
   await expect(range).toHaveAttribute("type", "range");
   await expect(range).toHaveAttribute("min", "3");
   await expect(range).toHaveAttribute("max", "24");
-  await expect(range).toHaveAttribute("aria-valuetext", "12 segments, mirrored");
+  // Built from the count the dial actually holds, not from the product's
+  // default fold count. What this test owns is the FORMAT and the
+  // mirrored/rotational wording; the number is someone else's constant.
+  const n = await segments(page);
+  await expect(range).toHaveAttribute("aria-valuetext", `${n} segments, mirrored`);
 
   await page.getByRole("button", { name: "Mirror (dihedral symmetry)" }).click();
-  await expect(range).toHaveAttribute("aria-valuetext", "12 segments, rotational");
+  await expect(range).toHaveAttribute("aria-valuetext", `${n} segments, rotational`);
 
   // The keyboard drives it, and the drawing follows — not just the input.
   await range.focus();
   await page.keyboard.press("ArrowRight");
-  expect(await segments(page)).toBe(13);
-  await expect(page.locator(".top-bar .readout")).toContainText("13 · C");
+  expect(await segments(page)).toBe(n + 1);
+  await expect(page.locator(".top-bar .readout")).toContainText(`${n + 1} · C`);
 });
 
 test("the `,` and `.` shortcuts move the dial itself", async ({ page }) => {
@@ -328,10 +335,11 @@ test("the `,` and `.` shortcuts move the dial itself", async ({ page }) => {
   // outside has to move the handle. (It would not if the handle were driven by
   // drag state instead of by the signal.)
   const start = await settledKnob(page);
+  const n = await segments(page);
   // Fired at the document, not at the dial: the global handler ignores events
   // whose target is an INPUT, so pressing the hidden range would prove nothing.
   await page.keyboard.press(",");
-  expect(await segments(page)).toBe(11);
+  expect(await segments(page)).toBe(n - 1);
   const moved = await settledKnob(page);
   // One step is 300/21 ≈ 14.3° at r=80, so a real move is ~20px. The handle
   // sweeps there, so this has to be read AFTER it settles — sampled at the
@@ -340,8 +348,8 @@ test("the `,` and `.` shortcuts move the dial itself", async ({ page }) => {
 
   await page.keyboard.press(".");
   await page.keyboard.press(".");
-  expect(await segments(page)).toBe(13);
-  await expect(page.locator(".dial-guide")).toHaveCount(13);
+  expect(await segments(page)).toBe(n + 1);
+  await expect(page.locator(".dial-guide")).toHaveCount(n + 1);
 });
 
 // The sweep, and the reduced-motion escape from it.
@@ -413,7 +421,6 @@ test("a whole ring sweep is ONE undo, and undo lands on the count it started at"
   // pass on a build that recorded nothing at all.
   await expect(undo).toBeDisabled();
   const before = await announcedSegments(page);
-  expect(before).toBe(12);
 
   // 3 → 15 along the ring: the press itself jumps to 3, then twelve moves walk
   // up to 15, so the gesture spans thirteen distinct values.
@@ -452,14 +459,15 @@ test("each arrow key on the dial is its own undo step", async ({ page }) => {
   await expect(undo).toBeDisabled();
 
   await page.locator(".pop-sym .dial-range").focus();
+  const start = await announcedSegments(page);
   for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
-  expect(await announcedSegments(page)).toBe(15);
+  expect(await announcedSegments(page)).toBe(start + 3);
 
   // Three presses, three entries. The seal hangs off key-UP, which is what
   // keeps a HELD key (one keyup, many `input` events) a single step while
   // discrete presses stay discrete — the pair is what makes either claim
   // falsifiable.
-  for (const expected of [14, 13, 12]) {
+  for (const expected of [start + 2, start + 1, start]) {
     await expect(undo).toBeEnabled();
     await undo.click();
     expect(await announcedSegments(page)).toBe(expected);
@@ -482,6 +490,7 @@ test("a gesture that ends without a live pointer capture still seals", async ({ 
   const { cx, cy, k } = await frame(page);
   const undo = page.getByRole("button", { name: "Undo" }).first();
   await expect(undo).toBeDisabled();
+  const startCount = await announcedSegments(page);
 
   const sweep = (toValue: number, pointerId: number) =>
     page.locator(".dial-svg").evaluate(
@@ -527,6 +536,6 @@ test("a gesture that ends without a live pointer capture still seals", async ({ 
 
   await expect(undo).toBeEnabled();
   await undo.click();
-  expect(await announcedSegments(page)).toBe(12);
+  expect(await announcedSegments(page)).toBe(startCount);
   await expect(undo).toBeDisabled();
 });
