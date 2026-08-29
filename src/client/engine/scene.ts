@@ -1140,12 +1140,33 @@ export class Scene {
    * layer's symmetry back to those signals. Without the guard, mounting would
    * open a spurious undo entry and the active-layer switch would loop.
    */
-  setSegments(n: number): void {
+  setSegments(n: number, coalesce = false): void {
     const segments = clampSegments(n);
     if (this.doc.activeLayer.sym.segments === segments) return;
-    if (this.doc.setLayerSym(this.doc.activeLayerId, { segments, mirror: this.doc.activeLayer.sym.mirror })) {
+    if (
+      this.doc.setLayerSym(
+        this.doc.activeLayerId,
+        { segments, mirror: this.doc.activeLayer.sym.mirror },
+        coalesce,
+      )
+    ) {
       this.afterDocChange();
     }
+  }
+
+  /**
+   * Seal a dial gesture so the next change starts a new undo step.
+   *
+   * The dial calls this directly rather than going through a signal + effect,
+   * and that is deliberate: `endCoalesce` is GLOBAL, not per-key, so an effect
+   * firing on "the dial is no longer being dragged" would also seal whatever
+   * OTHER gesture happened to be open — splitting a layers-panel opacity drag
+   * into two undo entries, from code the opacity tests never touch. Reaching
+   * the engine straight from the gesture handler keeps each gesture's seal
+   * inside the gesture that owns it.
+   */
+  endSymGesture(): void {
+    this.doc.endSymGesture();
   }
   setMirror(m: boolean): void {
     if (this.doc.activeLayer.sym.mirror === m) return;

@@ -494,14 +494,34 @@ export class DrawingDoc {
     this.hist.endCoalesce();
   }
 
-  setLayerSym(id: string, sym: Symmetry): boolean {
+  /**
+   * Layer symmetry. `coalesce` works exactly as it does for opacity: consecutive
+   * changes to the same layer merge into one undo step, sealed by
+   * `endSymGesture`.
+   *
+   * The dial needs this more than the slider did. Its ring crosses the whole
+   * 3..24 span in a single gesture, so an uncoalesced drag from one end to the
+   * other left 22 undo entries — enough that Undo stopped meaning "take back
+   * what I just did" and became "step back through a gesture I experienced as
+   * one motion".
+   *
+   * Keying on the LAYER id, not just "sym", is what stops a change of active
+   * layer mid-sequence from folding two layers' edits into a single entry: a
+   * different id is a different key, so it opens a new step on its own.
+   */
+  setLayerSym(id: string, sym: Symmetry, coalesce = false): boolean {
     const segments = clampSegments(sym.segments);
     const layer = findLayer(this.hist.current, id);
     if (!layer || (layer.sym.segments === segments && layer.sym.mirror === sym.mirror)) return false;
     this.hist.commit(
       withLayer(this.hist.current, id, (l) => ({ ...l, sym: { segments, mirror: sym.mirror } }))!,
+      coalesce ? `sym:${id}` : undefined,
     );
     return true;
+  }
+
+  endSymGesture(): void {
+    this.hist.endCoalesce();
   }
 
   /** Apply one symmetry to every layer (the popover's "Apply to all layers"). */
