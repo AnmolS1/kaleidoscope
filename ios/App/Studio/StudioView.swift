@@ -38,14 +38,6 @@ struct StudioView: View {
     @State private var layersCardHeight: CGFloat = 0
     @StateObject private var nudges = NudgeCenter()
 
-    /// Whether a pen has ever touched this install. Drives the Brush popover's
-    /// pressure section, which is pen-only.
-    ///
-    /// Read from the same `kal.pencilBannerSeen` key `StudioModel.notePencilUsed`
-    /// writes, and refreshed when the model raises its banner flag, because a
-    /// `UserDefaults` read is not observable and the first pen touch of a fresh
-    /// install has to reveal the section without a relaunch.
-    @State private var pencilSeen = UserDefaults.standard.bool(forKey: "kal.pencilBannerSeen")
 
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.verticalSizeClass) private var vSize
@@ -109,12 +101,19 @@ struct StudioView: View {
         }
         .onChange(of: model.showPencilBanner) { _, shown in
             guard shown else { return }
-            pencilSeen = true
             // T11's canvas raises its own inline banner. Dismiss it and show the
             // spec's toast instead, so the copy and the CTA match DESIGN.md §3
             // without editing the canvas.
             model.dismissPencilBanner()
             nudges.show(.pencilDetected, atRevision: model.revision)
+        }
+        .onChange(of: model.refusedHiddenLayer) { _, name in
+            // The stroke was refused, so `revision` did NOT move — which is
+            // exactly why this nudge is safe to dismiss on the next edit: the
+            // next edit is a real one.
+            guard let name else { return }
+            nudges.show(.hiddenLayer(name), atRevision: model.revision)
+            model.clearHiddenLayerRefusal()
         }
         .onChange(of: model.drawWithFinger) { _, canDraw in
             if !canDraw { nudges.show(.fingersPan, atRevision: model.revision) }
@@ -251,7 +250,7 @@ struct StudioView: View {
     @ViewBuilder
     private var leadingPanel: some View {
         switch panel {
-        case .brush: BrushPopover(model: model, pencilSeen: pencilSeen)
+        case .brush: BrushPopover(model: model, pencilSeen: model.pencilSeen)
         case .color: ColorPopover(model: model, customColor: $customColor)
         case .symmetry(let id): SymmetryPopover(model: model, layerId: id) { panel = nil }
         default: EmptyView()
@@ -444,7 +443,7 @@ struct StudioView: View {
     private var panelSheet: some View {
         Group {
             switch panel {
-            case .brush: BrushPopover(model: model, pencilSeen: pencilSeen)
+            case .brush: BrushPopover(model: model, pencilSeen: model.pencilSeen)
             case .color: ColorPopover(model: model, customColor: $customColor)
             case .symmetry(let id): SymmetryPopover(model: model, layerId: id) { panel = nil }
             case nil:
@@ -456,6 +455,12 @@ struct StudioView: View {
             }
         }
         .frame(maxWidth: .infinity)
+        // Clear of the drag indicator. The indicator is drawn INSIDE the sheet's
+        // top inset, so a card whose own padding starts at 14pt has its title row
+        // struck through by it — the Brush sheet's "Brush" / "TOUCH" header was
+        // sitting underneath the grabber. The popover presentation has no
+        // indicator, so this padding belongs here and not in the card.
+        .padding(.top, 18)
         // DESIGN.md §2: a phone sheet never exceeds a third of the height at
         // rest. `.large` stays available because the brush card is taller than
         // a third of a phone and its last row must still be reachable.
