@@ -85,7 +85,7 @@ const RUN_PATH_NOISE = Array.from({ length: 40 }, () => Math.floor(Math.random()
 // on the same seed in the same process, while two calls with the same seed
 // WITHIN a file still agree — which is what the remix tests rely on.
 function fileSalt(): number {
-  let name = "";
+  let name: string;
   try {
     // Only defined inside a running test; the catch keeps the helper usable
     // from a fixture or a bare import.
