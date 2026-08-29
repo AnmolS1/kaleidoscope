@@ -2,6 +2,8 @@ import { useEffect, useRef } from "preact/hooks";
 import { effect } from "@preact/signals";
 import { Scene } from "../engine/scene";
 import * as S from "../state";
+import { showToast } from "./Toast";
+import { EyeOffIcon } from "./Icons";
 
 // Mounts the framework-free Scene engine into a host div and keeps it in sync
 // with the tool signals. The engine owns the canvases and the render loop; this
@@ -43,6 +45,19 @@ export function Canvas() {
         // badge (T06b). Writing back from here would fight the gesture handlers.
         onPenSeen: () => {
           S.penSeen.value = true;
+        },
+        // The engine drops a stroke drawn onto a hidden layer. Without this the
+        // refusal is completely silent — the user draws and simply nothing
+        // happens, which is the failure mode refusing was meant to avoid.
+        onHiddenLayerRefusal: (layerId, layerName) => {
+          showToast({
+            icon: <EyeOffIcon />,
+            text: `"${layerName}" is hidden, so nothing was drawn.`,
+            cta: {
+              label: "Show layer",
+              onClick: () => S.scene.value?.setLayerVisible(layerId, true),
+            },
+          });
         },
         onViewChange: (view) => {
           S.viewScale.value = view.scale;
