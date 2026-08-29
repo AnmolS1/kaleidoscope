@@ -2,20 +2,32 @@ import XCTest
 
 /// The layers panel at both caps (DESIGN.md §3, frames `LayersStates` 1 and 2).
 ///
-/// Runs on any device. An earlier note here called this an iPad suite and
-/// blamed an iPhone-only tap falling through to the canvas. **Both claims were
-/// wrong**, and the way they were wrong is worth keeping:
+/// Runs on any device, and green on both: iPhone 17e 4/4, iPad Pro 11-inch 4/4.
 ///
-/// - The real failure was `KALEIDO_LAYER_CAP` not taking effect. `RootView`
-///   pushes `/api/me.plus`'s cap in a `.task` shortly after launch, which
-///   overwrote an init-only override before anything read it. The override is
-///   consulted in `setLayerCap` now, so it wins.
-/// - The evidence was scrambled by **shared-simulator contention**: several
+/// This suite was misdiagnosed three times, so the settled account lives here.
+/// THREE separate things were tangled together, and each explanation was
+/// applied to the wrong one:
+///
+/// - **The two `KALEIDO_LAYER_CAP=8` failures were a real product bug.** The
+///   override was read only in `init`, and `RootView` pushes `/api/me.plus`'s
+///   cap through a `.task` shortly after launch, overwriting it before anything
+///   could read it. It is consulted in `setLayerCap` now — at the setter every
+///   writer passes through, not at the earliest point in the lifecycle.
+/// - **`testAddAtTheFreeCapDoesNotAddALayer` was a real TEST bug, and it IS a
+///   tap falling through to the canvas** — an explanation that was proposed
+///   early, then wrongly retracted when a speculative `.contentShape` fix
+///   changed nothing. The fix was wrong; the mechanism was not. See the comment
+///   in that test for the measured frames. It never explained the two failures
+///   above, which is what made the over-correction easy.
+/// - **The evidence was scrambled by shared-simulator contention.** Several
 ///   agents resolved `-destination` from `simctl list devices available` and
-///   landed on the same device, so concurrent runs produced a different failure
-///   set each time — 1 of 4, then 4 of 4, then 2 of 4, in suites nobody had
-///   touched. Run iOS suites on a private simulator (`xcrun simctl create`)
-///   before believing any red result.
+///   landed on one device, so concurrent runs gave a different failure set each
+///   time — 1 of 4, then 4 of 4, then 2 of 4, in suites nobody had touched.
+///
+/// Two rules earned the hard way. Run iOS suites on a private simulator
+/// (`xcrun simctl create`) before believing ANY result, red or green. And when
+/// a fix changes nothing, that is evidence the diagnosis is wrong, not that it
+/// is merely incomplete.
 ///
 final class LayerCapUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
