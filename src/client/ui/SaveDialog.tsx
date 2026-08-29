@@ -326,11 +326,22 @@ function SaveDialogInner() {
   /** "Edit title & visibility" on an unchanged piece the user already owns. */
   async function onPatch() {
     if (!twin) return;
-    setTitleTouched(true);
-    if (titleIsInvalid(title)) return;
+    // Send `title` ONLY when it changed. The Worker validates the title only if
+    // the body carries one, precisely so a visibility-only edit on one of the
+    // old "Untitled" rows keeps working — and always sending it defeats that:
+    // the form seeds from the stored title, so a legacy piece named "Untitled"
+    // opens already invalid, Save is disabled, and its visibility can never be
+    // changed from here. Not reachable while legacy rows have a null
+    // content_hash, but the T02c backfill makes it live.
+    const trimmed = title.trim();
+    const titleChanged = trimmed !== twin.title;
+    if (titleChanged) {
+      setTitleTouched(true);
+      if (titleIsInvalid(title)) return;
+    }
     setBusy(true);
     try {
-      await patchArtwork(twin.id, { title: title.trim(), visibility });
+      await patchArtwork(twin.id, titleChanged ? { title: trimmed, visibility } : { visibility });
       S.saveOpen.value = false;
       S.navigate(`/p/${twin.id}`);
     } catch (e) {

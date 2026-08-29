@@ -222,6 +222,63 @@ test.describe("save dialog states", () => {
     await expect(page).toHaveTitle(/Second Name — Kaleidoscope/);
   });
 
+  // A visibility-only edit must not carry the title, so a piece whose STORED
+  // title the Worker would refuse can still be edited. The Worker validates
+  // `title` only when the body contains one, precisely so the old "Untitled"
+  // rows keep working (PLAN §2.3) — and always sending it defeats that: the
+  // form seeds from the stored title, so such a piece opens already invalid,
+  // Save is disabled, and its visibility is unreachable.
+  test("5c. an unchanged title is OMITTED from the PATCH body", async ({ page }) => {
+    await page.goto("/");
+    await testLogin(page, uniqueSub("save-vis-only"));
+    await drawOnCanvas(page, 21);
+    await openSave(page);
+    await nameIt(page, "Keeps Its Name");
+    await submitSavePiece(page);
+    const id = page.url().split("/p/")[1];
+
+    await page.getByRole("button", { name: "Remix" }).click();
+    await page.waitForURL((u) => u.pathname === "/");
+    await openSave(page);
+    await expect(dialog(page)).toHaveAttribute("data-save-state", "self-unchanged");
+
+    const patch = page.waitForRequest(
+      (r) => r.url().includes(`/api/artworks/${id}`) && r.method() === "PATCH",
+    );
+    await page.getByRole("button", { name: "Edit title & visibility" }).click();
+    // Touch ONLY the visibility; leave the seeded title exactly as it came.
+    await page.getByRole("button", { name: "Private", exact: true }).click();
+    await page.getByRole("button", { name: "Save changes" }).click();
+
+    const body = JSON.parse((await patch).postData() ?? "{}") as Record<string, unknown>;
+    expect(body).toEqual({ visibility: "private" });
+    expect(body).not.toHaveProperty("title");
+  });
+
+  // Control: changing the title still sends it, so the omission is keyed on
+  // "unchanged" and not on the field being skipped altogether.
+  test("5d. a changed title IS sent", async ({ page }) => {
+    await page.goto("/");
+    await testLogin(page, uniqueSub("save-vis-title"));
+    await drawOnCanvas(page, 22);
+    await openSave(page);
+    await nameIt(page, "Old Name");
+    await submitSavePiece(page);
+    const id = page.url().split("/p/")[1];
+
+    await page.getByRole("button", { name: "Remix" }).click();
+    await page.waitForURL((u) => u.pathname === "/");
+    await openSave(page);
+    const patch = page.waitForRequest(
+      (r) => r.url().includes(`/api/artworks/${id}`) && r.method() === "PATCH",
+    );
+    await page.getByRole("button", { name: "Edit title & visibility" }).click();
+    await nameIt(page, "New Name");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    const body = JSON.parse((await patch).postData() ?? "{}") as Record<string, unknown>;
+    expect(body.title).toBe("New Name");
+  });
+
   test("6. SaveSelfChanged — a remix of your own piece that has moved on", async ({ page }) => {
     await page.goto("/");
     await testLogin(page, uniqueSub("save-self-chg"));

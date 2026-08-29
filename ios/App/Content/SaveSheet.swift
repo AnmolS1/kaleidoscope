@@ -356,7 +356,8 @@ struct SaveSheet: View {
                 visibility: visibility,
                 client: client,
                 token: session.token,
-                csrf: session.csrf
+                csrf: session.csrf,
+                storedTitle: twin.title
             )
             // A refused title never reaches the network. The button is disabled
             // in that case, so this is the belt to that braces — but it is the
@@ -705,19 +706,31 @@ struct TitlePatch: Equatable {
     /// is refused; it never decides what is stored, so a user keeps the
     /// characters they typed — `un\u{FB01}tled` stays a ligature rather than
     /// being rewritten to "unfitled" on its way to the server.
-    var title: String
+    ///
+    /// `nil` means "leave the title alone": the request omits the field, which
+    /// is what lets a visibility-only edit work on a piece whose stored title
+    /// the Worker would refuse.
+    var title: String?
     var visibility: String
 }
 
 /// The PATCH for a title/visibility edit, or nil if the Worker would refuse the
 /// title. Split from `sendTitlePatch` only so the body can be asserted directly.
-func titlePatch(id: String, title: String, visibility: Visibility) -> TitlePatch? {
+func titlePatch(id: String, title: String, visibility: Visibility,
+                storedTitle: String? = nil) -> TitlePatch? {
+    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    // An UNCHANGED title is omitted, not validated. The Worker checks the title
+    // only when the body carries one — deliberately, so a visibility-only edit
+    // on one of the old "Untitled" rows keeps working. Validating it here
+    // instead would make those rows uneditable: the form seeds from the stored
+    // title, so the sheet would open already invalid with Save disabled and no
+    // way to reach visibility at all. Latent until the T02c backfill gives
+    // legacy rows a content_hash and they start coming back as `mine`.
+    if let storedTitle, trimmed == storedTitle.trimmingCharacters(in: .whitespacesAndNewlines) {
+        return TitlePatch(id: id, title: nil, visibility: visibility.rawValue)
+    }
     guard !titleIsInvalid(title) else { return nil }
-    return TitlePatch(
-        id: id,
-        title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-        visibility: visibility.rawValue
-    )
+    return TitlePatch(id: id, title: trimmed, visibility: visibility.rawValue)
 }
 
 /// Issue the edit PATCH. Returns false — sending nothing — when the title is one
@@ -734,9 +747,11 @@ func sendTitlePatch(
     visibility: Visibility,
     client: AuthClient,
     token: String,
-    csrf: String
+    csrf: String,
+    storedTitle: String? = nil
 ) async throws -> Bool {
-    guard let patch = titlePatch(id: id, title: title, visibility: visibility) else { return false }
+    guard let patch = titlePatch(id: id, title: title, visibility: visibility,
+                                 storedTitle: storedTitle) else { return false }
     try await client.updateArtwork(
         id: patch.id,
         title: patch.title,
