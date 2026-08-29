@@ -53,7 +53,7 @@ test("drawing on a hidden layer is refused, and SAYS SO", async ({ page }) => {
   expect(await strokeCounts(page)).toEqual({ total: 0, visible: 0 });
 
   // ...and the user is told, by name.
-  await expect(page.getByText('"Highlights" is hidden, so nothing was drawn.')).toBeVisible();
+  await expect(page.getByText("“Highlights” is hidden, so nothing was drawn.")).toBeVisible();
 });
 
 test("the toast's CTA shows the layer, and drawing then works", async ({ page }) => {
