@@ -20,7 +20,8 @@ enum StudioNudge: Equatable {
     case switchedLayer(String)
     /// A stroke was refused because the active layer is hidden. Raised from
     /// `StudioModel.refusedHiddenLayer`, which the commit guard sets.
-    case hiddenLayer(String)
+    /// (layerId, layerName): the name is shown, the ID is what the CTA acts on.
+    case hiddenLayer(String, String)
 
     var systemImage: String {
         switch self {
@@ -42,7 +43,7 @@ enum StudioNudge: Equatable {
             return "New layer inherits this layer's symmetry. Tap the badge to change it."
         case .switchedLayer(let name):
             return "Switched to \(name)"
-        case .hiddenLayer(let name):
+        case .hiddenLayer(_, let name):
             return "\u{201C}\(name)\u{201D} is hidden, so nothing was drawn."
         }
     }

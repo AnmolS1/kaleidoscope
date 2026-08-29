@@ -534,7 +534,21 @@ final class StudioModel: ObservableObject {
     /// the refusal and the nudge cannot make the sentence describe a different
     /// layer than the one that refused. Same shape as the web's
     /// `onHiddenLayerRefusal(layerName)`.
-    @Published var refusedHiddenLayer: String?
+    /// The layer that refused the last stroke, or nil.
+    ///
+    /// Carries the ID as well as the name because the two are used for
+    /// different things and only one of them is a key: the nudge QUOTES the
+    /// name, captured at the refusal so a later rename cannot make the sentence
+    /// describe a different layer — but "Show layer" has to ACT, and looking the
+    /// layer up by name would unhide whichever matched first. Rename lives in
+    /// the layers panel, so two layers sharing a name is a state the user can
+    /// reach. Matches the web's `onHiddenLayerRefusal(layerId, layerName)`.
+    struct RefusedLayer: Equatable {
+        let id: String
+        let name: String
+    }
+
+    @Published var refusedHiddenLayer: RefusedLayer?
 
     // View transform (1–8×). Owned here rather than by the view so an export or
     // a save is never affected by it.
@@ -699,7 +713,7 @@ final class StudioModel: ObservableObject {
         guard !stroke.pts.isEmpty else { return }
         let active = doc.activeLayer
         guard active.visible else {
-            refusedHiddenLayer = active.name
+            refusedHiddenLayer = RefusedLayer(id: active.id, name: active.name)
             return
         }
         mutate { $0.commitStroke(stroke) }
