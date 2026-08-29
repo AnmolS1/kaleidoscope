@@ -253,6 +253,32 @@ test.describe("Plus sheet states", () => {
     await expect(sheet(page).locator(".plus-meter-head")).toHaveCount(0);
   });
 
+  test("4b. restore against an EXPIRED session says sign in, and the sheet survives", async ({
+    page,
+  }) => {
+    // /api/me omits the plus block entirely when there is no session. Publishing
+    // that null would trip the sheet's own enabled gate and make it disappear
+    // mid-click — a paid feature vanishing with no message.
+    let signedOut = false;
+    await page.route("**/api/me", async (route) => {
+      const res = await route.fetch();
+      const body = (await res.json()) as Record<string, unknown>;
+      if (signedOut) delete body.plus;
+      else body.plus = { ...((body.plus ?? {}) as object), enabled: true, publicCap: 10 };
+      await route.fulfill({ response: res, json: body });
+    });
+    await page.goto("/");
+    await testLogin(page, uniqueSub("plus-expired"));
+    await openSheetFromMenu(page);
+
+    signedOut = true;
+    await sheet(page).getByRole("button", { name: "Restore purchase" }).click();
+
+    await expect(sheet(page)).toBeVisible();
+    await expect(sheet(page)).toHaveAttribute("data-plus-state", "sign-in");
+    await expect(sheet(page).getByRole("link", { name: "Sign in to continue" })).toBeVisible();
+  });
+
   test("5. PlusBoundElsewhere — 409 bound_elsewhere offers a different account", async ({
     page,
   }) => {

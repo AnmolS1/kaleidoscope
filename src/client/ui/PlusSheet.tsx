@@ -12,7 +12,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import * as S from "../state";
 import {
-  DEFAULT_LAYER_CAP,
   fetchCheckoutUrl,
   loginUrl,
   logout,
@@ -168,11 +167,21 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
     setBusy(true);
     try {
       const fresh = await refreshPlus();
+      // 🔴 /api/me omits the block ENTIRELY when there is no session (index.ts
+      // guards it on `user`), so a null here means the session expired — not
+      // "no entitlement". Publishing that null would trip this sheet's own
+      // enabled gate and make it VANISH mid-click, leaving `me` still claiming
+      // a session and the layer cap silently back at 3. Say what is true
+      // instead, and leave the stale block for the next load to correct.
+      if (!fresh) {
+        setOutcome({ kind: "sign-in" });
+        return;
+      }
       // Publish the fresh block so the layer gate and the cap copy agree with
       // what the sheet just said. `me` is untouched on purpose — see api.ts.
       S.plus.value = fresh;
-      S.layerCap.value = fresh ? fresh.layerCap : DEFAULT_LAYER_CAP;
-      setOutcome(fresh?.active ? { kind: "purchased" } : { kind: "restore-none" });
+      S.layerCap.value = fresh.layerCap;
+      setOutcome(fresh.active ? { kind: "purchased" } : { kind: "restore-none" });
     } catch (err) {
       setOutcome(plusOutcomeForError(err));
     } finally {

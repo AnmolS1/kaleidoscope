@@ -210,9 +210,6 @@ export function App() {
       </a>
       {view}
       <HelpOverlay />
-      {/* Driven entirely by S.plusOpen, and hidden whenever plus.enabled is
-          false — so it is mounted here, outside the studio, because the account
-          menu opens it from the gallery pages too. */}
       <PlusSheet />
       {/* One shared polite live region for the whole app. */}
       <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
