@@ -30,6 +30,35 @@ function panelAtCentre(page: Page): Promise<string> {
   });
 }
 
+/**
+ * How far out from an element's centre it still owns the hit test, in each
+ * direction — i.e. its EFFECTIVE target, not its painted box.
+ *
+ * A `::before` that expands a small control's hit area only works if nothing
+ * overlaps it: two overlapping expanded boxes do not both win, the later sibling
+ * takes the overlap. Measuring the painted box (or trusting the CSS) misses that
+ * entirely, which is exactly how a row of 24px swatches kept a ~32px effective
+ * target while the stylesheet claimed 44.
+ */
+function exclusiveTarget(page: Page, selector: string, nth = 0) {
+  return page.locator(selector).nth(nth).evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const owns = (dx: number, dy: number) => {
+      const hit = document.elementFromPoint(cx + dx, cy + dy);
+      return !!hit && (hit === el || el.contains(hit));
+    };
+    const reach = (dx: number, dy: number) => {
+      let n = 0;
+      while (n < 60 && owns(dx * (n + 1), dy * (n + 1))) n++;
+      return n;
+    };
+    // +1 for the centre pixel itself, which neither one-sided walk counts.
+    return { width: reach(-1, 0) + reach(1, 0) + 1, height: reach(0, -1) + reach(0, 1) + 1 };
+  });
+}
+
 test.describe("compact width (phone portrait)", () => {
   test.use({ viewport: PHONE });
 
@@ -68,6 +97,14 @@ test.describe("compact width (phone portrait)", () => {
         .map((r) => `${Math.round(r.width)}x${Math.round(r.height)}`),
     );
     expect(small, "dock buttons under 44px").toEqual([]);
+
+    // Palette swatches are 24px dots whose hit area is expanded by a
+    // pseudo-element. Assert the EFFECTIVE target, not the painted box: with the
+    // frame's 8px gaps the expansions overlap and each swatch really owned only
+    // ~32px, while the painted box and the stylesheet both looked correct.
+    const swatch = await exclusiveTarget(page, ".strip .swatch");
+    expect(swatch.width, "swatch effective width").toBeGreaterThanOrEqual(44);
+    expect(swatch.height, "swatch effective height").toBeGreaterThanOrEqual(44);
 
     // A strip chip opens a bottom sheet. It must paint ABOVE the canvas AND
     // above the dock (regression: the opaque canvas, later in DOM, hid an
@@ -157,6 +194,17 @@ test.describe("regular width (rail)", () => {
     expect(inset.right).toBeGreaterThanOrEqual(20);
     expect(inset.left).toBeGreaterThan(20);
 
+    // The colour popover's swatches get the same treatment as the strip's: this
+    // popover is the picker on an iPad too, so its 24px dots need the same
+    // exclusive 44px target, and the 10px gap a mouse would want does not give
+    // it. Measured on the second swatch, which has neighbours on both sides.
+    await page.locator('.rail summary[aria-label="Color"]').click();
+    await expect(page.locator(".pop-swatches")).toBeVisible();
+    const popSwatch = await exclusiveTarget(page, ".pop-swatches .swatch", 1);
+    expect(popSwatch.width, "popover swatch effective width").toBeGreaterThanOrEqual(44);
+    expect(popSwatch.height, "popover swatch effective height").toBeGreaterThanOrEqual(44);
+    await page.locator(".pop-scrim").click({ position: { x: 640, y: 400 } });
+
     // "No panel covers the drawing's centre" (DESIGN.md §2), checked for EACH
     // popover — they are one-at-a-time, so opening them all at once would only
     // ever test the last one.
@@ -187,6 +235,39 @@ test.describe("regular width (rail)", () => {
     // visibility assertion, not a count one.
     await expect(page.locator(".pop-brush")).toBeHidden();
     await expect(page.getByLabel("Clear canvas")).toBeDisabled();
+  });
+
+  test("the decorative chrome does not intercept a stroke", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForSelector(".canvas-host canvas");
+
+    // `.studio-chrome` is pointer-events: none with each interactive island
+    // opting back in. The readout capsule and the shortcut strip deliberately do
+    // NOT, so they can float over the drawing. That was a claim in a CSS comment
+    // until now; this is the claim as a test.
+    for (const sel of [".top-bar .readout", ".shortcut-strip"]) {
+      const hit = await page.locator(sel).evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const h = document.elementFromPoint(
+          Math.round(r.left + r.width / 2),
+          Math.round(r.top + r.height / 2),
+        );
+        return h ? h.tagName : "none";
+      });
+      expect(hit, `${sel} intercepts the pointer`).toBe("CANVAS");
+    }
+
+    // And the consequence that actually matters: a stroke STARTED on the readout
+    // still draws. A hit test alone would not catch a capsule that swallowed
+    // pointerdown while reporting the canvas underneath.
+    const box = (await page.locator(".top-bar .readout").boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 12; i++) await page.mouse.move(x + i * 8, y + i * 12);
+    await page.mouse.up();
+    await expect(page.getByLabel("Clear canvas")).toBeEnabled();
   });
 
   test("the shortcut strip lists only shortcuts that work", async ({ page }) => {
