@@ -16,6 +16,10 @@ struct LayersPanel: View {
 
     @State private var renaming: String?
     @State private var draftName = ""
+    /// Which row has its opacity slider disclosed, if any. One at a time: the
+    /// slider is a second line inside the row, and eight open at once would push
+    /// the footer and the cap footnote off the panel.
+    @State private var opacityFor: String?
     @FocusState private var nameFieldFocused: Bool
 
     /// Top layer first.
@@ -30,11 +34,29 @@ struct LayersPanel: View {
                         layer: row,
                         isActive: row.id == model.activeLayerId,
                         isRenaming: renaming == row.id,
+                        isOpacityOpen: opacityFor == row.id,
                         draftName: $draftName,
                         nameFieldFocused: $nameFieldFocused,
                         onSelect: { model.setActiveLayer(row.id) },
                         onToggleVisible: { model.setLayerVisible(row.id, !row.visible) },
                         onEditSymmetry: { onEditSymmetry(row.id) },
+                        onToggleOpacity: {
+                            if opacityFor == row.id {
+                                // Closing seals the gesture. A VoiceOver
+                                // adjustment ends no drag, so without this the
+                                // coalesce key stays live and the NEXT change to
+                                // this layer merges into the same undo entry —
+                                // minutes later, invisibly.
+                                model.endLayerOpacityGesture()
+                                opacityFor = nil
+                            } else {
+                                opacityFor = row.id
+                            }
+                        },
+                        onSetOpacity: { value, coalesce in
+                            model.setLayerOpacity(row.id, value, coalesce: coalesce)
+                        },
+                        onEndOpacityGesture: { model.endLayerOpacityGesture() },
                         onBeginRename: { renaming = row.id; draftName = row.name; nameFieldFocused = true },
                         onCommitRename: {
                             model.setLayerName(row.id, draftName)
@@ -136,11 +158,16 @@ private struct LayerRow: View {
     let layer: LayerSummary
     let isActive: Bool
     let isRenaming: Bool
+    let isOpacityOpen: Bool
     @Binding var draftName: String
     var nameFieldFocused: FocusState<Bool>.Binding
     let onSelect: () -> Void
     let onToggleVisible: () -> Void
     let onEditSymmetry: () -> Void
+    let onToggleOpacity: () -> Void
+    /// `(value, coalesce)` — coalesce is true only while a DRAG is in flight.
+    let onSetOpacity: (Double, Bool) -> Void
+    let onEndOpacityGesture: () -> Void
     let onBeginRename: () -> Void
     let onCommitRename: () -> Void
     let onMove: (Int) -> Void
@@ -149,49 +176,18 @@ private struct LayerRow: View {
 
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
+    /// True between the slider's editing-began and editing-ended. It is the only
+    /// thing that turns coalescing on.
+    @State private var draggingOpacity = false
+
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "line.3.horizontal")
-                .font(.caption)
-                .foregroundStyle(Blueprint.graphite.opacity(0.7))
-                .accessibilityHidden(true)
-
-            LayerThumbnail(layer: layer)
-
-            VStack(alignment: .leading, spacing: 2) {
-                if isRenaming {
-                    TextField("Layer name", text: $draftName)
-                        .font(.footnote.weight(.medium))
-                        .textFieldStyle(.plain)
-                        .focused(nameFieldFocused)
-                        .submitLabel(.done)
-                        .onSubmit(onCommitRename)
-                } else {
-                    Text(layer.name)
-                        .font(.footnote.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                Button(action: onEditSymmetry) {
-                    Text(Readout.layerLine(layer.sym, opacity: layer.opacity))
-                        .font(Blueprint.mono(.caption2))
-                        .foregroundStyle(Blueprint.graphite.opacity(0.7))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Symmetry for \(layer.name)")
-                .accessibilityValue(Readout.spokenSym(layer.sym))
-                .accessibilityHint("Opens the symmetry dial for this layer")
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button(action: onToggleVisible) {
-                Image(systemName: layer.visible ? "eye" : "eye.slash")
-                    .foregroundStyle(Blueprint.graphite.opacity(0.72))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(layer.visible ? "Hide \(layer.name)" : "Show \(layer.name)")
+        VStack(alignment: .leading, spacing: 2) {
+            firstLine
+            // The slider is a second line INSIDE the row, not a popover: the
+            // panel is 264pt wide with nothing beside a row, and keeping it
+            // in the row keeps it inside the row's accessibility container,
+            // next to the number it edits.
+            if isOpacityOpen { opacitySlider }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -223,6 +219,117 @@ private struct LayerRow: View {
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
         .modifier(ReorderActions(canMoveUp: canMoveUp, canMoveDown: canMoveDown,
                                  onMove: onMove, onRename: onBeginRename))
+    }
+
+    private var firstLine: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal")
+                .font(.caption)
+                .foregroundStyle(Blueprint.graphite.opacity(0.7))
+                .accessibilityHidden(true)
+
+            LayerThumbnail(layer: layer)
+
+            VStack(alignment: .leading, spacing: 2) {
+                if isRenaming {
+                    TextField("Layer name", text: $draftName)
+                        .font(.footnote.weight(.medium))
+                        .textFieldStyle(.plain)
+                        .focused(nameFieldFocused)
+                        .submitLabel(.done)
+                        .onSubmit(onCommitRename)
+                } else {
+                    Text(layer.name)
+                        .font(.footnote.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                // `12 · D · 70%` is still one line, but it is now TWO controls
+                // with the separator between them: the sym half opens the dial
+                // (as it always did — its label and value are what
+                // LayerCapUITests and the screenshot suite reach for), the
+                // percentage half discloses the slider below.
+                HStack(spacing: 4) {
+                    Button(action: onEditSymmetry) {
+                        Text(Readout.sym(layer.sym))
+                            .font(Blueprint.mono(.caption2))
+                            .foregroundStyle(Blueprint.graphite.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Symmetry for \(layer.name)")
+                    .accessibilityValue(Readout.spokenSym(layer.sym))
+                    .accessibilityHint("Opens the symmetry dial for this layer")
+
+                    Text("·")
+                        .font(Blueprint.mono(.caption2))
+                        .foregroundStyle(Blueprint.graphite.opacity(0.7))
+                        .accessibilityHidden(true)
+
+                    Button(action: onToggleOpacity) {
+                        Text(Readout.percent(layer.opacity))
+                            .font(Blueprint.mono(.caption2))
+                            .foregroundStyle(Blueprint.graphite.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Opacity for \(layer.name)")
+                    .accessibilityValue(Readout.percent(layer.opacity))
+                    .accessibilityHint(isOpacityOpen
+                                       ? "Hides this layer's opacity slider"
+                                       : "Shows this layer's opacity slider")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: onToggleVisible) {
+                Image(systemName: layer.visible ? "eye" : "eye.slash")
+                    .foregroundStyle(Blueprint.graphite.opacity(0.72))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(layer.visible ? "Hide \(layer.name)" : "Show \(layer.name)")
+        }
+    }
+
+    /// The disclosed opacity slider.
+    ///
+    /// **`coalesce` is the point.** A drag emits a continuous stream of values;
+    /// committing each one is how a single gesture becomes forty undo entries.
+    /// So every value set DURING a drag is coalesced into one entry, and the
+    /// gesture is sealed when the drag ends. `draggingOpacity` is what separates
+    /// a drag from a VoiceOver adjustment, which begins and ends no drag and
+    /// must therefore be its own step rather than merging into the last one.
+    private var opacitySlider: some View {
+        HStack(spacing: 8) {
+            Slider(
+                value: Binding(
+                    get: { layer.opacity },
+                    // 0...1 IS THE ENGINE'S SCALE. It clamps, so a whole percent
+                    // handed over raw would pin every layer at 1 and read as a
+                    // slider that does nothing.
+                    set: { onSetOpacity($0, draggingOpacity) }
+                ),
+                in: 0...1,
+                onEditingChanged: { editing in
+                    draggingOpacity = editing
+                    if !editing { onEndOpacityGesture() }
+                }
+            )
+            .tint(Blueprint.crane)
+            // DESIGN.md §2's 44pt, spent on the TARGET: a Slider's own intrinsic
+            // height is under it, and a control that only misses the rule inside
+            // a panel is still a control that misses it.
+            .frame(minHeight: 44)
+            .accessibilityLabel("Opacity for \(layer.name)")
+            .accessibilityValue(Readout.percent(layer.opacity))
+
+            Text(Readout.percent(layer.opacity))
+                .font(Blueprint.mono(.caption2))
+                .foregroundStyle(Blueprint.graphite.opacity(0.7))
+                .frame(width: 40, alignment: .trailing)
+                .accessibilityHidden(true)
+        }
+        .padding(.top, 2)
     }
 
     private var rowLabel: String {
