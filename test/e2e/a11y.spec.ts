@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { drawOnCanvas, submitSavePiece, testLogin, uniqueSub } from "./helpers";
+import { drawOnCanvas, mockAtCap, openSave, submitSavePiece, testLogin, uniqueSub } from "./helpers";
 
 // WCAG 2.1 A + AA. axe runs in-page against the live dev server (vite + workerd),
 // asserting zero violations on every primary surface and overlay.
@@ -166,8 +166,25 @@ test("save dialog has no axe violations", async ({ page }) => {
   await testLogin(page, uniqueSub("a11y-dialog"));
 
   await drawOnCanvas(page, 2);
-  await page.getByLabel("Save to gallery").click();
-  await expect(page.getByRole("dialog", { name: "Save to gallery" })).toBeVisible();
+  // `openSave` waits out the pre-flight. Scanning the moment the dialog is
+  // visible would scan the "Checking your gallery…" placeholder — a clean scan
+  // of a paragraph, passing for a reason unrelated to the form.
+  await openSave(page);
+  await expect(page.getByLabel("Title")).toBeVisible();
+  await scan(page, { exclude: ".ts-widget" });
+});
+
+test("the save dialog at the public cap has no axe violations", async ({ page }) => {
+  // A different DOM, not a different skin: a disabled segment, a crane-coloured
+  // note, and a button styled as an inline link. Each is its own way to fail
+  // contrast or naming, and none of them appears in the ordinary form.
+  await mockAtCap(page, 10, 10);
+  await page.goto("/");
+  await testLogin(page, uniqueSub("a11y-cap"));
+
+  await drawOnCanvas(page, 6);
+  await openSave(page);
+  await expect(page.locator(".field-cap")).toBeVisible();
   await scan(page, { exclude: ".ts-widget" });
 });
 
@@ -176,8 +193,7 @@ test("artwork permalink has no axe violations", async ({ page }) => {
   await testLogin(page, uniqueSub("a11y-permalink"));
 
   await drawOnCanvas(page, 3);
-  await page.getByLabel("Save to gallery").click();
-  await expect(page.getByRole("dialog", { name: "Save to gallery" })).toBeVisible();
+  await openSave(page);
   await page.getByLabel("Title").fill("A11y Mandala");
   await submitSavePiece(page);
 

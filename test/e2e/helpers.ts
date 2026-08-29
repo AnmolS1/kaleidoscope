@@ -8,16 +8,41 @@ import { expect, type Page } from "@playwright/test";
  * so a fixed `waitForTimeout` before clicking is a race. Retry the click until
  * navigation happens: a click with no token just re-shows the inline message
  * (a no-op), and the next click once the token has landed navigates.
+ *
+ * Targeted by ROLE IN THE DIALOG, not by the label "Save piece": the primary
+ * button is "Save unlisted" at the cap, "Save as new" on a changed remix of
+ * your own piece, and "Try again" after a failure (DESIGN.md §4). A name-based
+ * locator silently waits out its 20s timeout in three of the eleven states and
+ * then blames Turnstile.
  */
 export async function submitSavePiece(page: Page): Promise<void> {
   await expect(async () => {
-    await page.getByRole("button", { name: "Save piece" }).click();
+    await page.locator(".save-actions .btn-primary").click();
     await page.waitForURL(/\/p\/[A-Za-z0-9]+/, { timeout: 2500 });
   }).toPass({ timeout: 20_000 });
 }
 
+/**
+ * Open the save dialog and wait for the pre-flight to finish.
+ *
+ * The dialog opens on a "Checking your gallery…" placeholder while
+ * `GET /api/artworks/hash/:sha` runs, so asserting on the body the instant the
+ * dialog is visible can assert against the placeholder — and pass for a reason
+ * that has nothing to do with the state under test.
+ */
+export async function openSave(page: Page): Promise<void> {
+  await page.getByLabel("Save to gallery").click();
+  await expect(page.getByRole("dialog", { name: "Save to gallery" })).toBeVisible();
+  await expect(page.locator(".save-checking")).toHaveCount(0);
+}
+
+/** The dialog's resolved state, stamped on the card as `data-save-state`. */
+export function saveState(page: Page) {
+  return page.getByRole("dialog", { name: "Save to gallery" });
+}
+
 // Per-run perturbation, so a drawing made in one run never hashes the same as
-// one made in another. ~60 x 16 combinations on top of each spec's own seed.
+// one made in another.
 //
 // Uniqueness has to live in the DRAWING, not just the account. Saving is
 // content-addressed: an identical drawing is refused as a duplicate whoever
@@ -28,8 +53,17 @@ export async function submitSavePiece(page: Page): Promise<void> {
 //
 // CI starts with an empty D1 every run, so this is invisible there. A dev box
 // keeps .wrangler/state, which is why the suite has to be re-runnable locally.
+//
+// 🔴 THE RUN AXIS AND THE SEED AXIS MUST NOT BE THE SAME ONE. This used to add a
+// per-run `dx` of 0..59 to the seed's own `seed * 11`, which means run A seed 14
+// and run B seed 4 can land on the identical path — the seeds and the runs trade
+// places. That produced an INTERMITTENT `SaveOtherUnchanged` in a spec expecting
+// a fresh save: red maybe one run in ten, green on the re-run, and pointing at
+// axe or Turnstile rather than at the fixture. So the seed owns x-offset alone,
+// and the run owns a per-POINT noise vector: ~7^24 distinct paths, and no value
+// of one axis can imitate a value of the other.
+const RUN_PATH_NOISE = Array.from({ length: 40 }, () => Math.floor(Math.random() * 7));
 const RUN_DRAWING_JITTER = {
-  dx: Math.floor(Math.random() * 60),
   extra: Math.floor(Math.random() * 16),
 };
 
@@ -42,11 +76,17 @@ const RUN_DRAWING_JITTER = {
  * by this argument.
  *
  * By default the path is ALSO perturbed per run, so re-running the suite against
- * a populated local database does not collide with itself. Pass
- * `{ stable: true }` to opt out — that is what a test deliberately exercising
- * dedupe or the cross-user remix block wants, since it needs the hashes to
- * collide on purpose. With `stable` and seed 0 the path is the original one,
- * byte for byte.
+ * a populated local database does not collide with itself. `{ stable: true }`
+ * opts out and reproduces the original path byte for byte at seed 0.
+ *
+ * NOTE, because the earlier advice here was actively harmful: `stable` is NOT
+ * the tool for a test that needs two accounts to hold the same drawing. Stable
+ * collides across RUNS as well, so with a per-run account the FIRST save is then
+ * refused 409 against a user from the previous run — the collision arrives one
+ * step too early and in the wrong place. Within one run the default is already
+ * deterministic (the noise vector is fixed for the whole process), so calling
+ * `drawOnCanvas(page, 10)` twice is the way to make two hashes agree on purpose.
+ * `stable` is for the rare test that needs a path fixed across runs too.
  */
 export async function drawOnCanvas(
   page: Page,
@@ -61,12 +101,14 @@ export async function drawOnCanvas(
   // Whole numbers of pixels throughout: capture drops moves under ~1.1px, so a
   // fractional offset can perturb the path without changing a single stored
   // point — i.e. without changing the hash, which is the thing being varied.
-  const jitter = opts.stable ? { dx: 0, extra: 0 } : RUN_DRAWING_JITTER;
-  const dx = seed * 11 + jitter.dx;
-  await page.mouse.move(cx + dx, cy - 90);
+  const stable = opts.stable === true;
+  const extra = stable ? 0 : RUN_DRAWING_JITTER.extra;
+  const noise = (i: number) => (stable ? 0 : RUN_PATH_NOISE[i % RUN_PATH_NOISE.length]);
+  const dx = seed * 11;
+  await page.mouse.move(cx + dx + noise(0), cy - 90);
   await page.mouse.down();
-  for (let i = 1; i <= 24 + jitter.extra; i++) {
-    await page.mouse.move(cx + dx + Math.sin(i / 3) * 70, cy - 90 + i * 7);
+  for (let i = 1; i <= 24 + extra; i++) {
+    await page.mouse.move(cx + dx + noise(i) + Math.sin(i / 3) * 70, cy - 90 + i * 7);
   }
   await page.mouse.up();
 }
@@ -146,4 +188,136 @@ const RUN_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 
 export function uniqueSub(prefix: string): { sub: string; name: string; email: string } {
   const sub = `${prefix}-${RUN_ID}`;
   return { sub, name: `E2E ${prefix}`, email: `${sub}@example.com` };
+}
+
+/** A 1×1 PNG. Any `image/*` of non-zero size satisfies the upload validation. */
+const TINY_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/**
+ * Create an artwork by POSTing a hand-written drawing, as the page's current
+ * user, without going through the studio.
+ *
+ * The one thing this buys that the UI cannot: a drawing whose only layer is
+ * HIDDEN. That is the `SaveNothingVisible` precondition, and the panel that can
+ * hide a layer belongs to T06c and does not exist on this branch — so the
+ * alternative was to assert nothing about the state the whole guard exists for.
+ * Everything else (validation, hashing, R2, the row) is the real server path.
+ */
+export async function craftPiece(
+  page: Page,
+  opts: { drawing: unknown; title: string; visibility?: "public" | "unlisted" | "private" },
+): Promise<string> {
+  const out = await page.evaluate(
+    async ({ drawing, title, visibility, png }) => {
+      const me = (await (await fetch("/api/me", { credentials: "same-origin" })).json()) as {
+        csrf: string;
+      };
+      const blob = await (await fetch(png)).blob();
+      const fd = new FormData();
+      fd.set("drawing", JSON.stringify(drawing));
+      fd.set("image", blob, "image.png");
+      fd.set("thumb", blob, "thumb.png");
+      fd.set("og", blob, "og.png");
+      fd.set("title", title);
+      fd.set("visibility", visibility);
+      fd.set("turnstile", "e2e");
+      const res = await fetch("/api/artworks", {
+        method: "POST",
+        body: fd,
+        credentials: "same-origin",
+        headers: { "X-CSRF-Token": me.csrf, "X-Client-Caps": "v2" },
+      });
+      return { status: res.status, body: await res.text() };
+    },
+    { drawing: opts.drawing, title: opts.title, visibility: opts.visibility ?? "private", png: TINY_PNG },
+  );
+  // Status, not res.ok(): a 400 from validation and a 500 from a missing table
+  // look identical through a boolean, and that ambiguity has already cost this
+  // build one wrong diagnosis.
+  expect(out.status, `craftPiece POST: ${out.body}`).toBe(201);
+  return (JSON.parse(out.body) as { id: string }).id;
+}
+
+/**
+ * A v2 drawing whose only INK is on a hidden layer, plus an empty visible one.
+ *
+ * The empty visible layer is not decoration. `serializeForHash` drops hidden
+ * layers entirely — deliberately, so that toggling one is not a new piece — and
+ * a drawing with ONLY hidden layers therefore projects to `layers: []` and
+ * hashes the same as every other such drawing, whoever made it. Two accounts
+ * cannot both hold one: the second is refused `409 duplicate_of_other`, against
+ * a user from a previous run. The empty visible layer carries a random opacity
+ * and fold count, both of which the projection keeps, so each fixture is a
+ * distinct picture again — while `visibleStrokeCount` stays 0, which is the
+ * whole point.
+ */
+export function hiddenOnlyDrawing() {
+  const r = () => Math.round(Math.random() * 900) / 1000;
+  const segments = 3 + Math.floor(Math.random() * 22);
+  return {
+    v: 2,
+    bg: "light",
+    layers: [
+      {
+        id: "l1",
+        name: "Hidden",
+        visible: false,
+        opacity: 1,
+        sym: { segments: 12, mirror: true },
+        strokes: [
+          {
+            tool: "solid",
+            color: "#e84a27",
+            size: 6,
+            opacity: 1,
+            pts: [
+              [r(), r(), 1],
+              [r(), r(), 1],
+              [r(), r(), 1],
+            ],
+          },
+        ],
+      },
+      {
+        id: "l2",
+        name: "Empty",
+        visible: true,
+        opacity: Math.round((0.2 + Math.random() * 0.79) * 1000) / 1000,
+        sym: { segments, mirror: true },
+        strokes: [],
+      },
+    ],
+  };
+}
+
+/**
+ * Make /api/me report an account sitting at the public cap.
+ *
+ * `PLUS_ENABLED` is unset in .dev.vars, so `capPolicy` reports no cap at all
+ * locally and the cap states are otherwise unreachable from a browser. This
+ * MERGES into the real response rather than replacing it — a fabricated body
+ * would drop `csrf` and `turnstileSiteKey` and every save would then fail 403
+ * for a reason that has nothing to do with the cap.
+ *
+ * What this does and does not prove: it exercises the CLIENT's rendering of a
+ * capped account, which is what T06a owns. The Worker's own cap arithmetic is
+ * covered by the worker unit tests (T02a/T02d), not by this.
+ */
+export async function mockAtCap(page: Page, count = 10, cap = 10): Promise<void> {
+  await page.route("**/api/me", async (route) => {
+    const res = await route.fetch();
+    const body = (await res.json()) as Record<string, unknown>;
+    const plus = (body.plus ?? {}) as Record<string, unknown>;
+    body.plus = {
+      ...plus,
+      active: false,
+      sources: [],
+      publicCount: count,
+      publicCap: cap,
+      layerCap: 3,
+      enabled: true,
+    };
+    await route.fulfill({ response: res, json: body });
+  });
 }

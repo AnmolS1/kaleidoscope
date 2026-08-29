@@ -1,6 +1,13 @@
 import { useEffect, useState } from "preact/hooks";
 import * as S from "../state";
-import { getGallery, getMyArtworks, deleteArtwork, patchArtwork, type GalleryItem } from "../api";
+import {
+  ApiError,
+  getGallery,
+  getMyArtworks,
+  deleteArtwork,
+  patchArtwork,
+  type GalleryItem,
+} from "../api";
 import { PageNav } from "./PageNav";
 import { Avatar } from "./Avatar";
 import { Link } from "./Link";
@@ -10,6 +17,8 @@ export function Gallery({ mine }: { mine: boolean }) {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
+  /** Per-piece "the public wall is full" line, keyed by artwork id. */
+  const [capped, setCapped] = useState<Record<string, { cap: number; count: number }>>({});
 
   async function load(reset = false) {
     setLoading(true);
@@ -42,9 +51,42 @@ export function Gallery({ mine }: { mine: boolean }) {
     setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
+  /**
+   * Change one piece's visibility.
+   *
+   * Two things this must NOT do, both of which it used to. It swallowed every
+   * error and then applied the optimistic update anyway, so a rejected PATCH
+   * left the select showing a visibility the server had refused — the user's
+   * next reload silently undid it. And `402 cap_reached` — the whole point of
+   * the cap being a CURRENT count rather than a lifetime allowance — arrived as
+   * a caught-and-dropped exception, so going public at the cap looked like it
+   * worked. Now the select snaps back and says why.
+   */
   async function onVisibility(id: string, visibility: string) {
-    await patchArtwork(id, { visibility }).catch(() => {});
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, visibility } : i)));
+    const previous = items.find((i) => i.id === id)?.visibility;
+    try {
+      await patchArtwork(id, { visibility });
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, visibility } : i)));
+      setCapped((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (e) {
+      // Re-render with the value the server still holds. `items` is the source
+      // of truth for the <select>, so rewriting the same object is what forces
+      // the DOM control back off the value the user just picked.
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, visibility: previous } : i)));
+      if (e instanceof ApiError && e.status === 402 && e.code === "cap_reached") {
+        const cap = typeof e.data.cap === "number" ? e.data.cap : 0;
+        const count = typeof e.data.count === "number" ? e.data.count : 0;
+        setCapped((prev) => ({ ...prev, [id]: { cap, count } }));
+        S.announce(`Public wall is full, ${count} of ${cap}`);
+      } else {
+        S.announce("Couldn't change visibility — try again");
+      }
+    }
   }
 
   return (
@@ -77,13 +119,31 @@ export function Gallery({ mine }: { mine: boolean }) {
                         aria-label="Visibility"
                         onChange={(e) => onVisibility(it.id, (e.target as HTMLSelectElement).value)}
                       >
-                        <option value="public">Public</option>
+                        {/* Disabled rather than hidden: the option has to stay
+                            visible for the message beneath to make sense. */}
+                        <option value="public" disabled={!!capped[it.id] && it.visibility !== "public"}>
+                          Public
+                        </option>
                         <option value="unlisted">Unlisted</option>
                         <option value="private">Private</option>
                       </select>
                       <button class="link-danger" onClick={() => onDelete(it.id)} aria-label={`Delete ${it.title}`}>
                         Delete
                       </button>
+                      {capped[it.id] && (
+                        <span class="art-cap" role="status">
+                          Public wall is full ({capped[it.id].count} of {capped[it.id].cap}). Make
+                          another piece private to free a slot, or{" "}
+                          <button
+                            type="button"
+                            class="link-inline"
+                            onClick={() => (S.plusOpen.value = true)}
+                          >
+                            get Plus
+                          </button>
+                          .
+                        </span>
+                      )}
                     </span>
                   ) : (
                     it.author?.name && (
