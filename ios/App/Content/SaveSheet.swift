@@ -34,6 +34,13 @@ struct SaveSheet: View {
     @State private var twin: ArtworkDetail?
     @State private var errorText: String?
     @State private var savedId: String?
+    /// `SaveSelfUnchanged` has swapped its piece card for the edit form.
+    @State private var editing = false
+    /// A message from the last failed edit (the cap note).
+    @State private var editNote: String?
+    /// The Worker refused the title on the last PATCH, even though the client
+    /// rule accepted it. Cleared on the next keystroke.
+    @State private var titleRejected = false
     /// The piece this drawing was remixed from, fetched from `remixOf`. The
     /// studio only carries the id, so ownership and the source's stored hash —
     /// the two facts `SaveSelfChanged` turns on — are looked up here.
@@ -83,6 +90,18 @@ struct SaveSheet: View {
     }
 
     private var titleInvalid: Bool { titleIsInvalid(title) }
+
+    /// The user's own piece with this exact picture, per the pre-flight.
+    private var mineId: String? {
+        if case let .done(lookup) = preflight { return lookup.mine }
+        return nil
+    }
+
+    /// Editing is a sub-state of `SaveSelfUnchanged` only. Re-derived from
+    /// `state` rather than trusted from the flag alone: signing out mid-edit
+    /// moves the sheet to `signedOut`, and an edit form still on screen over it
+    /// would PATCH with a session that no longer exists.
+    private var isEditing: Bool { editing && state == .selfUnchanged && twin != nil }
 
     private var state: SaveStateKind {
         resolveSaveState(SaveStateInput(
@@ -150,9 +169,21 @@ struct SaveSheet: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
-            Button(secondaryLabel) { dismiss() }.disabled(saving)
+            // While editing, Cancel backs out of the FORM, not the sheet — the
+            // web's does the same. A Cancel that dismissed here would throw
+            // away the edit and the drawing's place in the flow together.
+            Button(isEditing ? "Cancel" : secondaryLabel) {
+                if isEditing { cancelEdit() } else { dismiss() }
+            }
+            .disabled(saving)
         }
-        if let savedId {
+        if isEditing {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save changes") { Task { await applyEdit() } }
+                    .disabled(saving || titleInvalid)
+                    .fontWeight(.semibold)
+            }
+        } else if let savedId {
             // The at-cap 201 already stored the piece. Offering "Save unlisted"
             // again here would post a second copy of a drawing the user has.
             ToolbarItem(placement: .confirmationAction) {
@@ -232,18 +263,120 @@ struct SaveSheet: View {
         }
     }
 
+    @ViewBuilder
     private var selfUnchangedSection: some View {
-        Section {
-            Text("This is exactly the piece you already saved.")
-                .fontWeight(.semibold)
-                .foregroundStyle(Blueprint.graphite)
-            if let twin { pieceCard(twin, byLine: ownerByLine(twin)) }
-            if case let .done(lookup) = preflight, let id = lookup.mine {
-                Button("Open it") { onSaved(id); dismiss() }
-                    .tint(Blueprint.craneText)
+        if isEditing, let twin {
+            editSections(twin)
+        } else {
+            Section {
+                Text("This is exactly the piece you already saved.")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Blueprint.graphite)
+                if let twin { pieceCard(twin, byLine: ownerByLine(twin)) }
+                // Rendered FROM the action list rather than written out twice:
+                // deleting `.editTitle` from `selfUnchangedActions` deletes the
+                // button, which is what makes the test of that list a test of
+                // this screen and not of a constant.
+                ForEach(selfUnchangedActions(pieceId: mineId, twinLoaded: twin != nil)) { action in
+                    Button(action.label) { perform(action) }
+                        .tint(Blueprint.craneText)
+                }
+            } footer: {
+                Text("Make a change to save a new version.")
             }
-        } footer: {
-            Text("Make a change to save a new version.")
+        }
+    }
+
+    private func perform(_ action: SelfUnchangedAction) {
+        switch action {
+        case .openIt:
+            if let id = mineId { onSaved(id); dismiss() }
+        case .editTitle:
+            guard let twin else { return }
+            // Seeded from what is STORED, so a confirm with nothing touched is
+            // a no-op rather than a rename to whatever the save form last held.
+            title = twin.title
+            visibility = Visibility(rawValue: twin.visibility) ?? .public
+            titleRejected = false
+            editNote = nil
+            editing = true
+        }
+    }
+
+    private func cancelEdit() {
+        editing = false
+        editNote = nil
+        titleRejected = false
+    }
+
+    /// The edit form. Deliberately not `formSections`: that one carries the AI
+    /// name chips and the remix hint, which belong to a save that has not
+    /// happened. This piece exists — there is nothing to suggest a name for.
+    @ViewBuilder
+    private func editSections(_ piece: ArtworkDetail) -> some View {
+        Section("Title") {
+            TextField("Give it a name", text: $title)
+                .accessibilityLabel("Title")
+                .onChange(of: title) { _, _ in titleRejected = false }
+            if (titleInvalid && !title.isEmpty) || titleRejected {
+                Text(saveTitleErrorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+
+        Section("Visibility") {
+            // Keyed on what the piece IS, not on the live selection: a public
+            // piece at the cap keeps its Public segment even after the user
+            // tries Unlisted, so the choice is reversible.
+            Picker("Visibility", selection: $visibility) {
+                ForEach(editVisibilities(capReached: capReached,
+                                         current: Visibility(rawValue: piece.visibility) ?? .public)) { v in
+                    Text(v.label).tag(v)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Visibility")
+            Text(visibility.caption).font(.caption).foregroundStyle(.secondary)
+            if let editNote {
+                Text(editNote).font(.footnote).foregroundStyle(Blueprint.craneText)
+            }
+        }
+    }
+
+    private func applyEdit() async {
+        guard let twin, let session = auth.session else { return }
+        saving = true
+        defer { saving = false }
+        editNote = nil
+        do {
+            let sent = try await sendTitlePatch(
+                id: twin.id,
+                title: title,
+                visibility: visibility,
+                client: client,
+                token: session.token,
+                csrf: session.csrf
+            )
+            // A refused title never reaches the network. The button is disabled
+            // in that case, so this is the belt to that braces — but it is the
+            // half that survives a future caller.
+            guard sent else { titleRejected = true; return }
+            // The public count moves when visibility does; the cap note on the
+            // rest of the app reads it.
+            await auth.refreshPlus()
+            onSaved(twin.id)
+            dismiss()
+        } catch {
+            let failure = editFailure(
+                error,
+                plusEnabled: auth.plus?.enabled ?? false,
+                fallbackCount: auth.plus?.publicCount,
+                fallbackCap: auth.plus?.publicCap
+            )
+            editNote = failure.note
+            titleRejected = failure.titleRejected
+            if let v = failure.visibility { visibility = v }
         }
     }
 
@@ -306,7 +439,7 @@ struct SaveSheet: View {
             // dialog, so it renders whenever the title is bad — including on an
             // at-cap sheet, which has to show both.
             if titleInvalid && !title.isEmpty {
-                Text("Give your piece a real name — \u{201C}Untitled\u{201D} doesn't count.")
+                Text(saveTitleErrorMessage)
                     .font(.footnote)
                     .foregroundStyle(.red)
             }
@@ -503,4 +636,162 @@ struct SaveSheet: View {
             if outcome == .failed { errorText = saveErrorText(error) }
         }
     }
+}
+
+// MARK: - Edit title & visibility (DESIGN.md §4, `SaveSelfUnchanged`)
+//
+// The state where the drawing is byte-identical to a piece the user already has
+// offers TWO actions, not one: "Open it" and "Edit title & visibility". The
+// second is the only way to rename a piece from the app at all, so dropping it
+// does not degrade the state — it removes a capability, silently, in the one
+// place the design puts it.
+//
+// Everything the action decides lives out here as plain functions for the same
+// reason `resolveSaveState` does: a button that renders and does nothing looks
+// exactly like a button that works and was never tapped.
+
+/// The one message the title rule produces. Written once: the sheet shows it in
+/// two places, and the Worker returns it a third way as `title_required` — three
+/// literals is how two of them drift.
+let saveTitleErrorMessage = "Give your piece a real name — \u{201C}Untitled\u{201D} doesn't count."
+
+/// The actions `SaveSelfUnchanged` offers. `CaseIterable` so a test can assert
+/// the list below is onto — an action defined and never offered is invisible.
+enum SelfUnchangedAction: String, Equatable, CaseIterable, Identifiable {
+    case openIt
+    case editTitle
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .openIt: return "Open it"
+        case .editTitle: return "Edit title & visibility"
+        }
+    }
+}
+
+/// Which actions are offered, given what actually loaded.
+///
+/// `Open it` needs only the pre-flight's id. `Edit title & visibility` needs the
+/// fetched piece as well, because the form is seeded from its CURRENT title and
+/// visibility; opening it with an empty field would let a tap-through blank the
+/// name of a saved piece. A twin that failed to load therefore offers one
+/// button, not two — a deliberate deviation from the frame, which draws both.
+func selfUnchangedActions(pieceId: String?, twinLoaded: Bool) -> [SelfUnchangedAction] {
+    guard pieceId != nil else { return [] }
+    return twinLoaded ? [.openIt, .editTitle] : [.openIt]
+}
+
+/// Which visibility segments the EDIT form offers.
+///
+/// Not `availableVisibilities`. The save form drops `.public` at the cap because
+/// a new public post needs a free slot. An edit of an ALREADY-public piece needs
+/// none: the Worker sends `public → public` down the plain-update path on
+/// purpose (`artworks.ts`, "an already-public piece asked to be public again
+/// must NOT go through the conditional publish: its own row is inside the
+/// count"). Dropping the segment there would leave a Picker whose selection
+/// names no segment — the control renders with NOTHING selected — and the first
+/// tap would quietly demote a public piece.
+func editVisibilities(capReached: Bool, current: Visibility) -> [Visibility] {
+    if !capReached || current == .public { return Visibility.allCases }
+    return Visibility.allCases.filter { $0 != .public }
+}
+
+/// The body of the edit PATCH.
+struct TitlePatch: Equatable {
+    var id: String
+    /// The trimmed ORIGINAL, never the folded form. NFKC decides whether a title
+    /// is refused; it never decides what is stored, so a user keeps the
+    /// characters they typed — `un\u{FB01}tled` stays a ligature rather than
+    /// being rewritten to "unfitled" on its way to the server.
+    var title: String
+    var visibility: String
+}
+
+/// The PATCH for a title/visibility edit, or nil if the Worker would refuse the
+/// title. Split from `sendTitlePatch` only so the body can be asserted directly.
+func titlePatch(id: String, title: String, visibility: Visibility) -> TitlePatch? {
+    guard !titleIsInvalid(title) else { return nil }
+    return TitlePatch(
+        id: id,
+        title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+        visibility: visibility.rawValue
+    )
+}
+
+/// Issue the edit PATCH. Returns false — sending nothing — when the title is one
+/// the Worker refuses.
+///
+/// The guard and the request are ONE function so they cannot drift, and so a
+/// test can prove that a refused title puts no request on the wire at all. A
+/// view that checked the title itself and then called a bare send would leave
+/// that check untestable, and "the button was disabled" is not the same fact.
+@discardableResult
+func sendTitlePatch(
+    id: String,
+    title: String,
+    visibility: Visibility,
+    client: AuthClient,
+    token: String,
+    csrf: String
+) async throws -> Bool {
+    guard let patch = titlePatch(id: id, title: title, visibility: visibility) else { return false }
+    try await client.updateArtwork(
+        id: patch.id,
+        title: patch.title,
+        visibility: patch.visibility,
+        token: token,
+        csrf: csrf
+    )
+    return true
+}
+
+/// What a failed edit does to the sheet.
+///
+/// Copy and control together, in one value, because the 402 changes both: the
+/// note explains the cap AND the segmented control has to stop claiming the
+/// piece is going public. Deciding those in two places is how a sheet ends up
+/// showing the cap message next to a Public segment that is still selected.
+struct EditFailure: Equatable {
+    /// The message to show, or nil when the failure only decorates the field.
+    var note: String?
+    /// The Worker refused the title — the client rule and its disagreed.
+    var titleRejected: Bool
+    /// Force the visibility control here. Nil leaves the user's choice alone.
+    var visibility: Visibility?
+}
+
+/// `402 cap_reached` on a PATCH (DESIGN.md §5, "Account menu + cap elsewhere").
+///
+/// Not `capNote`: that one offers "post this unlisted now", which is a save.
+/// Here the piece already exists and simply stayed where it was, so the only
+/// two exits are freeing a slot or Plus — and the Plus half is dropped while
+/// `plus.enabled` is false, where it would name something unbuyable.
+func patchCapNote(count: Int?, cap: Int?, plusEnabled: Bool) -> String {
+    let counted = "\(count.map(String.init) ?? "?") of \(cap.map(String.init) ?? "?")"
+    let base = "Public wall is full (\(counted)). Make another piece private to free a slot"
+    return base + (plusEnabled ? ", or get Kaleidoscope Plus." : ".")
+}
+
+/// Map a failed edit PATCH onto what the sheet shows next.
+func editFailure(_ error: Error, plusEnabled: Bool, fallbackCount: Int?, fallbackCap: Int?) -> EditFailure {
+    guard let api = error as? AuthError else {
+        return EditFailure(note: saveErrorText(error), titleRejected: false, visibility: nil)
+    }
+    if api.status == 402, api.code == "cap_reached" {
+        return EditFailure(
+            note: patchCapNote(count: api.body?.count ?? fallbackCount,
+                               cap: api.body?.cap ?? fallbackCap,
+                               plusEnabled: plusEnabled),
+            titleRejected: false,
+            // The piece did NOT go public. Saying so in prose while the control
+            // still reads "Public" is the half-fix this pairing rules out.
+            visibility: .unlisted
+        )
+    }
+    if api.status == 400, api.code == "title_required" {
+        return EditFailure(note: nil, titleRejected: true, visibility: nil)
+    }
+    return EditFailure(note: saveErrorText(api), titleRejected: false, visibility: nil)
 }
