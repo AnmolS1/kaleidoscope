@@ -60,23 +60,48 @@ jobs:
         # silently when GitHub refreshes the runner image: the device vanishes,
         # xcodebuild exits 70 listing only placeholders, and the failed run
         # still bills. Resolving at runtime is immune to that.
+        #
+        # This used to take the NEWEST runtime, and that was actively harmful.
+        # StoreKit Testing is inoperative on the iOS 26.x simulator runtime:
+        # every `SKTestSession` call fails `SKInternalErrorDomain Code=3`,
+        # `Product.products(for:)` returns an empty array, and
+        # `allTransactions()` / `AppStore.sync()` HANG rather than throw. The
+        # same binary and the same `.storekit` file are 0-skipped on iOS 18.3
+        # (measured both ways: 97 executed / 0 skipped on 18.3, 97 executed /
+        # 15 skipped on 26.5 — and BOTH report `** TEST SUCCEEDED **` with
+        # exit 0, which is why the skip count is asserted below rather than
+        # trusted to the exit status).
+        #
+        # So prefer an 18.x runtime, and report whether we actually got one.
         run: |
-          UDID=$(xcrun simctl list devices available --json | python3 -c "
-          import json, sys
-          runtimes = json.load(sys.stdin)['devices']
-          best = None
-          for rt in sorted(runtimes):
-              if 'iOS' not in rt:
+          OUT=$(xcrun simctl list devices available --json | python3 -c "
+          import json, sys, re
+          devices = json.load(sys.stdin)['devices']
+
+          def version(rt):
+              m = re.search(r'iOS-(\d+)-(\d+)', rt)
+              return (int(m.group(1)), int(m.group(2))) if m else None
+
+          cands = []
+          for rt, devs in devices.items():
+              v = version(rt)
+              if v is None:
                   continue
-              for dev in runtimes[rt]:
-                  if dev.get('isAvailable') and dev['name'].startswith('iPhone'):
-                      best = (rt, dev['udid'], dev['name'])
-          if not best:
+              for d in devs:
+                  if d.get('isAvailable') and d['name'].startswith('iPhone'):
+                      cands.append((v, rt, d['udid'], d['name']))
+          if not cands:
               sys.exit('no available iPhone simulator')
-          print(best[1])
-          sys.stderr.write(f'using {best[2]} on {best[0]}\n')
+
+          preferred = [c for c in cands if c[0][0] == 18]
+          pool, storekit = (preferred, 'yes') if preferred else (cands, 'no')
+          v, rt, udid, name = max(pool)
+          print(udid)
+          print(storekit)
+          sys.stderr.write(f'using {name} on {rt} (storekit-capable: {storekit})\n')
           ")
-          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "udid=$(printf '%s' "$OUT" | sed -n 1p)" >> "$GITHUB_OUTPUT"
+          echo "storekit=$(printf '%s' "$OUT" | sed -n 2p)" >> "$GITHUB_OUTPUT"
 
       - name: Build for testing
         working-directory: ios
@@ -90,3 +115,50 @@ jobs:
           xcodebuild build-for-testing \
             -scheme Kaleidoscope \
             -destination "id=$DEST_UDID"
+
+      # The logic tests, and ONLY the logic tests.
+      #
+      # `build-for-testing` above compiles the XCTest bundles without running
+      # them, so until now nothing in this repo ever EXECUTED an XCTest in CI —
+      # the save-state resolution, the Plus/paywall state table and the StoreKit
+      # payload construction were all verified on a laptop and nowhere else.
+      #
+      # The UI bundle stays out on purpose. It takes ~10 minutes, macOS bills at
+      # 10x on a private repo, and its suites are device-class split: the dock
+      # suites pass on a phone and fail on a pad, the rail suites do the reverse,
+      # and the accessibility suite needs the phone's tab bar. No single
+      # destination is green, so a UI run here would need two devices and would
+      # still need a per-suite allow-list to mean anything.
+      - name: Run the logic tests
+        working-directory: ios
+        env:
+          DEST_UDID: ${{ steps.sim.outputs.udid }}
+          STOREKIT_CAPABLE: ${{ steps.sim.outputs.storekit }}
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -scheme Kaleidoscope \
+            -destination "id=$DEST_UDID" \
+            -only-testing:KaleidoscopeUnitTests | tee /tmp/unit.log
+
+          # `| tee` with pipefail so xcodebuild's exit code survives the pipe.
+          # A bare pipe reports the exit status of `tee`, which is always 0 —
+          # that is how a red suite gets announced as green.
+          LINE=$(grep -E "Executed [0-9]+ tests" /tmp/unit.log | tail -1 || true)
+          if [ -z "$LINE" ]; then
+            echo "::error::No tests ran. A run that did not happen is not a passing run."
+            exit 1
+          fi
+          echo "$LINE"
+
+          SKIPPED=$(printf '%s' "$LINE" | sed -nE 's/.*with ([0-9]+) tests? skipped.*/\1/p')
+          SKIPPED=${SKIPPED:-0}
+          if [ "$SKIPPED" -gt 0 ]; then
+            echo "::error::$SKIPPED test(s) skipped — a gate that ran nothing must not be green."
+            if [ "$STOREKIT_CAPABLE" != "yes" ]; then
+              echo "::error::No iOS 18.x simulator runtime on this runner, so StoreKit"
+              echo "::error::Testing is inert and the payment gate proved nothing."
+              echo "::error::Fix: install an iOS 18.x runtime on the runner."
+            fi
+            exit 1
+          fi
