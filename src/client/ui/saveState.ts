@@ -132,10 +132,14 @@ export function primaryLabel(kind: SaveStateKind, capReached: boolean, remixOfOw
 /**
  * Is this title one the worker will refuse?
  *
- * Mirrors `validateTitle` in the Worker, NFKC included: the fullwidth and
- * ligature spellings of "untitled" walk straight past a naive comparison, and a
- * client that let them through would turn a designed dialog state into an
- * unexplained 400.
+ * Mirrors `validateTitle` in the Worker, NFKC included: compatibility
+ * lookalikes such as fullwidth "ｕｎｔｉｔｌｅｄ" walk straight past a naive
+ * comparison, and a client that let them through would turn a designed dialog
+ * state into an unexplained 400.
+ *
+ * NOT the ﬁ ligature, which an earlier comment claimed: "untitled" has no "fi"
+ * in it, and ﬁ folds to "fi", so "unti<ﬁ>tled" normalizes to "untifitled" and
+ * is a valid title.
  */
 export function titleIsInvalid(raw: string): boolean {
   const t = raw.trim();

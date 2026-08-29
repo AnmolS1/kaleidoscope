@@ -109,8 +109,14 @@ export function cleanTitle(raw: unknown): string {
  * and rejecting its saves would break the app in the store.
  *
  * NFKC (not the NFC the layer-name rule uses) is deliberate and is used ONLY to
- * decide: it folds the compatibility lookalikes — fullwidth "ｕｎｔｉｔｌｅｄ",
- * the ﬁ ligature — that would otherwise walk straight past a naive comparison.
+ * decide: it folds the compatibility lookalikes that would otherwise walk
+ * straight past a naive comparison — fullwidth "ｕｎｔｉｔｌｅｄ", and Roman
+ * numeral U+2170 for the "i".
+ *
+ * (An earlier version of this comment also cited the ﬁ ligature. That was
+ * wrong: "untitled" contains no "fi", and ﬁ folds to "fi" — so the closest
+ * thing, "unti<ﬁ>tled", normalizes to "untifitled" and is a perfectly valid
+ * title. Verified in both runtimes rather than reasoned about.)
  * The value STORED is the trimmed original, so a title keeps the characters the
  * user typed.
  */
