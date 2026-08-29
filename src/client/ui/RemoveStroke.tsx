@@ -18,7 +18,7 @@
 // free when the tool is dropped.
 
 import { signal } from "@preact/signals";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import * as S from "../state";
 import { drawingToScreen, type StrokeHit } from "../engine/scene";
 import { strokeSegments } from "../engine/brush";
@@ -55,6 +55,27 @@ const pendingHit = signal<PendingHit | null>(null);
 const missAt = signal<{ x: number; y: number; id: number } | null>(null);
 let missId = 0;
 
+/**
+ * Keep the capsule fully on screen, measured rather than guessed.
+ *
+ * Runs in a LAYOUT effect so the correction is applied before the browser
+ * paints — clamping in a normal effect would show the capsule overhanging for
+ * a frame first.
+ */
+function useCapsuleClamp(ref: { current: HTMLDivElement | null }, x: number, y: number): void {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const m = 12;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const left = Math.max(m, Math.min(x, window.innerWidth - w - m));
+    const top = Math.max(m, Math.min(y, window.innerHeight - h - m));
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+  });
+}
+
 /** Leaving the tool must not leave a highlight armed behind it. */
 export function clearRemoveHighlight(): void {
   pendingHit.value = null;
@@ -84,6 +105,7 @@ export function RemoveStrokeOverlay() {
   // re-runs the staleness check below without waiting for anything else.
   const shape = stackShape();
   const [, tick] = useState(0);
+  const capsuleRef = useRef<HTMLDivElement>(null);
 
   // Disarming has to drop the highlight with it.
   useEffect(() => {
@@ -195,6 +217,11 @@ export function RemoveStrokeOverlay() {
     return () => cancelAnimationFrame(raf);
   }, [hit?.layerId, hit?.index]);
 
+  // Called from `hit` rather than from the geometry below, so it sits with the
+  // other hooks and above the early return — the desired position is the tap
+  // offset either way.
+  useCapsuleClamp(capsuleRef, (hit?.clientX ?? 0) + 16, (hit?.clientY ?? 0) - 44);
+
   if (!active) return null;
 
   // Invalidate a highlight whose stroke index can no longer be trusted.
@@ -226,6 +253,7 @@ export function RemoveStrokeOverlay() {
       {hit && geom ? (
         <div
           class="remove-capsule"
+          ref={capsuleRef}
           role="dialog"
           aria-label="Remove stroke"
           style={{ left: `${geom.capsuleX}px`, top: `${geom.capsuleY}px` }}
@@ -329,8 +357,14 @@ function highlightGeometry(hit: PendingHit): HighlightGeometry | null {
 
   // Anchor the capsule beside the tap, biased up and to the right, and keep it
   // on screen — a hit near an edge must not push it out of the viewport.
-  const capsuleX = Math.max(12, Math.min(hit.clientX + 16, window.innerWidth - 320));
-  const capsuleY = Math.max(12, Math.min(hit.clientY - 44, window.innerHeight - 80));
+  // The position the capsule WANTS: beside the tap, biased up and to the right.
+  // Keeping it on screen is done after layout by `useCapsuleClamp`, because it
+  // needs the capsule's real width — the text is "Stroke on <name> · N images"
+  // with `white-space: nowrap`, so the width depends on the layer's name and
+  // cannot be known here. It was clamped against a hardcoded 320px guess, which
+  // put the capsule 5.8px off the right edge of a 390px phone.
+  const capsuleX = hit.clientX + 16;
+  const capsuleY = hit.clientY - 44;
 
   return {
     d,

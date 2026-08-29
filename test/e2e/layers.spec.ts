@@ -733,6 +733,31 @@ test.describe("phone", () => {
     expect(await strokeCount(page)).toBe(0);
   });
 
+  test("remove-stroke works from the dock, with the capsule on screen", async ({ page }) => {
+    // The phone branch renders its OWN copy of the panel and the overlay, and
+    // nothing else here exercises the tool at this width. The capsule is
+    // position:fixed and anchored to the tap, so on a 390px viewport it is the
+    // one that can most easily be clamped off-screen.
+    await drawOnCanvas(page, 0, { stable: true });
+    expect(await strokeCount(page)).toBe(1);
+
+    await page.locator(".dock").getByRole("button", { name: "Remove stroke" }).click();
+    const box = (await page.locator(".canvas-host canvas").last().boundingBox())!;
+    await page.mouse.click(
+      box.x + box.width / 2 + Math.sin(4) * 70,
+      box.y + box.height / 2 - 90 + 84,
+    );
+
+    const capsule = page.locator(".remove-capsule");
+    await expect(capsule).toBeVisible();
+    const cb = (await capsule.boundingBox())!;
+    expect(cb.x, "capsule pushed off the left edge").toBeGreaterThanOrEqual(0);
+    expect(cb.x + cb.width, "capsule pushed off the right edge").toBeLessThanOrEqual(390);
+
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    expect(await strokeCount(page)).toBe(0);
+  });
+
   test("the strip chip and the dock button open the same one panel", async ({ page }) => {
     const dockBtn = page.locator(".dock").getByRole("button", { name: LAYERS_BTN });
     const stripChip = page.locator(".strip").getByRole("button", { name: LAYERS_BTN });
