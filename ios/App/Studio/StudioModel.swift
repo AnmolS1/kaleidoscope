@@ -578,8 +578,7 @@ final class StudioModel: ObservableObject {
         //
         // T13 replaces the DEFAULT with the value from /api/me.plus; this
         // override stays useful for tests either way.
-        let cap = ProcessInfo.processInfo.environment["KALEIDO_LAYER_CAP"].flatMap(Int.init) ?? layerCap
-        doc = DrawingDoc(layerCap: cap)
+        doc = DrawingDoc(layerCap: Self.capOverride ?? layerCap)
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: Keys.pressurePreset), let p = PressurePreset(rawValue: raw) {
             pressurePreset = p
@@ -657,11 +656,27 @@ final class StudioModel: ObservableObject {
     var canAddLayer: Bool { doc.canAddLayer }
     var drawing: DrawingV2 { doc.drawing }
 
+    /// A `KALEIDO_LAYER_CAP` launch override, read once.
+    ///
+    /// It has to be consulted HERE and not only in `init`, because `RootView`
+    /// pushes `/api/me.plus`'s value in a `.task` a moment after launch — so an
+    /// init-only override was silently overwritten before anything could read
+    /// it, and the hook was dead. That is not hypothetical: it made two
+    /// `LayerCapUITests` cases fail with "the header must follow the override",
+    /// which went unnoticed because concurrent runs on a shared simulator were
+    /// producing a different failure set every time.
+    private static let capOverride: Int? =
+        ProcessInfo.processInfo.environment["KALEIDO_LAYER_CAP"].flatMap(Int.init)
+
     /// T13 calls this once `/api/me.plus` lands. Raising the cap never changes an
     /// existing document; it only unlocks the add affordance.
+    ///
+    /// The launch override WINS over the server's value — it exists so a test or
+    /// a screenshot pass can pin the cap, and being overridable by a background
+    /// fetch would defeat the point.
     func setLayerCap(_ n: Int) {
         objectWillChange.send()
-        doc.setLayerCap(n)
+        doc.setLayerCap(Self.capOverride ?? n)
     }
 
     @discardableResult func addLayer() -> String? { mutateReturning { $0.addLayer() } }

@@ -2,28 +2,21 @@ import XCTest
 
 /// The layers panel at both caps (DESIGN.md §3, frames `LayersStates` 1 and 2).
 ///
-/// 🔴 **AN iPAD SUITE**, like `StudioRailLayoutUITests`. It asserts the
-/// regular-width panel — the 264pt card, its header and its footnote — so a
-/// compact-height iPhone is a layout it was never written for. 4/4 on an iPad;
-/// `testAddAtTheFreeCapDoesNotAddALayer` fails on an iPhone in landscape,
-/// where the coordinate tap on the disabled chip lands somewhere that commits a
-/// stroke and the canvas reports 4 rather than 3.
+/// Runs on any device. An earlier note here called this an iPad suite and
+/// blamed an iPhone-only tap falling through to the canvas. **Both claims were
+/// wrong**, and the way they were wrong is worth keeping:
 ///
-/// That iPhone behaviour is UNDIAGNOSED, not dismissed: it may be the tap
-/// resolving outside the panel, or the panel failing to absorb a hit where a
-/// disabled control sits — which would be a real defect, since a user told they
-/// cannot add a layer would get a dot instead. Adding `.contentShape` to the
-/// panel did not change it, so the obvious explanation is wrong and it wants a
-/// proper look rather than a speculative patch.
+/// - The real failure was `KALEIDO_LAYER_CAP` not taking effect. `RootView`
+///   pushes `/api/me.plus`'s cap in a `.task` shortly after launch, which
+///   overwrote an init-only override before anything read it. The override is
+///   consulted in `setLayerCap` now, so it wins.
+/// - The evidence was scrambled by **shared-simulator contention**: several
+///   agents resolved `-destination` from `simctl list devices available` and
+///   landed on the same device, so concurrent runs produced a different failure
+///   set each time — 1 of 4, then 4 of 4, then 2 of 4, in suites nobody had
+///   touched. Run iOS suites on a private simulator (`xcrun simctl create`)
+///   before believing any red result.
 ///
-/// `KALEIDO_LAYER_CAP` is a launch-env override on `StudioModel.init`. Two
-/// classes of state hang off it and each is asserted here, because the free cap
-/// is what the demo runs at by default and it is easy to ship the locked panel
-/// believing it is the unlocked one.
-///
-/// The two tests are each other's control: every assertion in one is the negation
-/// of an assertion in the other, so neither can pass by reading a panel that
-/// never rendered.
 final class LayerCapUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
