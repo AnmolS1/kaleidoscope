@@ -5,9 +5,14 @@ import SwiftUI
 /// deletion. Also hosts the widget walkthrough + About.
 struct YouView: View {
     @EnvironmentObject var auth: AuthModel
+    @EnvironmentObject var plus: PlusStore
     @State private var showAuth = false
     @State private var confirmDelete = false
     @State private var confirmSignOut = false
+    @State private var showPlus = false
+    /// The sheet was opened by the "Restore purchase" row, so it should start a
+    /// restore rather than wait to be told.
+    @State private var plusRestoreOnAppear = false
 
     /// Avatar/rosette diameter, scaled with Dynamic Type.
     @ScaledMetric(relativeTo: .body) private var avatarSize: CGFloat = 48
@@ -23,6 +28,7 @@ struct YouView: View {
                         }
                     }
                 }
+                plusSection
                 Section("Explore") {
                     NavigationLink { AddWidgetHelp() } label: {
                         Label("Add the widget", systemImage: "rectangle.3.group")
@@ -45,6 +51,24 @@ struct YouView: View {
             .navigationTitle("You")
             .onAppear { if ProcessInfo.processInfo.environment["KALEIDO_AUTH"] == "1" { showAuth = true } }
             .sheet(isPresented: $showAuth) { AuthSheet().environmentObject(auth) }
+            .sheet(isPresented: $showPlus) {
+                PlusSheet(
+                    // "Switch account" and "Sign in to continue" both end up in
+                    // the same place; only the starting session differs.
+                    onSwitchAccount: {
+                        Task {
+                            // Sign out FIRST, or signing back in returns to the
+                            // very account the purchase cannot be used on.
+                            await auth.signOut()
+                            showAuth = true
+                        }
+                    },
+                    onSignIn: { showAuth = true },
+                    restoreOnAppear: plusRestoreOnAppear
+                )
+                .environmentObject(auth)
+                .environmentObject(plus)
+            }
             .alert("Sign out?", isPresented: $confirmSignOut) {
                 Button("Sign out", role: .destructive) { Task { await auth.signOut() } }
                 Button("Cancel", role: .cancel) {}
@@ -58,6 +82,37 @@ struct YouView: View {
         }
     }
 
+    /// Hidden entirely while `plus.enabled` is false — a nil `plus` block (no
+    /// `/api/me` yet, a failed call, an older Worker) counts as false, so the
+    /// gate fails CLOSED and an unapproved IAP is invisible.
+    @ViewBuilder
+    private var plusSection: some View {
+        if PlusSheetInput.surfaceVisible(auth.plus) {
+            Section {
+                Button {
+                    plusRestoreOnAppear = false
+                    showPlus = true
+                } label: {
+                    Label(auth.plus?.active == true ? "Kaleidoscope Plus" : "Get Kaleidoscope Plus",
+                          systemImage: "sparkles.rectangle.stack")
+                }
+                Button {
+                    // Opens the sheet AND runs the restore, so the answer lands
+                    // somewhere the user can read it. A row that silently
+                    // succeeded or silently found nothing looks identical.
+                    plusRestoreOnAppear = true
+                    showPlus = true
+                } label: {
+                    Label(PlusCopy.restore, systemImage: "arrow.clockwise")
+                }
+            } footer: {
+                if auth.plus?.active == true {
+                    Text(PlusCopy.purchased)
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var accountSection: some View {
         Section {
@@ -66,7 +121,17 @@ struct YouView: View {
                     avatar(user)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(user.name ?? "Signed in").font(.headline).foregroundStyle(Blueprint.graphite)
-                        Text("Signed in").font(.caption).foregroundStyle(.secondary)
+                        // `AccountAndCap`: the mono counter under the name. The
+                        // frame's price chip beside "Kaleidoscope Plus" is web
+                        // only (3.1.1) and is deliberately absent. `publicCap` is
+                        // genuinely nullable and null means "no cap", not zero.
+                        if let plusState = auth.plus, plusState.enabled, let cap = plusState.publicCap {
+                            Text(PlusCopy.publicPostsLine(count: plusState.publicCount, cap: cap))
+                                .font(Blueprint.mono(.caption))
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Signed in").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 Button { confirmSignOut = true } label: {

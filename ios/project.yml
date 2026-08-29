@@ -18,7 +18,7 @@ settings:
     "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
     # Widget extensions are simpler/more robust without the Preview debug-dylib split.
     ENABLE_DEBUG_DYLIB: NO
-    MARKETING_VERSION: "1.1"
+    MARKETING_VERSION: "1.2"
     # Fallback build number. The per-target postBuildScripts OVERRIDE this at
     # build/archive time with the git commit count (auto-increment). This literal is
     # only used if git is unavailable; keep it ≥ the last App Store Connect upload.
@@ -53,6 +53,13 @@ targets:
     # XcodeGen-generated and the .xcodeproj is gitignored — a manual capability
     # would be wiped on regenerate. Anmol still enables it on the App ID in the
     # Developer portal (Part C) so device provisioning includes it.
+    # In-App Purchase (`dev.ponderance.kaleidoscope.plus`, non-consumable) is
+    # deliberately NOT listed below. On iOS it is an App ID *service*, enabled in
+    # the Developer portal, and Xcode's capability row writes nothing into the
+    # entitlements file — StoreKit 2 links and runs without one. Inventing a key
+    # here would still sign under the simulator's ad-hoc "-" identity and fail
+    # only at device/archive signing. Anmol's side: the IAP on the App ID plus an
+    # active Paid Applications agreement in ASC (T15 prerequisites).
     entitlements:
       path: App/Kaleidoscope.entitlements
       properties:
@@ -95,7 +102,16 @@ targets:
       - target: RandomWidget
       - package: KaleidoEngine
     # Shared scheme so `xcodebuild -scheme Kaleidoscope` works in CI / headless.
+    #
+    # `storeKitConfiguration` binds Kaleidoscope.storekit to the RUN action, which
+    # is what makes `Product.products(for:)` resolve — and therefore what makes
+    # `product.displayPrice` non-nil — in a simulator with no App Store account.
+    # It applies ONLY when Xcode launches the app: `simctl launch` ignores it, so
+    # a screenshot run driven from the CLI sees `product == nil`. The unit tests
+    # do not rely on it either; they drive `SKTestSession`, which loads the same
+    # file out of the test bundle (see the resource entry on KaleidoscopeUnitTests).
     scheme:
+      storeKitConfiguration: Kaleidoscope.storekit
       testTargets:
         - KaleidoscopeUnitTests
         - KaleidoscopeUITests
@@ -109,6 +125,11 @@ targets:
     platform: iOS
     sources:
       - UnitTests
+      # `SKTestSession(configurationFileNamed:)` reads the .storekit file out of a
+      # loaded bundle, so the file has to be COPIED INTO the test bundle — the
+      # scheme's Run-action reference above does not put it there.
+      - path: Kaleidoscope.storekit
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ponderance.kaleidoscope.unittests

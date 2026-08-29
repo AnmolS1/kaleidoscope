@@ -1,0 +1,38 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "KALEIDO01",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "20260010",
+      "localizations" : [
+        {
+          "description" : "Eight layers and unlimited public posts. One-time.",
+          "displayName" : "Kaleidoscope Plus",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "dev.ponderance.kaleidoscope.plus",
+      "referenceName" : "Kaleidoscope Plus",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+  },
+  "subscriptionGroups" : [],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
