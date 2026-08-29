@@ -52,7 +52,10 @@ export function Canvas() {
         onHiddenLayerRefusal: (layerId, layerName) => {
           showToast({
             icon: <EyeOffIcon />,
-            text: `"${layerName}" is hidden, so nothing was drawn.`,
+            // Typographic quotes, matching the Nudges artboard. DESIGN.md's prose
+            // line uses straight ones, but it states that the frames are the spec
+            // for copy, and this string is user-visible.
+            text: `“${layerName}” is hidden, so nothing was drawn.`,
             cta: {
               label: "Show layer",
               onClick: () => S.scene.value?.setLayerVisible(layerId, true),

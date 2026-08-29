@@ -41,7 +41,18 @@ permalink.get("/p/:id", async (c) => {
   const id = c.req.param("id");
   const shell = await indexHtml(c);
   const art = id ? await getArtworkWithAuthor(c.env, id) : null;
-  if (!art || art.visibility === "private") return shell;
+  // A COPY, not the shell itself. `ASSETS.fetch` hands back a response whose
+  // headers are immutable, and the `securityHeaders` middleware then sets CSP on
+  // whatever this returns — which throws `Can't modify immutable headers` and
+  // turns the miss into a 500.
+  //
+  // It only bit the paths that skip HTMLRewriter, because `.transform()`
+  // produces a fresh, mutable response. So every public permalink worked and
+  // every private one, and every unknown id, answered 500 in production: sharing
+  // a stale link, or saving a piece as Private, landed the user on Internal
+  // Server Error. Verified against production before the fix
+  // (`/p/doesnotexist99` → 500, a valid public id → 200).
+  if (!art || art.visibility === "private") return new Response(shell.body, shell);
 
   const base = c.env.PUBLIC_BASE_URL;
   const title = esc(`${art.title} — Kaleidoscope`);

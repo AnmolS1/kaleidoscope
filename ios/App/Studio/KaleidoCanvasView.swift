@@ -502,6 +502,7 @@ final class KaleidoCanvasView: UIView {
             // Background fills the whole view; only the art is zoomed, so the
             // fill happens before the transform.
             KaleidoRenderer.fillBackground(model.background, in: c, size: size)
+            drawGrid(in: c, size: size, bg: model.background, model: model)
             applyViewTransform(c, model: model)
             if model.showGuides {
                 drawGuides(in: c, size: size, sym: model.activeLayer.sym, bg: model.background)
@@ -518,6 +519,66 @@ final class KaleidoCanvasView: UIView {
         var s = stroke
         s.pts += predictedPts
         return s
+    }
+
+    /// Graph-paper grid — the mirror of `strokeGridLines` in scene.ts.
+    ///
+    /// Drawn in SCREEN space rather than under the view transform, exactly as
+    /// the web does it: the spacing scales with zoom and the phase follows the
+    /// pan, so the paper belongs to the drawing and moves with it, but the line
+    /// width stays 1pt and every line is snapped. Snapping in drawing space and
+    /// then scaling by a fractional zoom lands the line back off the pixel grid
+    /// and it goes soft.
+    ///
+    /// It has to be painted into the committed cache between the opaque
+    /// background fill and the transform — the fill would cover anything drawn
+    /// under it, which is why this could not be added from a view above.
+    private func drawGrid(in ctx: CGContext, size: CGSize, bg: Background, model: StudioModel) {
+        // The same rgba values as scene.ts's THEME, which is what the design
+        // frames were drawn from.
+        let fine = bg == .dark
+            ? UIColor(red: 130 / 255, green: 169 / 255, blue: 206 / 255, alpha: 0.08)
+            : UIColor(red: 46 / 255, green: 94 / 255, blue: 140 / 255, alpha: 0.07)
+        let bold = bg == .dark
+            ? UIColor(red: 130 / 255, green: 169 / 255, blue: 206 / 255, alpha: 0.16)
+            : UIColor(red: 46 / 255, green: 94 / 255, blue: 140 / 255, alpha: 0.13)
+        strokeGridLines(stepDrawing: 24, color: fine, in: ctx, size: size, model: model)
+        strokeGridLines(stepDrawing: 24 * 5, color: bold, in: ctx, size: size, model: model)
+    }
+
+    private func strokeGridLines(stepDrawing: CGFloat, color: UIColor, in ctx: CGContext,
+                                 size: CGSize, model: StudioModel) {
+        let step = stepDrawing * model.viewScale
+        // Fully zoomed out the step is 24pt, so this never fires in practice —
+        // but a non-finite view would otherwise loop forever.
+        guard step.isFinite, step > 0.5 else { return }
+
+        // Screen position of the drawing's centre: the phase every line is
+        // measured from, so the grid pans with the art instead of the viewport.
+        let originX = size.width / 2 + model.viewOffset.width
+        let originY = size.height / 2 + model.viewOffset.height
+
+        ctx.saveGState()
+        ctx.setStrokeColor(color.cgColor)
+        ctx.setLineWidth(1)
+        ctx.beginPath()
+        // First line at or after the leading edge: origin + k*step >= 0.
+        var x = originX + (-originX / step).rounded(.up) * step
+        while x < size.width {
+            let sx = x.rounded() + 0.5
+            ctx.move(to: CGPoint(x: sx, y: 0))
+            ctx.addLine(to: CGPoint(x: sx, y: size.height))
+            x += step
+        }
+        var y = originY + (-originY / step).rounded(.up) * step
+        while y < size.height {
+            let sy = y.rounded() + 0.5
+            ctx.move(to: CGPoint(x: 0, y: sy))
+            ctx.addLine(to: CGPoint(x: size.width, y: sy))
+            y += step
+        }
+        ctx.strokePath()
+        ctx.restoreGState()
     }
 
     /// Faint wedge guides for the ACTIVE layer's symmetry — they are an aid for

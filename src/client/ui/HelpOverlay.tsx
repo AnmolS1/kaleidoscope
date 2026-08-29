@@ -21,13 +21,16 @@ export interface Shortcut {
   /**
    * Whether a handler actually honours the key today.
    *
-   * `E` (remove-stroke) and `L` (layers panel) are in DESIGN.md's strip but
-   * their tool and panel are **T06c's**, not this task's — there is no
-   * `remove` member of `BrushTool` and no layers-panel signal to toggle. An
-   * unavailable entry is filtered out of both surfaces rather than shipped as a
-   * dead key that the strip advertises: a shortcut strip that lies is worse
-   * than a short one. T06c flips these two flags and adds the two `case`s in
-   * App.tsx's key handler; nothing else has to move.
+   * An unavailable entry is filtered out of BOTH surfaces rather than shipped
+   * as a dead key the strip advertises: a shortcut strip that lies is worse
+   * than a short one. `E` and `L` sat here as `false` for one wave while their
+   * tool and panel were being built, and were flipped in the same commit that
+   * added their `case`s to App.tsx — flipping a flag without its handler is
+   * exactly what this field exists to prevent.
+   *
+   * (T06b expected `E` to need a `remove` member of `BrushTool`. There is none,
+   * and there must not be: `BrushTool` IS the wire format. Remove-stroke is a
+   * separate `removeMode` signal — see the header of `RemoveStroke.tsx`.)
    */
   available: boolean;
 }
@@ -35,8 +38,8 @@ export interface Shortcut {
 export const SHORTCUTS: Shortcut[] = [
   { keys: ["B"], label: "brush", long: "Solid brush", strip: true, available: true },
   { keys: ["G"], label: "glow", long: "Glow brush", strip: true, available: true },
-  { keys: ["E"], label: "remove", long: "Remove-stroke tool", strip: true, available: false },
-  { keys: ["L"], label: "layers", long: "Layers panel", strip: true, available: false },
+  { keys: ["E"], label: "remove", long: "Remove-stroke tool", strip: true, available: true },
+  { keys: ["L"], label: "layers", long: "Layers panel", strip: true, available: true },
   { keys: [",", "."], label: "segments", long: "Symmetry segments − / +", strip: true, available: true },
   { keys: ["[", "]"], label: "size", long: "Brush size − / +", strip: true, available: true },
   { keys: ["⌘Z"], label: "undo", long: "Undo (⇧ to redo)", strip: true, available: true },

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { drawOnCanvas, submitSavePiece, testLogin, uniqueSub } from "./helpers";
+import { drawOnCanvas, openSave, submitSavePiece, testLogin, uniqueSub } from "./helpers";
 
 // The studio chrome is three different layouts (DESIGN.md §2): a rail at
 // regular width, a dock + scrolling strip at compact width, and the rail
@@ -137,10 +137,12 @@ test.describe("compact width (phone portrait)", () => {
     // Draw, then open Save — it docks as a bottom sheet with the action in view
     // (the bug this fixes pushed Save/Cancel off-screen).
     await drawOnCanvas(page, 4);
-    await page.getByLabel("Save to gallery").click();
-    await expect(page.getByRole("dialog", { name: "Save to gallery" })).toBeVisible();
+    // Through `openSave`, so the in-viewport assertion below is made against the
+    // real form and not the pre-flight placeholder (which is short enough to fit
+    // on any screen and would pass the very check this test exists for).
+    await openSave(page);
     await page.getByLabel("Title").fill("Mobile Mandala");
-    await expect(page.getByRole("button", { name: "Save piece" })).toBeInViewport();
+    await expect(page.locator(".save-actions .btn-primary")).toBeInViewport();
 
     // Turnstile test key auto-issues a token; save once it's ready, land on the permalink.
     await submitSavePiece(page);
@@ -275,11 +277,12 @@ test.describe("regular width (rail)", () => {
     const strip = page.locator(".shortcut-strip");
     await expect(strip).toBeVisible();
     const keys = await strip.locator("kbd").allTextContents();
-    // DESIGN.md's strip. `E` (remove-stroke) and `L` (layers) are T06c's tool
-    // and panel; they are filtered out of the strip until their handlers exist
-    // rather than advertised as dead keys. This assertion is what fails if
-    // someone adds them to the strip without adding the handler.
-    expect(keys).toEqual(["B", "G", ",", ".", "[", "]", "⌘Z", "?"]);
+    // DESIGN.md's strip, in full now that T06c has landed `E` (remove-stroke)
+    // and `L` (layers) — they were filtered out while their handlers did not
+    // exist, rather than advertised as dead keys. This assertion is what fails
+    // if someone adds a key to the strip without adding the handler. The keys
+    // themselves are exercised in layers.spec.ts, which owns that tool and panel.
+    expect(keys).toEqual(["B", "G", "E", "L", ",", ".", "[", "]", "⌘Z", "?"]);
 
     // …and the keys the strip claims actually do something.
     // Scoped to the rail: the brush popover carries the same trio, so an

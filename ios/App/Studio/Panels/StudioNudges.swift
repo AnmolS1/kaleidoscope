@@ -20,11 +20,8 @@ enum StudioNudge: Equatable {
     case switchedLayer(String)
     /// A stroke was refused because the active layer is hidden. Raised from
     /// `StudioModel.refusedHiddenLayer`, which the commit guard sets.
-    ///
-    /// Carries the id as well as the name: the name is what the sentence quotes,
-    /// the id is what "Show layer" acts on. Layer names are user-editable and
-    /// need not be unique, so the two cannot be the same field.
-    case hiddenLayer(id: String, name: String)
+    /// (layerId, layerName): the name is shown, the ID is what the CTA acts on.
+    case hiddenLayer(String, String)
 
     var systemImage: String {
         switch self {

@@ -53,7 +53,7 @@ test("drawing on a hidden layer is refused, and SAYS SO", async ({ page }) => {
   expect(await strokeCounts(page)).toEqual({ total: 0, visible: 0 });
 
   // ...and the user is told, by name.
-  await expect(page.getByText('"Highlights" is hidden, so nothing was drawn.')).toBeVisible();
+  await expect(page.getByText("“Highlights” is hidden, so nothing was drawn.")).toBeVisible();
 });
 
 test("the toast's CTA shows the layer, and drawing then works", async ({ page }) => {
@@ -79,3 +79,44 @@ test("a visible layer draws normally and shows no toast", async ({ page }) => {
   expect(await strokeCounts(page)).toEqual({ total: 1, visible: 1 });
   await expect(page.getByText("is hidden, so nothing was drawn.")).toHaveCount(0);
 });
+
+// The CTA must act on the layer's ID, not look it up by NAME.
+//
+// Rename lets a user give two layers the same name, and a name lookup then
+// unhides whichever matched first — possibly a layer they never drew on, while
+// the one that refused stays hidden and the next stroke is refused again. Both
+// clients had this: the web fixed it by widening the callback to carry the ID,
+// iOS by carrying it on the published refusal.
+//
+// The assertion is deliberately about the OUTCOME rather than about which row
+// changed: after "Show layer", the next stroke must actually land. A test that
+// checked "some layer became visible" passes on the bug.
+test("Show layer unhides the layer that refused, even when names collide", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForSelector(".canvas-host canvas");
+
+  await page.evaluate(async () => {
+    const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
+    const S = await load("/src/client/state.ts");
+    const scene = S.scene.value;
+    // A second layer, deliberately given the SAME name as the one we hide.
+    scene.addLayer();
+    const [first, second] = scene.getDrawing().layers.map((l: { id: string }) => l.id);
+    scene.setLayerName(first, "Highlights");
+    scene.setLayerName(second, "Highlights");
+    // Draw on the SECOND one, then hide it. A name lookup finds the first.
+    scene.setActiveLayer(second);
+    scene.setLayerVisible(second, false);
+  });
+
+  await drawOne(page);
+  expect(await strokeCounts(page)).toEqual({ total: 0, visible: 0 });
+
+  await page.getByRole("button", { name: "Show layer" }).click();
+  await drawOne(page);
+
+  // With a name lookup this is still {0, 0}: the wrong "Highlights" was shown
+  // and the active layer is still hidden.
+  expect(await strokeCounts(page)).toEqual({ total: 1, visible: 1 });
+});
+
