@@ -526,15 +526,26 @@ final class StudioModel: ObservableObject {
 
     @Published var showPencilBanner: Bool = false
 
-    /// The name of the layer that refused the last stroke because it is hidden,
-    /// or nil. The studio raises DESIGN.md §3's nudge from this and clears it.
+    /// The layer that refused the last stroke because it is hidden, or nil. The
+    /// studio raises DESIGN.md §3's nudge from this and clears it.
     ///
-    /// A NAME rather than an id: the nudge quotes it (`"Highlights" is hidden…`)
-    /// and it is captured before the attempt, so a rename or a reorder between
-    /// the refusal and the nudge cannot make the sentence describe a different
-    /// layer than the one that refused. Same shape as the web's
-    /// `onHiddenLayerRefusal(layerName)`.
-    @Published var refusedHiddenLayer: String?
+    /// BOTH halves, and they do different jobs — same shape as the web's
+    /// `onHiddenLayerRefusal(layerId, layerName)`:
+    ///
+    /// - `name` is for the SENTENCE (`"Highlights" is hidden…`), captured before
+    ///   the attempt so a rename between the refusal and the nudge cannot make
+    ///   the message describe a different layer.
+    /// - `id` is for the ACTION. A name is not a key: rename lives in the layers
+    ///   panel, so two layers can share one, and resolving the CTA by name then
+    ///   unhides whichever matched first — possibly a layer the user never
+    ///   touched, while the one they drew on stays hidden and the next stroke is
+    ///   refused again.
+    struct HiddenLayerRefusal: Equatable {
+        let id: String
+        let name: String
+    }
+
+    @Published var refusedHiddenLayer: HiddenLayerRefusal?
 
     // View transform (1–8×). Owned here rather than by the view so an export or
     // a save is never affected by it.
@@ -699,7 +710,7 @@ final class StudioModel: ObservableObject {
         guard !stroke.pts.isEmpty else { return }
         let active = doc.activeLayer
         guard active.visible else {
-            refusedHiddenLayer = active.name
+            refusedHiddenLayer = HiddenLayerRefusal(id: active.id, name: active.name)
             return
         }
         mutate { $0.commitStroke(stroke) }

@@ -151,4 +151,78 @@ final class HiddenLayerUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Undo"].firstMatch.isEnabled,
                       "and a real stroke IS an undo step")
     }
+
+    /// **"Show layer" must act on the layer that REFUSED, not on the first layer
+    /// that happens to share its name.**
+    ///
+    /// Layer names are user-editable from the panel and are not unique, so a name
+    /// is not a key. Resolving the CTA by name unhides whichever layer matched
+    /// first in the bottom→top array — possibly one the user never drew on —
+    /// while the layer they did draw on stays hidden and the next stroke is
+    /// refused again, with the button appearing to do nothing.
+    ///
+    /// The demo's three names are distinct, which is exactly why nothing caught
+    /// this: the bug is invisible until two names collide. So the test makes them
+    /// collide, renaming the BOTTOM layer to match the top one — the wrong
+    /// resolution then picks the bottom layer, which is already visible, making
+    /// the CTA a silent no-op.
+    ///
+    /// The assertion is unambiguous even though two rows now read "Gold": if the
+    /// wrong layer was targeted, a `Show Gold` eye remains. And the consequence
+    /// the user would actually feel — the next stroke still refused — is asserted
+    /// too.
+    func testShowLayerActsOnTheRefusingLayerWhenTwoLayersShareAName() {
+        let app = launch()
+
+        app.buttons["Layers"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Glow"].waitForExistence(timeout: 5))
+
+        // Rename the bottom layer (Glow) to "Gold" — double-tap the row, in the
+        // gap between the name and the eye so the row's own gesture gets it.
+        let glowRow = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Layer Glow")).firstMatch
+        XCTAssertTrue(glowRow.exists)
+        glowRow.coordinate(withNormalizedOffset: CGVector(dx: 0.62, dy: 0.5)).doubleTap()
+
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "double-tap opens inline rename")
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12) + "Gold\n")
+
+        // Two layers now share a name. Both eyes read "Hide Gold".
+        let eyes = app.buttons.matching(NSPredicate(format: "label == %@", "Hide Gold"))
+        XCTAssertEqual(eyes.count, 2, "the rename must have produced a real collision")
+
+        // Hide the ACTIVE one — the top row, i.e. the smaller minY.
+        let top = (0..<eyes.count).map { eyes.element(boundBy: $0) }
+            .min { $0.frame.minY < $1.frame.minY } ?? eyes.firstMatch
+        top.tap()
+        app.buttons["Layers"].firstMatch.tap() // close the panel
+
+        // Draw: refused, because the ACTIVE layer is the hidden one.
+        let canvas = app.otherElements["Drawing canvas"].firstMatch
+        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.35))
+            .press(forDuration: 0.1,
+                   thenDragTo: canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.62)))
+
+        let message = "\u{201C}Gold\u{201D} is hidden, so nothing was drawn."
+        XCTAssertTrue(app.staticTexts[message].waitForExistence(timeout: 5))
+        app.buttons["Show layer"].firstMatch.tap()
+
+        // Every layer is visible again. Resolving by NAME would have unhidden the
+        // renamed bottom layer, which was visible already — leaving this eye.
+        app.buttons["Layers"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Ink"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons.matching(
+            NSPredicate(format: "label == %@", "Show Gold")).count, 0,
+            "Show layer must unhide the layer that refused, not its namesake")
+        app.buttons["Layers"].firstMatch.tap()
+
+        // And the consequence the user feels: the next stroke lands.
+        canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.35))
+            .press(forDuration: 0.1,
+                   thenDragTo: canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.62)))
+        XCTAssertEqual(app.otherElements["Drawing canvas"].value as? String,
+                       "9-fold mirror symmetry, 4 strokes, layer Gold of 3",
+                       "after Show layer the same stroke must commit")
+    }
 }

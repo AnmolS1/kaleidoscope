@@ -107,12 +107,13 @@ struct StudioView: View {
             model.dismissPencilBanner()
             nudges.show(.pencilDetected, atRevision: model.revision)
         }
-        .onChange(of: model.refusedHiddenLayer) { _, name in
+        .onChange(of: model.refusedHiddenLayer) { _, refusal in
             // The stroke was refused, so `revision` did NOT move — which is
             // exactly why this nudge is safe to dismiss on the next edit: the
             // next edit is a real one.
-            guard let name else { return }
-            nudges.show(.hiddenLayer(name), atRevision: model.revision)
+            guard let refusal else { return }
+            nudges.show(.hiddenLayer(id: refusal.id, name: refusal.name),
+                        atRevision: model.revision)
             model.clearHiddenLayerRefusal()
         }
         .onChange(of: model.drawWithFinger) { _, canDraw in
@@ -418,11 +419,13 @@ struct StudioView: View {
         switch nudge {
         case .pencilDetected:
             return { panel = .brush; nudges.dismiss() }
-        case .hiddenLayer(let name):
+        case .hiddenLayer(let id, _):
+            // By ID, never by name. Names are user-editable and need not be
+            // unique, so a name lookup can unhide a layer the user never drew
+            // on while the one that actually refused stays hidden — and the
+            // next stroke is refused again, with the CTA still not working.
             return {
-                if let id = model.layers.first(where: { $0.name == name })?.id {
-                    model.setLayerVisible(id, true)
-                }
+                model.setLayerVisible(id, true)
                 nudges.dismiss()
             }
         default:
