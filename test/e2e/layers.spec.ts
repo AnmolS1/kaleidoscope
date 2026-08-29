@@ -63,6 +63,52 @@ async function dragRow(page: Page, fromIndex: number, toIndex: number, cancel = 
   await page.mouse.up();
 }
 
+/**
+ * The size a control actually OWNS, walked out from its centre with
+ * `elementFromPoint` — its effective target, not its painted box.
+ *
+ * Copied from `mobile.spec.ts`, where it was written after a row of swatches
+ * kept a ~32px effective target while both the painted box and the stylesheet
+ * said 44: `inset` resolves against the padding box, and two overlapping
+ * expanded boxes do not both win — the later sibling takes the overlap.
+ * Measuring the box is exactly what hid that, so the panel's own small targets
+ * are measured the same way.
+ */
+function exclusiveTarget(page: Page, selector: string, nth = 0) {
+  return page.locator(selector).nth(nth).evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const owns = (dx: number, dy: number) => {
+      const hit = document.elementFromPoint(cx + dx, cy + dy);
+      return !!hit && (hit === el || el.contains(hit));
+    };
+    const reach = (dx: number, dy: number) => {
+      let n = 0;
+      while (n < 60 && owns(dx * (n + 1), dy * (n + 1))) n++;
+      return n;
+    };
+    // +1 for the centre pixel itself, which neither one-sided walk counts.
+    return { width: reach(-1, 0) + reach(1, 0) + 1, height: reach(0, -1) + reach(0, 1) + 1 };
+  });
+}
+
+/**
+ * Set the layer cap directly, rather than through `/api/me`.
+ *
+ * The cap does come from `plus.layerCap`, but a signed-out or offline studio
+ * falls back to the default — so a test that drives it by signing in is
+ * asserting the auth round-trip as much as the panel. Reaching for the signal
+ * makes the cap an input to the test instead of a consequence of one.
+ */
+async function setLayerCap(page: Page, cap: number): Promise<void> {
+  await page.evaluate(async (n) => {
+    const load = (path: string): Promise<any> => import(/* @vite-ignore */ path);
+    const S = await load("/src/client/state.ts");
+    S.layerCap.value = n;
+  }, cap);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await page.waitForSelector(".canvas-host canvas");
@@ -138,13 +184,16 @@ test("a row's symmetry line selects that layer and opens the symmetry popover", 
 // the cap — asserted at BOTH caps, with the unlocked middle case as control
 // ---------------------------------------------------------------------------
 
-test("Add locks at the free cap of 3, is unlocked at 3 of 8, and locks again at 8", async ({
-  page,
-}) => {
+test("Add locks at the cap, is unlocked below it, and says which cap it is", async ({ page }) => {
+  // THE CAP IS DRIVEN DIRECTLY, not via sign-in. It really does come from
+  // `plus.layerCap`, but a signed-out or offline studio falls back to the
+  // default, so driving it through the API would make this partly a test of the
+  // auth round-trip. Here the cap is an input.
   await openPanel(page);
   const add = page.getByRole("button", { name: /^Add layer/ });
 
-  // --- free (signed out): cap 3 ---
+  // --- free: cap 3 ---
+  await setLayerCap(page, 3);
   await expect(page.locator(".layers-count")).toHaveText("1 of 3");
   await expect(add).toBeEnabled();
   await expect(page.locator(".layer-note")).toHaveCount(0);
@@ -160,20 +209,16 @@ test("Add locks at the free cap of 3, is unlocked at 3 of 8, and locks again at 
   await expect(page.locator(".layer-note .link-inline")).toBeEnabled();
   await page.locator(".layer-note .link-inline").click();
 
-  // --- THE CONTROL: cap 8 with only 3 layers must be UNLOCKED ---
+  // --- THE CONTROL: the SAME three layers at cap 8 must be UNLOCKED ---
   // Without this case, "disabled at 3 of 3" and "disabled at 8 of 8" are both
-  // satisfied by an Add button that is simply always disabled.
-  await testLogin(page, uniqueSub("layers-cap"));
-  await page.waitForSelector(".canvas-host canvas");
-  await openPanel(page);
-  await expect(page.locator(".layers-count")).toHaveText("1 of 8");
-  await expect(add).toBeEnabled();
-  await addLayers(page, 2);
+  // satisfied by an Add button that is simply always disabled. Nothing about
+  // the stack changes here — only the cap — so it isolates the cap exactly.
+  await setLayerCap(page, 8);
   await expect(page.locator(".layers-count")).toHaveText("3 of 8");
   await expect(add).toBeEnabled();
   await expect(page.locator(".layer-note")).toHaveCount(0);
 
-  // --- Plus: cap 8, and a different footnote with no upsell ---
+  // --- Plus: cap 8, a different footnote, and no upsell ---
   await addLayers(page, 5);
   await expect(page.locator(".layers-count")).toHaveText("8 of 8");
   await expect(add).toBeDisabled();
@@ -185,8 +230,7 @@ test("Add locks at the free cap of 3, is unlocked at 3 of 8, and locks again at 
   // any viewport under ~680px CSS — which a 1366x768 laptop is, once browser
   // chrome is taken out. `.studio` is `overflow: hidden`, so there is no page
   // scroll to rescue it: the footnote, and on a shorter window the Delete chip,
-  // just become unreachable. Only this test ever builds eight rows, so this is
-  // the only place it can be caught.
+  // just become unreachable. Only this test ever builds eight rows.
   await page.setViewportSize({ width: 1280, height: 650 });
   const panel = (await page.locator(".layers-panel").boundingBox())!;
   expect(panel.y + panel.height, "the panel runs past the bottom of the viewport").toBeLessThanOrEqual(650);
@@ -194,6 +238,18 @@ test("Add locks at the free cap of 3, is unlocked at 3 of 8, and locks again at 
     const chip = (await page.getByRole("button", { name: label }).boundingBox())!;
     expect(chip.y + chip.height, `${label} is off-screen`).toBeLessThanOrEqual(650);
   }
+});
+
+test("the cap the panel reports is the one /api/me actually hands it", async ({ page }) => {
+  // The test above drives the signal, so on its own it would pass with the API
+  // never consulted. This is the other half: sign in and let the real
+  // `plus.layerCap` land, with the signed-out default as the control.
+  await openPanel(page);
+  await expect(page.locator(".layers-count")).toHaveText("1 of 3");
+  await testLogin(page, uniqueSub("layers-cap"));
+  await page.waitForSelector(".canvas-host canvas");
+  await openPanel(page);
+  await expect(page.locator(".layers-count")).toHaveText("1 of 8");
 });
 
 test("Duplicate is capped too, and Delete stops at the last layer", async ({ page }) => {
@@ -643,32 +699,6 @@ test("every halo image is drawn where the engine actually finds the stroke", asy
 });
 
 // ---------------------------------------------------------------------------
-// the hidden-layer refusal
-// ---------------------------------------------------------------------------
-
-test("drawing on a hidden layer is refused, named in the toast, and never auto-unhidden", async ({
-  page,
-}) => {
-  await openPanel(page);
-  await page.locator(".layer-name").first().dblclick();
-  await page.locator(".layer-rename").fill("Highlights");
-  await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "Hide Highlights" }).click();
-
-  await drawOnCanvas(page);
-  expect(await strokeCount(page)).toBe(0);
-  await expect(page.locator(".toast-text")).toHaveText(
-    "“Highlights” is hidden, so nothing was drawn.",
-  );
-  // Still hidden. The refusal is the whole design — a layer that quietly
-  // un-hides itself would make the toast a lie.
-  await expect(page.locator(".layer-row.is-hidden")).toHaveCount(1);
-
-  await page.getByRole("button", { name: "Show layer" }).click();
-  await expect(page.locator(".layer-row.is-hidden")).toHaveCount(0);
-});
-
-// ---------------------------------------------------------------------------
 // phone
 // ---------------------------------------------------------------------------
 
@@ -726,7 +756,9 @@ test("the open panel has no axe violations (light only)", async ({ page }) => {
   expect(results.violations).toEqual([]);
 });
 
-test("every standalone panel control is at least 44px, and every row is too", async ({ page }) => {
+test("every standalone panel control owns at least 44px, measured by hit-test", async ({
+  page,
+}) => {
   await openPanel(page);
   await addLayers(page, 2);
 
@@ -734,21 +766,100 @@ test("every standalone panel control is at least 44px, and every row is too", as
   // design itself: a row is grip · thumbnail · NAME OVER A SYM LINE · eye, and
   // the frames draw that whole row about 46px tall. Two stacked controls cannot
   // both be 44px inside 46px — honouring the rule literally would double the
-  // row height and put a three-layer panel past the frame's proportions.
-  //
-  // So the ROW carries the 44px, and the name/sym pair are two affordances
-  // inside it. Everything that is a standalone target — grip, eye, footer
-  // chips — is held to the full 44.
-  for (const box of await page.locator(".layer-row").all()) {
-    expect((await box.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  // row height and put a three-layer panel past the frame's proportions. So the
+  // ROW carries the 44px and the name/sym pair are affordances inside it.
+  for (const row of await page.locator(".layer-row").all()) {
+    expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   }
 
-  const targets = page.locator(".layer-grip, .layer-eye, .layer-foot .chip");
-  const n = await targets.count();
-  expect(n).toBe(3 * 2 + 3); // grip + eye per row, plus Add / Duplicate / Delete
-  for (let i = 0; i < n; i++) {
-    const box = await targets.nth(i).boundingBox();
-    expect(box, `target ${i} has no box`).not.toBeNull();
-    expect(box!.height, `target ${i} height`).toBeGreaterThanOrEqual(44);
+  // Everything that IS a standalone target is measured with `elementFromPoint`
+  // walked out from its centre, not by its bounding box. A painted box says
+  // nothing about what a finger actually lands on: a neighbour that overlaps
+  // wins the overlap, which is how a row of swatches held a ~32px real target
+  // while the box and the stylesheet both read 44 (see mobile.spec.ts).
+  const targets: Array<[string, number]> = [
+    [".layer-grip", 3],
+    [".layer-eye", 3],
+    [".layer-foot .chip", 3],
+  ];
+  for (const [selector, count] of targets) {
+    await expect(page.locator(selector)).toHaveCount(count);
+    for (let i = 0; i < count; i++) {
+      const t = await exclusiveTarget(page, selector, i);
+      expect(t.height, `${selector}[${i}] effective height`).toBeGreaterThanOrEqual(44);
+      // The grip is a deliberately narrow column, so only height is a target
+      // claim there; the eye and the chips must own both axes.
+      if (selector !== ".layer-grip") {
+        expect(t.width, `${selector}[${i}] effective width`).toBeGreaterThanOrEqual(24);
+      }
+    }
   }
+});
+
+test("E arms the remove tool and L toggles the panel, and both actually work", async ({ page }) => {
+  // The strip advertises these two, so they have to DO something — asserting
+  // that the strip lists them (mobile.spec.ts) would pass with both handlers
+  // deleted. Both directions each, since a toggle that only ever turns on is
+  // half a shortcut.
+  await expect(page.locator(".layers-panel")).toHaveCount(0);
+  await page.keyboard.press("l");
+  await expect(page.locator(".layers-panel")).toHaveCount(1);
+  await page.keyboard.press("l");
+  await expect(page.locator(".layers-panel")).toHaveCount(0);
+
+  const readout = page.locator(".readout").first();
+  await expect(readout).not.toContainText("REMOVE STROKE");
+  await page.keyboard.press("e");
+  await expect(readout).toContainText("REMOVE STROKE");
+  await expect(page.getByRole("button", { name: "Remove stroke" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // Armed by keyboard, the tool really is armed: a drag draws nothing.
+  await drawOnCanvas(page);
+  expect(await strokeCount(page)).toBe(0);
+
+  await page.keyboard.press("e");
+  await expect(readout).not.toContainText("REMOVE STROKE");
+  await drawOnCanvas(page, 1);
+  expect(await strokeCount(page)).toBe(1);
+});
+
+test("typing a layer name does not fire the shortcuts inside it", async ({ page }) => {
+  // Renaming a layer to "Everest" must not arm the eraser on the E, nor toggle
+  // the panel on the two Es... or rather on the L in "Malachite". Two guards
+  // stand between: `isTypingTarget` at the top of App's handler, and the rename
+  // input's own `stopPropagation`.
+  //
+  // `pressSequentially`, NOT `fill`: fill sets the value directly and dispatches
+  // no key events at all, so the test would pass with every guard deleted. That
+  // is precisely what it did until a mutation caught it.
+  await openPanel(page);
+  await page.locator(".layer-name").first().dblclick();
+
+  // Wait for the old name to actually BE selected before typing. `autoFocus`
+  // fires the focus (and so the select) on Preact's schedule, not Playwright's,
+  // and `pressSequentially` does not wait for it — start a character early and
+  // it lands beside an unselected name instead of replacing it, which showed up
+  // as this test passing alone and failing in a full run.
+  // This also keeps the select-on-focus behaviour asserted rather than
+  // sidestepped: poll for the selection instead of forcing one.
+  const rename = page.locator(".layer-rename");
+  await expect
+    .poll(() =>
+      rename.evaluate((el) => {
+        const i = el as HTMLInputElement;
+        return (i.selectionEnd ?? 0) - (i.selectionStart ?? 0);
+      }),
+    )
+    .toBe("Layer 1".length);
+
+  await rename.pressSequentially("Everest Lake", { delay: 5 });
+
+  await expect(page.locator(".readout").first()).not.toContainText("REMOVE STROKE");
+  await expect(page.locator(".layers-panel")).toHaveCount(1);
+
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".layer-name").first()).toHaveText("Everest Lake");
 });

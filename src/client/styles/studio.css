@@ -347,12 +347,19 @@
   padding: 0;
   transition: transform 0.08s ease;
 }
-/* A 24px dot with a 44px hit area — the visual stays exactly as specified while
-   the touch target clears the minimum. */
+/* A 24px dot with a 44px hit area. The expansion only works if neighbours are
+   ≥ 44px apart: two overlapping expanded boxes do not both win, the later
+   sibling takes the overlap, so tightly-spaced swatches silently keep a ~32px
+   effective target while looking like they have 44. Measured, not assumed —
+   probing 20px right of a swatch's centre in an 8px-gap row returns the NEXT
+   swatch. Hence the 20px spacing wherever swatches are laid out below. */
 .swatch::before {
   content: "";
   position: absolute;
-  inset: -10px;
+  /* -12, not -10: `inset` resolves against the PADDING box, and .swatch has a
+     2px border, so the pseudo-element grows from 20px — `-10px` yields a 40px
+     target that measures and looks like it should be 44. */
+  inset: -12px;
   border-radius: 50%;
 }
 .swatch:hover {
@@ -697,9 +704,14 @@
 .pop-swatches {
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 10px;
-  width: auto;
-  min-width: 176px;
+  /* 22px, not the 10px a mouse would want: this popover is the colour picker on
+     an iPad too, and anything under 22 makes each swatch's expanded hit box
+     touch its neighbour's, which hands the overlap to the later sibling.
+     Wrapping to two rows is the cost. */
+  gap: 22px;
+  /* Inherit the 280px card width rather than shrink-wrapping: at 22px spacing a
+     shrink-wrapped card wrapped to three cramped rows. */
+  min-width: 0;
 }
 .hair {
   width: 100%;
@@ -918,6 +930,11 @@ kbd {
 }
 .strip .swatch {
   flex: 0 0 auto;
+  /* 24px dot + 22px of gap = 46px centre-to-centre. 44px exactly is not enough:
+     adjacent 44px boxes then share an edge and the later sibling takes it, which
+     measures as 39px of exclusive target. The strip scrolls, so the extra width
+     costs scroll, not reach. */
+  margin-right: 14px;
 }
 .strip .chip {
   flex: 0 0 auto;
@@ -977,7 +994,7 @@ kbd {
   bottom: 14px;
   display: none;
   align-items: center;
-  gap: 10px;
+  gap: 22px;
 }
 .corner-strip .readout {
   height: 26px;

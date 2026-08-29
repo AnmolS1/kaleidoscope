@@ -32,13 +32,8 @@ import { Link } from "./Link";
 import { PonderanceBacklink } from "./PonderanceBacklink";
 import { stripShortcuts } from "./HelpOverlay";
 import { showToast } from "./Toast";
-import {
-  LayersPanel,
-  RemoveStrokeOverlay,
-  clearRemoveHighlight,
-  layersOpen,
-  removeMode,
-} from "./LayersPanel";
+import { LayersPanel, layersOpen } from "./LayersPanel";
+import { RemoveStrokeOverlay, clearRemoveHighlight, removeMode } from "./RemoveStroke";
 
 const STAMP = () => new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
 
