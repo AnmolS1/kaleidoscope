@@ -1,0 +1,156 @@
+/* Kaleidoscope Plus sheet (DESIGN.md §5). Imported from PlusSheet.tsx, the way
+   layers.css is imported from LayersPanel.tsx, so the sheet carries its own
+   styles instead of adding a line to main.tsx.
+
+   Every rule that overrides a shared one uses BOTH class names
+   (`.overlay-card.plus-card`) rather than relying on import order: which of the
+   two stylesheets the bundler emits first is not something this file gets to
+   decide, and layers.css already shipped that bug once. */
+
+.overlay-card.plus-card {
+  /* §5: the sheet is 400px, where the save dialog is 460px. */
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.overlay-card.plus-card .overlay-head {
+  /* The card supplies the rhythm now, so the shared bottom margin would add a
+     second gap under the header only. */
+  margin-bottom: 0;
+}
+
+.plus-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.plus-head h2 {
+  flex: 1;
+}
+.plus-close {
+  flex: none;
+}
+
+/* The brand mark at sheet size. Same conic recipe as `.tb-mark`, which is 16px
+   and belongs to the toolbar. */
+.plus-mark {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    var(--color-crane),
+    var(--color-sax),
+    #1d9e75,
+    var(--color-orbit),
+    var(--color-crane)
+  );
+  box-shadow: inset 0 0 0 5px var(--color-graph-card);
+}
+
+/* ---- public-post meter ---- */
+.plus-meter-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.plus-meter-track {
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--color-crease-line-bold);
+  overflow: hidden;
+}
+.plus-meter-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-crane);
+}
+
+/* ---- feature list ---- */
+.plus-features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.plus-features li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.plus-tick {
+  flex: none;
+  margin-top: 2px;
+  color: var(--color-crane-strong);
+}
+.plus-feature-title {
+  font-weight: 500;
+  font-size: 14px;
+}
+.plus-feature-sub {
+  font-size: 12px;
+  color: var(--color-graphite-60);
+}
+
+/* ---- actions + footnote ---- */
+.plus-cta {
+  /* §2: every touch target ≥ 44px. `.btn` is 36px, which is the desktop size
+     for the top actions only. */
+  height: 44px;
+  justify-content: center;
+  font-size: 14px;
+}
+.plus-foot {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.2px;
+  /* The one mono run that is a sentence, not a label. */
+  text-transform: none;
+}
+.plus-foot a,
+.plus-foot .link-inline {
+  color: var(--color-crane-strong);
+  font: inherit;
+}
+.plus-foot .link-inline:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---- the "you're in" note ---- */
+.plus-note-ok {
+  --color-plus-ok: #1d9e75;
+  border-color: var(--color-plus-ok);
+}
+.plus-note-ok .note-icon {
+  color: var(--color-plus-ok);
+}
+[data-theme="dark"] .plus-note-ok {
+  /* #1d9e75 on the dark inset is too dim to read as a status colour. */
+  --color-plus-ok: #3fbf95;
+}
+
+/* ---- account menu (DESIGN.md "Account menu + cap elsewhere") ---- */
+/* Both rules live here rather than in pages.css so the sheet and its two
+   doors ship as one unit; AuthButton.tsx imports this file for that reason. */
+.auth-name .auth-count {
+  display: block;
+  margin-top: 2px;
+}
+/* `.menu-panel [role="menuitem"]` is display:block, and a block row cannot put
+   the price chip on the right. Same specificity, so this must come after — it
+   does, because it is the only rule in a stylesheet the shared one knows
+   nothing about; the class is on the element too, which settles it either way. */
+.menu-panel [role="menuitem"].plus-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}

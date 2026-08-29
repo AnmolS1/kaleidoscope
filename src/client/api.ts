@@ -345,4 +345,47 @@ export function likeArtwork(id: string): Promise<{ likes: number }> {
   return request(`/api/artworks/${id}/like`, { method: "POST" });
 }
 
+// ---- billing (Kaleidoscope Plus) ----
+
+/**
+ * The Lemon Squeezy hosted-checkout URL for the signed-in user.
+ *
+ * A URL to NAVIGATE to, never an overlay: the overlay needs LS's script host in
+ * `script-src` and PLAN §2.3 pins the CSP as unchanged. The worker puts the
+ * user id in `checkout[custom][user_id]`, which is what the webhook later binds
+ * the entitlement to, so the caller must not rebuild this URL itself.
+ *
+ * Throws `ApiError` with the real status — 401 (session gone), 409
+ * `bound_elsewhere`, 429 (10/h), 503 (Plus dark or unconfigured). Each maps to
+ * a different sheet state, so callers must read `status`/`code`, not `ok`.
+ */
+export async function fetchCheckoutUrl(): Promise<string> {
+  const body = await request<{ url?: unknown }>("/api/billing/checkout");
+  // A 2xx whose body has no URL is not a success. Without this the sheet would
+  // navigate to the string "undefined" and blame the user's connection.
+  if (typeof body.url !== "string" || body.url === "") {
+    throw new ApiError(200, "no_checkout_url");
+  }
+  return body.url;
+}
+
+/**
+ * Re-read the entitlement — the web's "Restore purchase".
+ *
+ * There is nothing device-local to restore on the web: entitlements live on the
+ * server against the account, so the only thing that can be stale is this
+ * client's cached `/api/me` block. That is a real window, not a formality — the
+ * Lemon Squeezy webhook lands asynchronously, so someone returning from
+ * checkout can genuinely arrive before the grant exists.
+ *
+ * Returns the fresh block and deliberately does NOT touch the `me` signal: a
+ * transient failure here must not sign anybody out of the UI.
+ */
+export async function refreshPlus(): Promise<PlusInfo | null> {
+  const data = await request<MeResponse>("/api/me");
+  if (data.csrf) csrfToken = data.csrf;
+  if (data.turnstileSiteKey) turnstileSiteKey = data.turnstileSiteKey;
+  return parsePlus(data.plus);
+}
+
 export { request as apiRequest };
