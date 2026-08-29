@@ -30,6 +30,10 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
         watchForUpdate(reg, (waiting) => {
           showToast({
             icon: <DownloadIcon />,
+            // Sticky: the worker parks ONCE and nothing re-offers it, so the
+            // shared 6s expiry (and dismiss-on-next-stroke) would make the new
+            // bundle unreachable until every tab closes.
+            sticky: true,
             // No auto-reload anywhere in this path: a reload throws away an
             // unsaved drawing, so taking the update is always the user's move.
             text: "Update available — reload when you're ready.",

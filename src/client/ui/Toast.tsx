@@ -24,6 +24,18 @@ export interface Toast {
   icon?: JSX.Element;
   /** Optional chip CTA, e.g. "Open Brush". Dismisses the toast when clicked. */
   cta?: { label: string; onClick: () => void };
+  /**
+   * Stay until the user acts, ignoring both the 6s expiry and the
+   * dismiss-on-next-stroke rule.
+   *
+   * DESIGN.md §3's dismissal rules are right for a NUDGE — a hint you can
+   * ignore, which the next stroke supersedes. They are wrong for a prompt that
+   * is the only route to something: the service-worker update parks once, and
+   * nothing re-offers it, so a user who happens to be drawing loses the prompt
+   * ~900ms in and the new bundle is unreachable until every tab closes. That is
+   * the exact failure the update prompt exists to prevent.
+   */
+  sticky?: boolean;
 }
 
 export const toast = signal<Toast | null>(null);
@@ -53,6 +65,7 @@ export function ToastHost() {
     // killing itself with the very stroke that summoned it, which is what a
     // naive "dismiss whenever strokeCount changes" does.
     setArmed(false);
+    if (t.sticky) return;
     const arm = setTimeout(() => setArmed(true), 900);
     const expire = setTimeout(dismissToast, 6000);
     return () => {
@@ -62,7 +75,7 @@ export function ToastHost() {
   }, [t?.id]);
 
   useEffect(() => {
-    if (t && armed) dismissToast();
+    if (t && armed && !t.sticky) dismissToast();
   }, [strokes]);
 
   if (!t) return null;
