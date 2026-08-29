@@ -54,6 +54,19 @@ jobs:
         working-directory: ios
         run: xcodegen generate
 
+      # What this runner image actually offers. Printed because the first run of
+      # the gate below failed for want of an iOS 18.x runtime, and the useful
+      # question — is there another Xcode sitting right there that ships one? —
+      # could not be answered from the failure. Costs a second; turns a guess
+      # into a measurement.
+      - name: Inventory the toolchains and runtimes
+        run: |
+          echo "Xcodes present:"
+          ls -d /Applications/Xcode*.app 2>/dev/null | sed 's/^/  /' || echo "  (none matched)"
+          echo "Selected: $(xcodebuild -version | head -1)"
+          echo "Runtimes visible to the selected Xcode:"
+          xcrun simctl list runtimes | sed 's/^/  /'
+
       - name: Resolve a simulator UDID
         id: sim
         # NEVER pin the destination by device name. `name=iPhone 16` breaks
