@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 /**
  * Submit the Save dialog and wait for the permalink redirect.
@@ -63,6 +63,43 @@ export function saveState(page: Page) {
 // and the run owns a per-POINT noise vector: ~7^24 distinct paths, and no value
 // of one axis can imitate a value of the other.
 const RUN_PATH_NOISE = Array.from({ length: 40 }, () => Math.floor(Math.random() * 7));
+
+// 🔴 AND THE FILE AXIS IS A THIRD ONE, for the same reason.
+//
+// The run noise is computed at MODULE LOAD, so it is fixed per PROCESS — and
+// Playwright gives each worker its own process. With one worker every spec
+// shares a noise vector, which is what makes `drawOnCanvas(page, 3)` in two
+// different FILES produce the identical path. The seed namespace is global and
+// uncoordinated (seeds 1, 2, 3, 4, 6 and 21 are each used by two specs), and
+// `uniqueSub` gives each spec its own account — so the second spec to save that
+// path sees the first one's artwork as ANOTHER USER'S and lands on
+// `SaveOtherUnchanged` where it expected `SaveFirst`.
+//
+// It is invisible at high worker counts, because the colliding files land in
+// different processes with different noise. CI runs 2 workers, which is exactly
+// the count that put `a11y.spec.ts` (seed 3) and `save-flow.spec.ts` (seed 3) in
+// one process: green locally on 8 workers, red on CI, and pointing at the save
+// dialog rather than at the fixture.
+//
+// So the path also carries a per-FILE component. Two specs cannot collide even
+// on the same seed in the same process, while two calls with the same seed
+// WITHIN a file still agree — which is what the remix tests rely on.
+function fileSalt(): number {
+  let name = "";
+  try {
+    // Only defined inside a running test; the catch keeps the helper usable
+    // from a fixture or a bare import.
+    name = test.info().titlePath[0] ?? "";
+  } catch {
+    return 0;
+  }
+  let h = 2166136261;
+  for (let i = 0; i < name.length; i++) {
+    h ^= name.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 const RUN_DRAWING_JITTER = {
   extra: Math.floor(Math.random() * 16),
 };
@@ -103,7 +140,13 @@ export async function drawOnCanvas(
   // point — i.e. without changing the hash, which is the thing being varied.
   const stable = opts.stable === true;
   const extra = stable ? 0 : RUN_DRAWING_JITTER.extra;
-  const noise = (i: number) => (stable ? 0 : RUN_PATH_NOISE[i % RUN_PATH_NOISE.length]);
+  // `stable` stays byte-identical — no run noise AND no file salt — because its
+  // entire purpose is a path that reproduces exactly.
+  const salt = stable ? 0 : fileSalt();
+  const noise = (i: number) =>
+    stable
+      ? 0
+      : (RUN_PATH_NOISE[i % RUN_PATH_NOISE.length] + (((salt + Math.imul(i, 2654435761)) >>> 0) % 7)) % 7;
   const dx = seed * 11;
   await page.mouse.move(cx + dx + noise(0), cy - 90);
   await page.mouse.down();
