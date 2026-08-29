@@ -679,8 +679,13 @@ final class StudioModel: ObservableObject {
     /// `LayerCapUITests` cases fail with "the header must follow the override",
     /// which went unnoticed because concurrent runs on a shared simulator were
     /// producing a different failure set every time.
-    private static let capOverride: Int? =
-        ProcessInfo.processInfo.environment["KALEIDO_LAYER_CAP"].flatMap(Int.init)
+    private static let capOverride: Int? = {
+        #if DEBUG
+            return ProcessInfo.processInfo.environment["KALEIDO_LAYER_CAP"].flatMap(Int.init)
+        #else
+            return nil
+        #endif
+    }()
 
     /// T13 calls this once `/api/me.plus` lands. Raising the cap never changes an
     /// existing document; it only unlocks the add affordance.
@@ -879,7 +884,11 @@ final class StudioModel: ObservableObject {
     /// be exercised with no drawing input — used for screenshots / UI tests.
     /// Enabled when the app is launched with KALEIDO_DEMO=1.
     static var demoRequested: Bool {
-        ProcessInfo.processInfo.environment["KALEIDO_DEMO"] == "1"
+        #if DEBUG
+            return ProcessInfo.processInfo.environment["KALEIDO_DEMO"] == "1"
+        #else
+            return false
+        #endif
     }
 
     /// A 3-layer, mixed-symmetry demo. Mixed on purpose: it is the only seeded

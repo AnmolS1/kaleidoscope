@@ -49,7 +49,11 @@ struct YouView: View {
                 }
             }
             .navigationTitle("You")
-            .onAppear { if ProcessInfo.processInfo.environment["KALEIDO_AUTH"] == "1" { showAuth = true } }
+            .onAppear {
+                #if DEBUG
+                    if ProcessInfo.processInfo.environment["KALEIDO_AUTH"] == "1" { showAuth = true }
+                #endif
+            }
             .sheet(isPresented: $showAuth) { AuthSheet().environmentObject(auth) }
             .sheet(isPresented: $showPlus) {
                 PlusSheet(

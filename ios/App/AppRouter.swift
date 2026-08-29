@@ -18,11 +18,17 @@ final class AppRouter: ObservableObject {
     func markSaved() { gallerySaveToken += 1 }
 
     init() {
-        switch ProcessInfo.processInfo.environment["KALEIDO_TAB"] {
-        case "gallery": tab = Self.galleryTab
-        case "you": tab = Self.youTab
-        default: tab = Self.drawTab
-        }
+        // Test hook, DEBUG-only: the key string must sit inside the #if, or a
+        // Release binary still carries it and tells a reader what to try.
+        #if DEBUG
+            switch ProcessInfo.processInfo.environment["KALEIDO_TAB"] {
+            case "gallery": tab = Self.galleryTab
+            case "you": tab = Self.youTab
+            default: tab = Self.drawTab
+            }
+        #else
+            tab = Self.drawTab
+        #endif
     }
 
     /// Load a piece into the studio and jump to Draw (remix). Records the source

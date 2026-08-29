@@ -3,8 +3,14 @@ import UIKit
 import KaleidoEngine
 
 /// A hidden, launch-gated element that publishes export fingerprints to the UI
-/// tests. Mounted only when the app is launched with `KALEIDO_EXPORT_PROBE=1`,
-/// so it costs a shipping build nothing but the type.
+/// tests. Mounted only when the app is launched with `KALEIDO_EXPORT_PROBE=1`.
+///
+/// The gate is `#if DEBUG`, not just the environment check. This comment used to
+/// claim the probe "costs a shipping build nothing but the type", and the TYPE is
+/// indeed free — but the string was not: `strings -a` on a Release binary found
+/// `KALEIDO_EXPORT_PROBE` twice, because a runtime `ProcessInfo` lookup keeps its
+/// key in the binary whether or not it can ever be true. A shipped app that names
+/// its own test hooks tells a reader exactly which launch arguments to try.
 ///
 /// Why it exists: the natural acceptance test for the PNG download is "the
 /// exported image is not blank" — and that test PASSES on the bug it is meant
@@ -30,7 +36,12 @@ enum ExportProbe {
     static let probeSize: CGFloat = 256
 
     static var enabled: Bool {
-        ProcessInfo.processInfo.environment["KALEIDO_EXPORT_PROBE"] == "1"
+        #if DEBUG
+            return ProcessInfo.processInfo.environment["KALEIDO_EXPORT_PROBE"] == "1"
+        #else
+            // Release cannot mount the probe at all, and does not carry the key.
+            return false
+        #endif
     }
 
     struct Fingerprint {

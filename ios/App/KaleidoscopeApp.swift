@@ -35,11 +35,14 @@ struct KaleidoscopeApp: App {
                     await plus.loadProduct()
                 }
                 .onAppear {
-                    // Test hook: KALEIDO_ARTWORK=<id> deep-links to a piece on launch.
-                    if let id = ProcessInfo.processInfo.environment["KALEIDO_ARTWORK"] {
-                        router.tab = AppRouter.galleryTab
-                        deepLinkId = id
-                    }
+                    // Test hook, DEBUG-only: KALEIDO_ARTWORK=<id> deep-links to a
+                    // piece on launch. Gated so Release does not carry the key.
+                    #if DEBUG
+                        if let id = ProcessInfo.processInfo.environment["KALEIDO_ARTWORK"] {
+                            router.tab = AppRouter.galleryTab
+                            deepLinkId = id
+                        }
+                    #endif
                 }
                 .onOpenURL { url in
                     // Widget tap arrives as kaleidoscopewidget://p/<id>. (The Google
