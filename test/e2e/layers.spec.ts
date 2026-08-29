@@ -138,12 +138,12 @@ test("a row shows its own name, symmetry, mirror and opacity", async ({ page }) 
   await openPanel(page);
   const row = page.locator(".layer-row").first();
   await expect(row.locator(".layer-name")).toHaveText("Layer 1");
-  await expect(row.locator(".layer-sym")).toHaveText("12 · D · 100%");
+  await expect(row.locator(".layer-line")).toHaveText("12 · D · 100%");
 
   // The line tracks the layer, not a global: change segments and drop mirror.
   await page.keyboard.press(",");
   await page.keyboard.press("m");
-  await expect(row.locator(".layer-sym")).toHaveText("11 · C · 100%");
+  await expect(row.locator(".layer-line")).toHaveText("11 · C · 100%");
 });
 
 test("the eye hides a layer and the row says so", async ({ page }) => {
@@ -370,7 +370,7 @@ async function twoDistinguishableStrokes(page: Page) {
   await page.getByRole("button", { name: /^Add layer/ }).click();
   for (let i = 0; i < 6; i++) await page.keyboard.press(",");
   await page.keyboard.press("m");
-  await expect(page.locator(".layer-sym").first()).toHaveText("6 · C · 100%");
+  await expect(page.locator(".layer-line").first()).toHaveText("6 · C · 100%");
 
   await page.mouse.move(cx + 40, cy + 150);
   await page.mouse.down();
@@ -559,7 +559,7 @@ test("a highlight is dropped when an undo shifts the stroke it points at", async
   await openPanel(page);
   for (let i = 0; i < 9; i++) await page.keyboard.press(",");
   await page.keyboard.press("m");
-  await expect(page.locator(".layer-sym").first()).toHaveText("3 · C · 100%");
+  await expect(page.locator(".layer-line").first()).toHaveText("3 · C · 100%");
 
   // Inner stroke, r ≈ 70.
   await page.mouse.move(cx + 70, cy - 20);
@@ -628,7 +628,7 @@ test("every halo image is drawn where the engine actually finds the stroke", asy
 
   await openPanel(page);
   for (let i = 0; i < 9; i++) await page.keyboard.press(",");
-  await expect(page.locator(".layer-sym").first()).toHaveText("3 · D · 100%");
+  await expect(page.locator(".layer-line").first()).toHaveText("3 · D · 100%");
 
   // A short, straight, off-axis stroke: straight so its bounding-box centre is
   // genuinely ON the ink, off-axis so no image coincides with another.
@@ -696,6 +696,206 @@ test("every halo image is drawn where the engine actually finds the stroke", asy
       `no stroke under the halo image at ${Math.round(x)},${Math.round(y)}`,
     ).toContainText("Stroke on Layer 1 · 6 images");
   }
+});
+
+// ---------------------------------------------------------------------------
+// per-layer opacity (T16)
+//
+// `setLayerOpacity` existed in the engine, pinned by unit tests, with NOTHING
+// calling it: every layer sat at 1 forever while the row printed a percentage
+// that could only ever read 100%. These tests are about the control that closes
+// that gap, and two of them are written specifically to fail on the mistakes
+// that make it LOOK finished:
+//
+//  * "the value changed after a drag" passes with coalescing completely broken,
+//    with the gesture never sealed, and with the drag emitting one event. So the
+//    undo test drags TWICE and pins the depth from both ends: one undo must land
+//    on the first drag's value (not the original — that is the seal), and the
+//    second must exhaust the stack (that is the coalescing).
+//  * "the percentage changed" says nothing about the picture. Opacity is
+//    composited, so the ink itself has to change — asserted against the art
+//    canvas, with the same-render-twice control that makes a difference mean
+//    something.
+// ---------------------------------------------------------------------------
+
+const opacityRange = (page: Page) => page.locator(".layer-opacity-range");
+
+async function openOpacity(page: Page, nth = 0): Promise<void> {
+  await page.locator(".layer-opacity").nth(nth).click();
+  await expect(opacityRange(page)).toBeVisible();
+  // Disclosing a control and leaving the keyboard behind on the trigger is the
+  // same as not disclosing it, so every opening asserts where focus landed.
+  await expect(opacityRange(page)).toBeFocused();
+}
+
+/** The percentage the row is showing, as a number. */
+async function rowPercent(page: Page, nth = 0): Promise<number> {
+  const t = (await page.locator(".layer-opacity").nth(nth).textContent()) ?? "";
+  return Number(t.replace("%", ""));
+}
+
+/**
+ * Drag the open slider's thumb to a fraction of its track, in many small steps.
+ *
+ * The step count is load-bearing: a single jump would be ONE `input` event, and
+ * a one-event "drag" is one undo entry whether the code coalesces or not — the
+ * test would then pass with the feature's hardest part deleted.
+ */
+async function dragOpacityTo(page: Page, frac: number): Promise<void> {
+  const box = (await opacityRange(page).boundingBox())!;
+  const y = box.y + box.height / 2;
+  // Inset by roughly half a thumb, which is where Chromium puts value 0 and 100.
+  const x = (f: number) => box.x + 8 + (box.width - 16) * f;
+  await page.mouse.move(x((await rowPercent(page)) / 100), y);
+  await page.mouse.down();
+  await page.mouse.move(x(frac), y, { steps: 24 });
+  await page.mouse.up();
+}
+
+/** The committed art canvas (grid / art / live — the middle one). */
+function artPixels(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const host = document.querySelector(".canvas-host")!;
+    const art = host.querySelectorAll("canvas")[1] as HTMLCanvasElement;
+    return art.toDataURL("image/png");
+  });
+}
+
+test("the row's percentage is a control: it discloses a slider that sets that layer", async ({
+  page,
+}) => {
+  await openPanel(page);
+  await addLayers(page, 1);
+
+  // Closed, the row is exactly the line the frames draw.
+  await expect(page.locator(".layer-line").first()).toHaveText("12 · D · 100%");
+  await expect(opacityRange(page)).toHaveCount(0);
+
+  await openOpacity(page, 0);
+  // One slider, for the row that asked for it — not one per row.
+  await expect(opacityRange(page)).toHaveCount(1);
+  await dragOpacityTo(page, 0.4);
+
+  const pct = await rowPercent(page, 0);
+  expect(pct, "the drag must move the value off 100").toBeLessThan(70);
+  expect(pct).toBeGreaterThan(10);
+  // The line still composes, with the new number in it.
+  await expect(page.locator(".layer-line").first()).toHaveText(`12 · D · ${pct}%`);
+
+  // THE CONTROL: the OTHER layer is untouched. A control wired to the active
+  // layer instead of to its own row would pass every assertion above.
+  expect(await rowPercent(page, 1)).toBe(100);
+});
+
+test("a whole drag is ONE undo entry, and undo restores the value it started at", async ({
+  page,
+}) => {
+  const undo = page.getByRole("button", { name: "Undo" }).first();
+  // The baseline is VERIFIED, not assumed: every claim below is a delta from an
+  // empty history, so "+1 per drag" is what is actually being asserted.
+  await expect(undo).toBeDisabled();
+
+  await openPanel(page);
+  await openOpacity(page);
+
+  await dragOpacityTo(page, 0.6);
+  const afterFirst = await rowPercent(page);
+  expect(afterFirst).toBeLessThan(100);
+
+  await dragOpacityTo(page, 0.2);
+  const afterSecond = await rowPercent(page);
+  expect(afterSecond, "the second drag must land somewhere else").toBeLessThan(afterFirst);
+
+  // Two drags, two entries — pinned from BOTH ends.
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  // Not 100: if the gesture were never sealed, both drags would have collapsed
+  // into a single entry and this would already be back at the original value.
+  await expect(page.locator(".layer-opacity").first()).toHaveText(`${afterFirst}%`);
+  await expect(undo).toBeEnabled();
+
+  await undo.click();
+  await expect(page.locator(".layer-opacity").first()).toHaveText("100%");
+  // And nothing else: without coalescing a 24-step drag leaves a couple of dozen
+  // entries here, and this is the assertion that sees them.
+  await expect(undo).toBeDisabled();
+});
+
+test("each arrow key is its own undo step, and Escape returns focus to the row", async ({
+  page,
+}) => {
+  const undo = page.getByRole("button", { name: "Undo" }).first();
+  await openPanel(page);
+
+  // Keyboard the whole way in: focus the disclosure and open it with Enter.
+  await page.locator(".layer-opacity").first().focus();
+  await page.keyboard.press("Enter");
+  await expect(opacityRange(page)).toBeFocused();
+
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+  expect(await rowPercent(page)).toBe(97);
+
+  // Three presses, three entries: the seal hangs off key-UP, so discrete presses
+  // stay discrete while a HELD key (one keydown stream, one keyup) is one step.
+  for (const expected of [98, 99, 100]) {
+    await undo.click();
+    expect(await rowPercent(page)).toBe(expected);
+  }
+  await expect(undo).toBeDisabled();
+
+  await opacityRange(page).focus();
+  await page.keyboard.press("Escape");
+  await expect(opacityRange(page)).toHaveCount(0);
+  // Escape leaves the SLIDER, not the panel — and puts focus back where it came
+  // from, or a keyboard user is dropped at the top of the document.
+  await expect(page.locator(".layers-panel")).toHaveCount(1);
+  await expect(page.locator(".layer-opacity").first()).toBeFocused();
+});
+
+test("lowering a layer's opacity changes the pixels, and 100% restores them exactly", async ({
+  page,
+}) => {
+  await drawOnCanvas(page);
+  expect(await strokeCount(page), "an empty canvas would compare equal forever").toBe(1);
+
+  const before = await artPixels(page);
+  // THE CONTROL: the same drawing, read twice, is identical — so a difference
+  // below is a difference in the render and not in the observable.
+  expect(await artPixels(page)).toBe(before);
+  expect(before.length).toBeGreaterThan(2000);
+
+  await openPanel(page);
+  await openOpacity(page);
+  // PageDown moves a 0–100 range by ten, so this is an exact 40% — no reliance
+  // on where a drag happens to land.
+  for (let i = 0; i < 6; i++) await page.keyboard.press("PageDown");
+  expect(await rowPercent(page)).toBe(40);
+
+  const faded = await artPixels(page);
+  expect(faded, "a layer at 40% must not paint the same as one at 100%").not.toBe(before);
+
+  // Back to full: the composite is off again and the pixels are the ones every
+  // stored piece was rasterized from. (The bypass ITSELF is pinned by
+  // test/unit/render-trace.test.ts and v1-render.spec.ts; this is the round trip
+  // through the control.)
+  await page.keyboard.press("End");
+  expect(await rowPercent(page)).toBe(100);
+  expect(await artPixels(page)).toBe(before);
+});
+
+test("opening a reorder drag closes the slider", async ({ page }) => {
+  // The reorder maths reads one row height and applies it to every row, so a row
+  // 44px taller than its neighbours drops on the wrong index. Asserted because
+  // the failure is silent: the drag still works, it just lands one row off.
+  await openPanel(page);
+  await addLayers(page, 2);
+  // The slider is opened on the row that is about to be DRAGGED, which is the
+  // case the pitch measurement gets wrong: that row is the tall one.
+  await openOpacity(page, 2);
+
+  await dragRow(page, 2, 0);
+  await expect(opacityRange(page)).toHaveCount(0);
+  expect(await rowNames(page)).toEqual(["Layer 1", "Layer 3", "Layer 2"]);
 });
 
 // ---------------------------------------------------------------------------
@@ -777,6 +977,10 @@ test.describe("phone", () => {
 test("the open panel has no axe violations (light only)", async ({ page }) => {
   await openPanel(page);
   await addLayers(page, 2);
+  // With a slider disclosed: it is a control that only exists in one state, so
+  // scanning the panel closed would never see its name, its role or its value.
+  await openOpacity(page, 1);
+  await expect(opacityRange(page)).toHaveCount(1);
   const results = await new AxeBuilder({ page }).include(".layers-panel").analyze();
   expect(results.violations).toEqual([]);
 });
@@ -807,6 +1011,15 @@ test("every standalone panel control owns at least 44px, measured by hit-test", 
     [".layer-eye", 3],
     [".layer-foot .chip", 3],
   ];
+  // The opacity slider is a standalone control the moment it exists, so it is
+  // measured too — with the row's own 44px no longer able to stand in for it,
+  // since it is a second line INSIDE that row rather than an affordance on it.
+  await openOpacity(page, 0);
+  const slider = await exclusiveTarget(page, ".layer-opacity-range");
+  expect(slider.height, "opacity slider effective height").toBeGreaterThanOrEqual(44);
+  await page.locator(".layer-opacity").first().click();
+  await expect(page.locator(".layer-opacity-range")).toHaveCount(0);
+
   for (const [selector, count] of targets) {
     await expect(page.locator(selector)).toHaveCount(count);
     for (let i = 0; i < count; i++) {
