@@ -1,0 +1,83 @@
+/* ── Safe-area insets for the regular-width chrome (T07) ───────────────────
+   `index.html` asks for `viewport-fit=cover`, which is what lets the canvas run
+   edge to edge — and which also puts the floating chrome under the rounded
+   corners, the home indicator and (on a phone in landscape) the notch. The
+   phone layouts in studio.css already inset themselves; the rail, the top bar
+   and the corner readouts did not, because at regular width every `env()` is 0
+   in a browser window and the gap only exists on real hardware in standalone.
+
+   🔴 MERGE NOTE — this file is a FOLD-IN, not a home. These are single-property
+   overrides of positions declared in studio.css, kept separate only because
+   three other agents were live in that file when T07 landed. Whoever merges
+   should move each rule next to the declaration it overrides and delete this
+   file and its import in main.tsx.
+
+   Every value is `max(<the studio.css value>, <inset>)`, so on any display with
+   no inset the computed position is byte-identical to what studio.css says.
+   That invariant is asserted in test/e2e/pwa.spec.ts — a bare
+   `left: env(safe-area-inset-left)` (no `max`) would collapse the whole rail to
+   the window edge on every desktop, and nothing else in the suite would see it.
+
+   Scoped to `min-height: 501px` because studio.css's compact-height block
+   (`max-height: 500px and min-width: 641px`) restyles the same rail with
+   different numbers, and a media query adds no specificity — an unscoped rule
+   here would silently win over it. Phone portrait is safe without a scope:
+   `.is-phone .top-bar` / `.is-phone .toast-host` outrank these, and the rail,
+   sliders, badge and shortcut strip are not in the phone DOM at all. */
+
+@media (min-height: 501px) {
+  .rail {
+    left: max(16px, env(safe-area-inset-left));
+    top: max(16px, env(safe-area-inset-top));
+    bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  /* The rail is 56px wide and inset 16px, so the top bar starts at 88px. Keep
+     that relationship when the inset pushes the rail right. */
+  .top-bar {
+    left: max(88px, calc(env(safe-area-inset-left) + 72px));
+    right: max(16px, env(safe-area-inset-right));
+    top: max(16px, env(safe-area-inset-top));
+  }
+  /* 24px is not decoration: DESIGN.md §2 puts the sliders clear of the iPad
+     system-gesture edge. The inset can only push them further in. */
+  .edge-sliders {
+    right: max(24px, env(safe-area-inset-right));
+  }
+  .zoom-badge {
+    right: max(24px, env(safe-area-inset-right));
+    bottom: max(20px, env(safe-area-inset-bottom));
+  }
+  .shortcut-strip {
+    left: max(88px, calc(env(safe-area-inset-left) + 72px));
+    bottom: max(20px, env(safe-area-inset-bottom));
+  }
+  .toast-host {
+    left: max(88px, calc(env(safe-area-inset-left) + 72px));
+    bottom: max(60px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Compact height (phone landscape) is where a side inset is largest — the notch
+   eats ~44px of one edge — and where the rail is at 12px rather than 16px.
+   Values mirror the compact-height block in studio.css; if that block's numbers
+   change, these must follow (another reason to fold this file in). */
+@media (max-height: 500px) and (min-width: 641px) {
+  .rail {
+    left: max(12px, env(safe-area-inset-left));
+    top: max(12px, env(safe-area-inset-top));
+    bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .top-bar {
+    left: max(72px, calc(env(safe-area-inset-left) + 60px));
+    right: max(12px, env(safe-area-inset-right));
+    top: max(12px, env(safe-area-inset-top));
+  }
+  .corner-strip {
+    right: max(24px, env(safe-area-inset-right));
+    bottom: max(14px, env(safe-area-inset-bottom));
+  }
+  .toast-host {
+    left: max(72px, calc(env(safe-area-inset-left) + 60px));
+    bottom: max(12px, env(safe-area-inset-bottom));
+  }
+}

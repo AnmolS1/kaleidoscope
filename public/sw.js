@@ -3,13 +3,22 @@
 const CACHE = "kld-v1";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg"];
 
+/** Must match SKIP_WAITING in src/client/swUpdate.ts. */
+const SKIP_WAITING = "kld-skip-waiting";
+
 self.addEventListener("install", (e) => {
-  e.waitUntil(
-    caches
-      .open(CACHE)
-      .then((c) => c.addAll(SHELL))
-      .then(() => self.skipWaiting()),
-  );
+  // Deliberately NO `skipWaiting()` here. An unconditional skip swaps the code
+  // out from under a page that is still running the old bundle — mid-save,
+  // mid-stroke — with no reload to resynchronise it. So a new worker installs
+  // and WAITS; the page notices, offers "Update available", and only then sends
+  // the message below. (On a first-ever install there is nothing to wait behind,
+  // so that visit still activates immediately.)
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+});
+
+// The other half of the prompt: the page asks, and only then do we take over.
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === SKIP_WAITING) self.skipWaiting();
 });
 
 self.addEventListener("activate", (e) => {
