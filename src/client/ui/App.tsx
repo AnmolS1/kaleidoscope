@@ -11,6 +11,7 @@ import { removeMode, clearRemoveHighlight } from "./RemoveStroke";
 import { PenIcon } from "./Icons";
 import { Gallery } from "./Gallery";
 import { ArtworkPage } from "./ArtworkPage";
+import { PlusSheet } from "./PlusSheet";
 
 function isTypingTarget(t: EventTarget | null): boolean {
   const el = t as HTMLElement | null;
@@ -209,6 +210,10 @@ export function App() {
       </a>
       {view}
       <HelpOverlay />
+      {/* Driven entirely by S.plusOpen, and hidden whenever plus.enabled is
+          false — so it is mounted here, outside the studio, because the account
+          menu opens it from the gallery pages too. */}
+      <PlusSheet />
       {/* One shared polite live region for the whole app. */}
       <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {S.announcement.value}
