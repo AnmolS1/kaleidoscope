@@ -76,6 +76,27 @@ final class PlusSheetStateTests: XCTestCase {
         XCTAssertTrue(PlusSheetInput.owned(from: plusState(active: true)))
     }
 
+    func testTheSurfaceIsInvisibleUnlessTheServerSaysTheIAPIsLive() {
+        // The App-Review-critical switch. Nil is not "yes" — no `/api/me` yet, a
+        // failed call, or an older Worker must not produce a paywall.
+        //
+        // This test exists because the gate used to live in one SwiftUI `if` in
+        // `YouView` with nothing behind it: deleting that line turned an
+        // unapproved IAP on and nothing went red.
+        XCTAssertFalse(PlusSheetInput.surfaceVisible(nil))
+        XCTAssertFalse(PlusSheetInput.surfaceVisible(plusState(active: true, enabled: false)))
+        XCTAssertTrue(PlusSheetInput.surfaceVisible(plusState(active: false, enabled: true)))
+        XCTAssertTrue(PlusSheetInput.surfaceVisible(plusState(active: true, enabled: true)))
+    }
+
+    func testTheTwoFlagFunctionsPointOppositeWays() {
+        // `enabled` hides the surface; it does not revoke anything. Same field,
+        // opposite readings, and the pair is what gets conflated later.
+        let paidUserAfterAFlagFlip = plusState(active: true, enabled: false)
+        XCTAssertFalse(PlusSheetInput.surfaceVisible(paidUserAfterAFlagFlip))
+        XCTAssertTrue(PlusSheetInput.owned(from: paidUserAfterAFlagFlip))
+    }
+
     func testEnabledFalseDoesNotByItselfRevokeAnEntitlement() {
         // The `enabled` flag hides the SURFACE (see `YouView.plusSection`); it is
         // not a claim about what the user owns. Conflating the two would strip

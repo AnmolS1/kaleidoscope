@@ -99,6 +99,21 @@ struct PlusSheetInput: Equatable {
         self.loadFailed = loadFailed
     }
 
+    /// 🔴 Is the Plus surface allowed to exist at all?
+    ///
+    /// `plus.enabled` is the server's "the IAP is approved and live" switch, and
+    /// it is what keeps an unapproved in-app purchase invisible. Nil — no
+    /// `/api/me` yet, a call that failed, a Worker predating the entitlement
+    /// block — is NOT enabled: it fails CLOSED.
+    ///
+    /// Deliberately adjacent to `owned(from:)`, which does the OPPOSITE with the
+    /// same flag: `enabled` hides the surface, it does not revoke an entitlement,
+    /// so a paying user keeps Plus when the flag is flipped for a rollout. Two
+    /// one-line functions on the same field pointing different ways is exactly
+    /// the pair that gets conflated, so they live next to each other and both are
+    /// table-tested.
+    static func surfaceVisible(_ plus: PlusState?) -> Bool { plus?.enabled ?? false }
+
     /// 🔴 The one admissible source of the `owned` bit.
     ///
     /// Deliberately takes `PlusState?` and nothing else: there is no StoreKit

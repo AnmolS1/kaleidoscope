@@ -87,7 +87,7 @@ struct YouView: View {
     /// gate fails CLOSED and an unapproved IAP is invisible.
     @ViewBuilder
     private var plusSection: some View {
-        if auth.plus?.enabled == true {
+        if PlusSheetInput.surfaceVisible(auth.plus) {
             Section {
                 Button {
                     plusRestoreOnAppear = false

@@ -9,8 +9,14 @@ import StoreKit
 /// 🔴 The whole surface is hidden while `plus.enabled` is false, and a nil `plus`
 /// block counts as false. That switch is what keeps an unapproved IAP invisible,
 /// so it fails CLOSED: an `/api/me` that failed, or a Worker that predates the
-/// entitlement block, must not produce a paywall. The gate lives on the entry
-/// points in `YouView`, and again here so the sheet cannot be presented past it.
+/// entitlement block, must not produce a paywall.
+///
+/// The gate is `PlusSheetInput.surfaceVisible` and it is applied TWICE — on the
+/// entry points in `YouView`, and again in `body` here, so a sheet presented by
+/// some future caller that forgot cannot get past it. (An earlier revision of
+/// this comment claimed the second check existed when it did not, which left the
+/// whole App-Review-critical switch resting on one `if` in another file with no
+/// test behind it.)
 struct PlusSheet: View {
     @EnvironmentObject var auth: AuthModel
     @EnvironmentObject var store: PlusStore
@@ -47,6 +53,16 @@ struct PlusSheet: View {
     private var price: String? { store.product?.displayPrice }
 
     var body: some View {
+        if PlusSheetInput.surfaceVisible(auth.plus) {
+            sheet
+        } else {
+            // Not an error state and not a message: the feature does not exist
+            // for this user. Dismiss rather than render an empty card.
+            Color.clear.onAppear { dismiss() }
+        }
+    }
+
+    private var sheet: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
