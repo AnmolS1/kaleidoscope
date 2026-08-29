@@ -153,6 +153,18 @@ export function Gallery({ mine }: { mine: boolean }) {
                       </span>
                     )
                   )}
+                  {/* `segments === 0` is the contract signal for "the visible
+                      layers disagree", so the piece is LAYERED — printing
+                      "0-fold" would be a lie about the drawing. Undefined means
+                      an older response that never carried the field, which is
+                      why this is `=== 0` and not falsy. */}
+                  {it.segments !== undefined && (
+                    <span class="art-sym mono">
+                      {it.segments === 0
+                        ? `Layered · ${it.layers ?? 0} layers`
+                        : `${it.segments}-fold · ${it.mirror ? "mirrored" : "rotational"}`}
+                    </span>
+                  )}
                 </figcaption>
               </figure>
             ))}

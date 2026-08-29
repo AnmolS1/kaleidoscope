@@ -515,3 +515,16 @@ hr.hair {
     min-height: 40px;
   }
 }
+
+/* The symmetry line on a gallery card. Mono, quiet, and its own row so the
+   author line above it keeps its baseline. `--color-graphite-40` is the token
+   that was lifted to 0.70 / 0.62 specifically so small mono labels clear AA. */
+.art-sym {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--color-graphite-40);
+}
+
