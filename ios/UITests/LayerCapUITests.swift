@@ -104,8 +104,29 @@ final class LayerCapUITests: XCTestCase {
         let app = launch(cap: nil)
         // A disabled element cannot be tapped by XCUITest, so tap where it sits
         // instead: that exercises the model's own cap rather than the label's.
-        app.buttons["Add layer, locked at the layer limit"]
-            .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        //
+        // But a coordinate tap goes to a POINT, not to the element — so the
+        // point has to actually be on the card. On a short screen the panel is
+        // height-capped (`maxLayersHeight`) and the action row sits below the
+        // fold: on a 390pt-tall landscape phone the card measured
+        // (453, 64, 264, 200) while this button reported (462, 270) — six
+        // points past the bottom edge, over bare canvas. The tap then DREW,
+        // and the test blamed the extra stroke on the cap it was checking.
+        // Scroll it into the card first, and assert that it got there, so the
+        // failure mode is "could not reach the control" rather than a silent
+        // stroke.
+        let card = app.scrollViews.firstMatch
+        let locked = app.buttons["Add layer, locked at the layer limit"]
+        var attempts = 0
+        while !card.frame.contains(CGPoint(x: locked.frame.midX, y: locked.frame.midY)),
+              attempts < 5 {
+            card.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(card.frame.contains(CGPoint(x: locked.frame.midX, y: locked.frame.midY)),
+                      "the locked Add must be inside the card before a coordinate tap; "
+                      + "card \(card.frame), button \(locked.frame)")
+        locked.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Layers, 3 of 3"].exists,
                       "the cap is enforced by the model, not only by the label")
         XCTAssertEqual(app.otherElements["Drawing canvas"].value as? String,
