@@ -2,6 +2,20 @@ import XCTest
 
 /// The layers panel at both caps (DESIGN.md §3, frames `LayersStates` 1 and 2).
 ///
+/// 🔴 **AN iPAD SUITE**, like `StudioRailLayoutUITests`. It asserts the
+/// regular-width panel — the 264pt card, its header and its footnote — so a
+/// compact-height iPhone is a layout it was never written for. 4/4 on an iPad;
+/// `testAddAtTheFreeCapDoesNotAddALayer` fails on an iPhone in landscape,
+/// where the coordinate tap on the disabled chip lands somewhere that commits a
+/// stroke and the canvas reports 4 rather than 3.
+///
+/// That iPhone behaviour is UNDIAGNOSED, not dismissed: it may be the tap
+/// resolving outside the panel, or the panel failing to absorb a hit where a
+/// disabled control sits — which would be a real defect, since a user told they
+/// cannot add a layer would get a dot instead. Adding `.contentShape` to the
+/// panel did not change it, so the obvious explanation is wrong and it wants a
+/// proper look rather than a speculative patch.
+///
 /// `KALEIDO_LAYER_CAP` is a launch-env override on `StudioModel.init`. Two
 /// classes of state hang off it and each is asserted here, because the free cap
 /// is what the demo runs at by default and it is easy to ship the locked panel
