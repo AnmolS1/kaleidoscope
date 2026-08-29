@@ -52,6 +52,7 @@ struct ArtworkView: View {
                 if let name = d.author.name {
                     Text("by \(name)").font(.subheadline).foregroundStyle(.secondary)
                 }
+                metaRow(d)
             }
 
             actionRow(d)
@@ -60,6 +61,38 @@ struct ArtworkView: View {
             if let errorText { Text(errorText).font(.footnote).foregroundStyle(.red) }
         }
         .padding()
+    }
+
+    /// Symmetry chips. `segments == 0` is the stored signal that the visible
+    /// layers disagree — it means LAYERED, and printing "0-fold" there is the
+    /// bug this row exists to avoid. Server-side already says "layered"; this is
+    /// the client catching up (DESIGN.md, "Layered copy").
+    @ViewBuilder
+    private func metaRow(_ d: ArtworkDetail) -> some View {
+        HStack(spacing: 8) {
+            chip(d.segments == 0 ? "Layered" : "\(d.segments)-fold",
+                 systemImage: d.segments == 0 ? "square.3.layers.3d" : "circle.hexagongrid")
+            if d.segments != 0 {
+                chip(d.mirror ? "mirrored" : "rotational", systemImage: "arrow.left.and.right")
+            }
+            if let layers = ArtworkMeta.layerChip(d.layers) {
+                chip(layers, systemImage: "square.on.square")
+            }
+        }
+        .font(.caption)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ArtworkMeta.headline(author: d.author.name,
+                                                 segments: d.segments,
+                                                 mirror: d.mirror,
+                                                 layers: d.layers))
+    }
+
+    private func chip(_ text: String, systemImage: String) -> some View {
+        Label(text, systemImage: systemImage)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Blueprint.crease.opacity(0.10), in: Capsule())
     }
 
     @ViewBuilder
@@ -162,12 +195,23 @@ struct ArtworkView: View {
         catch { errorText = "Couldn't like right now." }
     }
 
+    /// Parse a `?v=2` vector body into the drawing the studio loads.
+    ///
+    /// `deserializeV2`, not `deserialize`: the request asks for `?v=2`, and
+    /// `deserialize` routes through `flattenToV1`, which THROWS on a body whose
+    /// visible layers disagree — exactly the bodies `?v=2` exists to fetch. The
+    /// two changes only work together, so this is a named function rather than
+    /// an inline call: a test can hold the call site to the v2 parser.
+    static func parseRemix(_ json: String) throws -> DrawingV2 {
+        try deserializeV2(json)
+    }
+
     private func remix() async {
         // Remix is free — anyone can load a public piece into the studio.
         busy = true; defer { busy = false }
         do {
             let json = try await client.vector(id: id, token: auth.session?.token)
-            let drawing = try deserialize(json)
+            let drawing = try Self.parseRemix(json)
             router.remix(drawing, sourceId: id, into: studio)
             dismiss()
         } catch {
@@ -192,8 +236,20 @@ struct ArtworkView: View {
         busy = true; defer { busy = false }
         do {
             try await client.updateArtwork(id: id, title: nil, visibility: v, token: session.token, csrf: session.csrf)
+            await auth.refreshPlus()
             await load()
-        } catch { errorText = "Couldn't update visibility." }
+        } catch let error as AuthError where error.code == "cap_reached" {
+            // 402 on a PATCH to public. The cap is a CURRENT count, so both
+            // exits are real; the Plus half is suppressed while `plus.enabled`
+            // is false, where it would name something the user cannot buy.
+            let cap = error.body?.cap.map(String.init) ?? "?"
+            let base = "Public wall is full (\(cap) of \(cap)). Make another piece private to free a slot"
+            errorText = (auth.plus?.enabled ?? false)
+                ? base + ", or get Kaleidoscope Plus."
+                : base + "."
+        } catch {
+            errorText = "Couldn't update visibility."
+        }
     }
 
     private func deletePiece() async {

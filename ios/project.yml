@@ -97,7 +97,24 @@ targets:
     # Shared scheme so `xcodebuild -scheme Kaleidoscope` works in CI / headless.
     scheme:
       testTargets:
+        - KaleidoscopeUnitTests
         - KaleidoscopeUITests
+  # Logic tests against the app module. Added in 1.2 for the save flow: the save
+  # sheet has eleven states resolved by a pure function, and a UI test cannot
+  # reach them (a UI-test bundle runs out of process and cannot link the app), so
+  # without this target "the sheet appeared" would be the only available
+  # assertion — and it passes in all eleven.
+  KaleidoscopeUnitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - UnitTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ponderance.kaleidoscope.unittests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Kaleidoscope
   # XCUITest target: asserts key VoiceOver labels exist on each screen.
   KaleidoscopeUITests:
     type: bundle.ui-testing

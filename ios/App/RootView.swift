@@ -24,25 +24,35 @@ struct RootView: View {
     }
 }
 
-/// Hosts the studio. Save requires sign-in — tapping it presents the auth sheet
-/// when signed out, otherwise the save sheet; a successful save opens the piece.
+/// Hosts the studio. Save presents ONE sheet whether or not the user is signed
+/// in: signed-out is a state of the save sheet (DESIGN.md §4), so signing in
+/// re-renders it in place with the title and visibility the user had already
+/// chosen. Presenting an auth sheet first, as this did before 1.2, dismissed the
+/// save sheet and dropped the draft.
 struct StudioTab: View {
     @ObservedObject var model: StudioModel
     @EnvironmentObject var auth: AuthModel
     @EnvironmentObject var router: AppRouter
-    @State private var showAuth = false
     @State private var showSave = false
     @State private var savedPiece: SavedPiece?
 
     var body: some View {
         StudioView(model: model, onSave: handleSave)
             .onAppear { if StudioModel.demoRequested && model.isEmpty { model.loadDemo() } }
-            .sheet(isPresented: $showAuth) {
-                AuthSheet(reason: "Sign in to save your piece to the gallery.")
-                    .environmentObject(auth)
-            }
+            // The layer cap is server policy (3 free / 8 Plus), so the studio is
+            // told it rather than deriving it. Set from RootView so StudioModel
+            // itself needs no knowledge of the session.
+            .task(id: auth.layerCap) { model.setLayerCap(auth.layerCap) }
             .sheet(isPresented: $showSave) {
-                SaveSheet(drawing: model.currentDrawing(), remixOf: model.remixSourceId) { id in
+                SaveSheet(
+                    // v2, not `currentDrawing()`: the v1 projection flattens
+                    // every layer into one under the top layer's symmetry and
+                    // drops per-layer opacity and smoothing. The saved IMAGE
+                    // still looks right, which is exactly why the loss went
+                    // unnoticed — the piece is only wrong when reopened.
+                    drawing: model.currentDrawingV2(),
+                    remixOf: model.remixSourceId
+                ) { id in
                     savedPiece = SavedPiece(id: id)
                     router.markSaved() // refresh the public gallery
                 }
@@ -58,9 +68,7 @@ struct StudioTab: View {
             }
     }
 
-    private func handleSave() {
-        if auth.isSignedIn { showSave = true } else { showAuth = true }
-    }
+    private func handleSave() { showSave = true }
 }
 
 struct SavedPiece: Identifiable {

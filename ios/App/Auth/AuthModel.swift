@@ -18,6 +18,16 @@ final class AuthModel: ObservableObject {
     @Published var isBusy = false
     @Published var errorMessage: String?
 
+    /// The Plus/cap block from `/api/me`. Nil until the first successful call
+    /// (and while signed out), which is why every reader treats nil as "unknown"
+    /// and falls back to the free defaults rather than to zero.
+    @Published private(set) var plus: PlusState?
+
+    /// How many layers the studio may hold. `FREE_LAYER_CAP` (3) until the
+    /// server says otherwise — erring low is safe because `canAddLayer` is a
+    /// gate, not a display.
+    var layerCap: Int { plus?.layerCap ?? 3 }
+
     private let client = AuthClient()
     private static let account = "session"
 
@@ -52,6 +62,7 @@ final class AuthModel: ObservableObject {
 
     private func clearLocal() {
         session = nil
+        plus = nil
         Keychain.delete(Self.account)
     }
 
@@ -60,16 +71,41 @@ final class AuthModel: ObservableObject {
     func validate() async {
         guard let stored = session else { return }
         do {
-            if let user = try await client.me(token: stored.token) {
-                persist(StoredSession(token: stored.token, csrf: stored.csrf, user: user))
-            } else {
+            let me = try await client.me(token: stored.token)
+            guard let user = me.user else {
                 clearLocal() // token no longer valid
+                plus = nil
+                return
             }
-        } catch AuthError.badResponse(401) {
-            clearLocal()
+            persist(StoredSession(token: stored.token, csrf: stored.csrf, user: user))
+            plus = me.plus
         } catch {
-            // keep the session on transient/network errors
+            // A 401 means the token is dead and the session must go; anything
+            // else (offline, a 500) must NOT sign the user out. The decision is
+            // `shouldSignOut` rather than a `catch` pattern because a pattern
+            // that stops matching — which is exactly what happened when
+            // `.badResponse(401)` was replaced by `.api(status:body:)` — fails
+            // SILENTLY into the tolerant branch, and a dead session then lives
+            // forever. A function can be tested; a pattern that never fires
+            // looks identical to one that never had a reason to.
+            if Self.shouldSignOut(on: error) {
+                clearLocal()
+                plus = nil
+            }
         }
+    }
+
+    /// Does this failure mean the stored token is gone for good?
+    static func shouldSignOut(on error: Error) -> Bool {
+        (error as? AuthError)?.status == 401
+    }
+
+    /// Re-read `/api/me` for the cap/Plus state alone (after a save, or after
+    /// the visibility of a piece changes). Never clears the session: this is a
+    /// refresh, and a failed refresh must leave the last known state standing.
+    func refreshPlus() async {
+        guard let stored = session else { return }
+        if let me = try? await client.me(token: stored.token), let p = me.plus { plus = p }
     }
 
     // MARK: Sign in with Apple
@@ -90,6 +126,10 @@ final class AuthModel: ObservableObject {
                 email: credential.email
             )
             persist(StoredSession(token: resp.token, csrf: resp.csrf, user: resp.user))
+            // The Apple exchange returns no `plus`, and the save dialog re-renders
+            // the moment this returns — without this the freshly signed-in user
+            // would see the free layer cap and no cap note.
+            await refreshPlus()
         } catch let error as ASAuthorizationError where error.code == .canceled {
             // user dismissed — not an error
         } catch {
@@ -115,9 +155,10 @@ final class AuthModel: ObservableObject {
                 throw AuthError.decoding
             }
             // Fetch the user for this fresh session.
-            let user = try await client.me(token: token)
-            guard let user else { throw AuthError.decoding }
+            let me = try await client.me(token: token)
+            guard let user = me.user else { throw AuthError.decoding }
             persist(StoredSession(token: token, csrf: csrf, user: user))
+            plus = me.plus
         } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
             // user closed the sheet — not an error
         } catch {
