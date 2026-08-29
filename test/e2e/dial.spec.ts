@@ -380,3 +380,153 @@ test.describe("motion", () => {
     expect(t, "nothing transitions — the handle and the preview both snap").toBe("none");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Undo granularity.
+//
+// The ring crosses the whole 3..24 span in one motion, so before coalescing a
+// single sweep left up to 22 undo entries and Undo stopped meaning "take back
+// what I just did". These read the count off the CANVAS label rather than the
+// dial's range input, for two reasons: clicking Undo is a click outside the
+// popover, and the label is fed from the engine's document through the signal
+// mirror — a different path from the input the drag writes, so it cannot agree
+// with the dial by construction.
+// ---------------------------------------------------------------------------
+
+/** The fold count as the canvas announces it. */
+async function announcedSegments(page: Page): Promise<number> {
+  const label = (await page.locator(".canvas-host").getAttribute("aria-label")) ?? "";
+  const m = /(\d+)-fold/.exec(label);
+  if (!m) throw new Error(`no fold count in canvas label: ${label}`);
+  return Number(m[1]);
+}
+
+test("a whole ring sweep is ONE undo, and undo lands on the count it started at", async ({
+  page,
+}) => {
+  await openDial(page);
+  const { cx, cy, k } = await frame(page);
+  const undo = page.getByRole("button", { name: "Undo" }).first();
+
+  // Verified, not assumed: with an empty history every entry counted below was
+  // created by the sweep. Without this, "one undo returns to 12" would also
+  // pass on a build that recorded nothing at all.
+  await expect(undo).toBeDisabled();
+  const before = await announcedSegments(page);
+  expect(before).toBe(12);
+
+  // 3 → 15 along the ring: the press itself jumps to 3, then twelve moves walk
+  // up to 15, so the gesture spans thirteen distinct values.
+  const from = -240;
+  const to = -240 + ((15 - 3) / 21) * 300;
+  const at = (deg: number) => {
+    const a = (deg * Math.PI) / 180;
+    return { x: cx + 80 * Math.cos(a) * k, y: cy + 80 * Math.sin(a) * k };
+  };
+
+  const start = at(from);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) {
+    const p = at(from + ((to - from) * i) / 12);
+    await page.mouse.move(p.x, p.y);
+  }
+  await page.mouse.up();
+  expect(await announcedSegments(page), "the sweep ends on 15").toBe(15);
+
+  await expect(undo).toBeEnabled();
+  await undo.click();
+
+  // 12, not 3. If the flag were set AFTER the first `set(v)` in `onDown`, the
+  // press's jump to 3 would have opened its own entry and the rest of the
+  // sweep would have merged behind it — leaving this at 3 with a second entry
+  // still on the stack. A depth-only assertion would call that correct.
+  expect(await announcedSegments(page), "undo returns to the pre-gesture count").toBe(before);
+  // And nothing left over: an uncoalesced sweep parks a dozen entries here.
+  await expect(undo).toBeDisabled();
+});
+
+test("each arrow key on the dial is its own undo step", async ({ page }) => {
+  await openDial(page);
+  const undo = page.getByRole("button", { name: "Undo" }).first();
+  await expect(undo).toBeDisabled();
+
+  await page.locator(".pop-sym .dial-range").focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowRight");
+  expect(await announcedSegments(page)).toBe(15);
+
+  // Three presses, three entries. The seal hangs off key-UP, which is what
+  // keeps a HELD key (one keyup, many `input` events) a single step while
+  // discrete presses stay discrete — the pair is what makes either claim
+  // falsifiable.
+  for (const expected of [14, 13, 12]) {
+    await expect(undo).toBeEnabled();
+    await undo.click();
+    expect(await announcedSegments(page)).toBe(expected);
+  }
+  await expect(undo).toBeDisabled();
+});
+
+test("a gesture that ends without a live pointer capture still seals", async ({ page }) => {
+  // The regression this pins: `onUp` used to call `releasePointerCapture`
+  // BEFORE sealing the gesture. That call throws `NotFoundError` whenever the
+  // pointer is not actually captured — synthetic pointer events never capture,
+  // and a real pointer can lose it by leaving the document — and the throw
+  // skipped the seal. The drag still LOOKED right; only the next change
+  // revealed it, by vanishing into the previous drag's undo entry.
+  //
+  // Two synthetic sweeps with no seal between them collapse into one entry, so
+  // the second undo is the discriminator: it should land on the first sweep's
+  // count, not jump straight back to the start.
+  await openDial(page);
+  const { cx, cy, k } = await frame(page);
+  const undo = page.getByRole("button", { name: "Undo" }).first();
+  await expect(undo).toBeDisabled();
+
+  const sweep = (toValue: number, pointerId: number) =>
+    page.locator(".dial-svg").evaluate(
+      (svg, { pts, id }) => {
+        const fire = (type: string, x: number, y: number) =>
+          svg.dispatchEvent(
+            new PointerEvent(type, {
+              pointerId: id,
+              pointerType: "touch",
+              isPrimary: true,
+              bubbles: true,
+              cancelable: true,
+              clientX: x,
+              clientY: y,
+            }),
+          );
+        fire("pointerdown", pts[0][0], pts[0][1]);
+        for (const [x, y] of pts.slice(1)) fire("pointermove", x, y);
+        fire("pointerup", pts[pts.length - 1][0], pts[pts.length - 1][1]);
+      },
+      {
+        id: pointerId,
+        pts: Array.from({ length: 7 }, (_, i) => {
+          const deg = -240 + (((toValue - 3) / 21) * 300 * i) / 6;
+          const a = (deg * Math.PI) / 180;
+          return [cx + 80 * Math.cos(a) * k, cy + 80 * Math.sin(a) * k] as [number, number];
+        }),
+      },
+    );
+
+  await sweep(9, 7);
+  const afterFirst = await announcedSegments(page);
+  expect(afterFirst).toBe(9);
+
+  await sweep(21, 8);
+  expect(await announcedSegments(page)).toBe(21);
+
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  // 9, not 12. Reaching 12 in one undo means the two sweeps merged — i.e. the
+  // first one was never sealed.
+  expect(await announcedSegments(page), "the second sweep is its own entry").toBe(afterFirst);
+
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  expect(await announcedSegments(page)).toBe(12);
+  await expect(undo).toBeDisabled();
+});

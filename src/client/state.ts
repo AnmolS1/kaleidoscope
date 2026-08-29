@@ -23,6 +23,15 @@ export const opacity = signal<number>(1);
 // writes the active layer's values back here whenever the active layer changes.
 export const segments = signal<number>(12);
 export const mirror = signal<boolean>(true);
+/**
+ * Whether the symmetry dial is mid-gesture. Read with `.peek()` — it is a
+ * channel, not a dependency: the effect that pushes `segments` into the engine
+ * must NOT re-run because the flag moved, only because the value did.
+ *
+ * It exists because the dial and the engine are decoupled by that effect, so
+ * "this change is part of one motion" has no other way across the seam.
+ */
+export const symDragging = signal<boolean>(false);
 export const bg = signal<Background>("light");
 export const showGuides = signal<boolean>(true);
 

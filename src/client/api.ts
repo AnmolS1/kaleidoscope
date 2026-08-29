@@ -170,6 +170,10 @@ export interface GalleryItem {
   thumb: string;
   likes: number;
   createdAt: number;
+  /** 0 means the visible layers disagree — "layered", NOT 0-fold. */
+  segments?: number;
+  mirror?: boolean;
+  layers?: number;
 }
 
 export interface SaveInput {

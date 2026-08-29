@@ -58,7 +58,12 @@ enum DialGeometry {
 /// toggle, and the caller decides which layer they apply to.
 struct SymmetryDial: View {
     let sym: Symmetry
-    let onSegments: (Int) -> Void
+    /// `(value, coalesce)`. A ring DRAG passes `true` so the whole sweep is one
+    /// undo entry; a VoiceOver adjustment passes `false` so each swipe stays its
+    /// own step — a rotor user stepping 3 → 8 expects eight undos back, not one.
+    let onSegments: (Int, Bool) -> Void
+    /// Called when a drag ends, to seal the coalesced entry.
+    let onEndGesture: () -> Void
     let onToggleMirror: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -86,8 +91,8 @@ struct SymmetryDial: View {
         .accessibilityValue(Readout.spokenSym(sym))
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: onSegments(clampSegments(sym.segments + 1))
-            case .decrement: onSegments(clampSegments(sym.segments - 1))
+            case .increment: onSegments(clampSegments(sym.segments + 1), false)
+            case .decrement: onSegments(clampSegments(sym.segments - 1), false)
             @unknown default: break
             }
         }
@@ -195,9 +200,16 @@ struct SymmetryDial: View {
                 guard next != sym.segments else { return }
                 if !dragging { feedback.prepare(); dragging = true }
                 feedback.selectionChanged() // a tick per step
-                onSegments(next)
+                onSegments(next, true)
             }
-            .onEnded { _ in dragging = false }
+            .onEnded { _ in
+                // Seal even if the drag never moved far enough to change the
+                // count: `dragging` guards the haptics, not the undo stack, and
+                // an unsealed key would let the NEXT change merge into a
+                // gesture the user has already finished.
+                dragging = false
+                onEndGesture()
+            }
     }
 }
 
@@ -226,8 +238,11 @@ struct SymmetryPopover: View {
                 Chip { Text(layer?.name ?? "").lineLimit(1) }
                     .accessibilityLabel("Editing layer \(layer?.name ?? "")")
             }
-            SymmetryDial(sym: sym) { segments in
-                model.setLayerSym(layerId, Symmetry(segments: segments, mirror: sym.mirror))
+            SymmetryDial(sym: sym) { segments, coalesce in
+                model.setLayerSym(layerId, Symmetry(segments: segments, mirror: sym.mirror),
+                                  coalesce: coalesce)
+            } onEndGesture: {
+                model.endSymGesture()
             } onToggleMirror: {
                 model.setLayerSym(layerId, Symmetry(segments: sym.segments, mirror: !sym.mirror))
             }

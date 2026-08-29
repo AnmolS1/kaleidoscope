@@ -415,7 +415,19 @@ final class DrawingDoc {
 
     func endOpacityGesture() { hist.endCoalesce() }
 
-    func setLayerSym(_ id: String, _ sym: Symmetry) -> Bool {
+    /// Layer symmetry. `coalesce` behaves exactly as it does for opacity:
+    /// consecutive changes to the same layer merge into one undo step, sealed
+    /// by `endSymGesture`.
+    ///
+    /// The dial needs it more than the opacity slider did — its ring crosses
+    /// the whole 3...24 span in a single motion, so an uncoalesced sweep from
+    /// one end to the other left 22 undo entries and Undo stopped meaning
+    /// "take back what I just did".
+    ///
+    /// Keying on the LAYER id is what stops a change of layer mid-sequence from
+    /// folding two layers' edits into one entry: a different id is a different
+    /// key, so it opens a new step by itself.
+    func setLayerSym(_ id: String, _ sym: Symmetry, coalesce: Bool = false) -> Bool {
         let segments = clampSegments(sym.segments)
         guard let layer = findLayer(hist.current, id),
               layer.sym != Symmetry(segments: segments, mirror: sym.mirror),
@@ -423,9 +435,11 @@ final class DrawingDoc {
                   var l = $0; l.sym = Symmetry(segments: segments, mirror: sym.mirror); return l
               })
         else { return false }
-        hist.commit(next)
+        hist.commit(next, coalesceKey: coalesce ? "sym:\(id)" : nil)
         return true
     }
+
+    func endSymGesture() { hist.endCoalesce() }
 
     /// Apply one symmetry to every layer (the popover's "Apply to all layers").
     func setAllSym(_ sym: Symmetry) -> Bool {
@@ -578,8 +592,7 @@ final class StudioModel: ObservableObject {
         //
         // T13 replaces the DEFAULT with the value from /api/me.plus; this
         // override stays useful for tests either way.
-        let cap = ProcessInfo.processInfo.environment["KALEIDO_LAYER_CAP"].flatMap(Int.init) ?? layerCap
-        doc = DrawingDoc(layerCap: cap)
+        doc = DrawingDoc(layerCap: Self.capOverride ?? layerCap)
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: Keys.pressurePreset), let p = PressurePreset(rawValue: raw) {
             pressurePreset = p
@@ -657,11 +670,27 @@ final class StudioModel: ObservableObject {
     var canAddLayer: Bool { doc.canAddLayer }
     var drawing: DrawingV2 { doc.drawing }
 
+    /// A `KALEIDO_LAYER_CAP` launch override, read once.
+    ///
+    /// It has to be consulted HERE and not only in `init`, because `RootView`
+    /// pushes `/api/me.plus`'s value in a `.task` a moment after launch — so an
+    /// init-only override was silently overwritten before anything could read
+    /// it, and the hook was dead. That is not hypothetical: it made two
+    /// `LayerCapUITests` cases fail with "the header must follow the override",
+    /// which went unnoticed because concurrent runs on a shared simulator were
+    /// producing a different failure set every time.
+    private static let capOverride: Int? =
+        ProcessInfo.processInfo.environment["KALEIDO_LAYER_CAP"].flatMap(Int.init)
+
     /// T13 calls this once `/api/me.plus` lands. Raising the cap never changes an
     /// existing document; it only unlocks the add affordance.
+    ///
+    /// The launch override WINS over the server's value — it exists so a test or
+    /// a screenshot pass can pin the cap, and being overridable by a background
+    /// fetch would defeat the point.
     func setLayerCap(_ n: Int) {
         objectWillChange.send()
-        doc.setLayerCap(n)
+        doc.setLayerCap(Self.capOverride ?? n)
     }
 
     @discardableResult func addLayer() -> String? { mutateReturning { $0.addLayer() } }
@@ -671,7 +700,14 @@ final class StudioModel: ObservableObject {
     @discardableResult func setActiveLayer(_ id: String) -> Bool { mutate { $0.setActiveLayer(id) } }
     @discardableResult func setLayerVisible(_ id: String, _ visible: Bool) -> Bool { mutate { $0.setLayerVisible(id, visible) } }
     @discardableResult func setLayerName(_ id: String, _ name: String) -> Bool { mutate { $0.setLayerName(id, name) } }
-    @discardableResult func setLayerSym(_ id: String, _ sym: Symmetry) -> Bool { mutate { $0.setLayerSym(id, sym) } }
+    @discardableResult func setLayerSym(_ id: String, _ sym: Symmetry, coalesce: Bool = false) -> Bool {
+        mutate { $0.setLayerSym(id, sym, coalesce: coalesce) }
+    }
+
+    /// Seal a dial gesture so the next change starts a new undo step. No
+    /// `objectWillChange`: sealing moves no rendered state, exactly as
+    /// `endLayerOpacityGesture` does not.
+    func endSymGesture() { doc.endSymGesture() }
     @discardableResult func setAllSym(_ sym: Symmetry) -> Bool { mutate { $0.setAllSym(sym) } }
 
     @discardableResult

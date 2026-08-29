@@ -2,28 +2,33 @@ import XCTest
 
 /// The layers panel at both caps (DESIGN.md §3, frames `LayersStates` 1 and 2).
 ///
-/// 🔴 **AN iPAD SUITE**, like `StudioRailLayoutUITests`. It asserts the
-/// regular-width panel — the 264pt card, its header and its footnote — so a
-/// compact-height iPhone is a layout it was never written for. 4/4 on an iPad;
-/// `testAddAtTheFreeCapDoesNotAddALayer` fails on an iPhone in landscape,
-/// where the coordinate tap on the disabled chip lands somewhere that commits a
-/// stroke and the canvas reports 4 rather than 3.
+/// Runs on any device, and green on both: iPhone 17e 4/4, iPad Pro 11-inch 4/4.
 ///
-/// That iPhone behaviour is UNDIAGNOSED, not dismissed: it may be the tap
-/// resolving outside the panel, or the panel failing to absorb a hit where a
-/// disabled control sits — which would be a real defect, since a user told they
-/// cannot add a layer would get a dot instead. Adding `.contentShape` to the
-/// panel did not change it, so the obvious explanation is wrong and it wants a
-/// proper look rather than a speculative patch.
+/// This suite was misdiagnosed three times, so the settled account lives here.
+/// THREE separate things were tangled together, and each explanation was
+/// applied to the wrong one:
 ///
-/// `KALEIDO_LAYER_CAP` is a launch-env override on `StudioModel.init`. Two
-/// classes of state hang off it and each is asserted here, because the free cap
-/// is what the demo runs at by default and it is easy to ship the locked panel
-/// believing it is the unlocked one.
+/// - **The two `KALEIDO_LAYER_CAP=8` failures were a real product bug.** The
+///   override was read only in `init`, and `RootView` pushes `/api/me.plus`'s
+///   cap through a `.task` shortly after launch, overwriting it before anything
+///   could read it. It is consulted in `setLayerCap` now — at the setter every
+///   writer passes through, not at the earliest point in the lifecycle.
+/// - **`testAddAtTheFreeCapDoesNotAddALayer` was a real TEST bug, and it IS a
+///   tap falling through to the canvas** — an explanation that was proposed
+///   early, then wrongly retracted when a speculative `.contentShape` fix
+///   changed nothing. The fix was wrong; the mechanism was not. See the comment
+///   in that test for the measured frames. It never explained the two failures
+///   above, which is what made the over-correction easy.
+/// - **The evidence was scrambled by shared-simulator contention.** Several
+///   agents resolved `-destination` from `simctl list devices available` and
+///   landed on one device, so concurrent runs gave a different failure set each
+///   time — 1 of 4, then 4 of 4, then 2 of 4, in suites nobody had touched.
 ///
-/// The two tests are each other's control: every assertion in one is the negation
-/// of an assertion in the other, so neither can pass by reading a panel that
-/// never rendered.
+/// Two rules earned the hard way. Run iOS suites on a private simulator
+/// (`xcrun simctl create`) before believing ANY result, red or green. And when
+/// a fix changes nothing, that is evidence the diagnosis is wrong, not that it
+/// is merely incomplete.
+///
 final class LayerCapUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -111,8 +116,29 @@ final class LayerCapUITests: XCTestCase {
         let app = launch(cap: nil)
         // A disabled element cannot be tapped by XCUITest, so tap where it sits
         // instead: that exercises the model's own cap rather than the label's.
-        app.buttons["Add layer, locked at the layer limit"]
-            .coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        //
+        // But a coordinate tap goes to a POINT, not to the element — so the
+        // point has to actually be on the card. On a short screen the panel is
+        // height-capped (`maxLayersHeight`) and the action row sits below the
+        // fold: on a 390pt-tall landscape phone the card measured
+        // (453, 64, 264, 200) while this button reported (462, 270) — six
+        // points past the bottom edge, over bare canvas. The tap then DREW,
+        // and the test blamed the extra stroke on the cap it was checking.
+        // Scroll it into the card first, and assert that it got there, so the
+        // failure mode is "could not reach the control" rather than a silent
+        // stroke.
+        let card = app.scrollViews.firstMatch
+        let locked = app.buttons["Add layer, locked at the layer limit"]
+        var attempts = 0
+        while !card.frame.contains(CGPoint(x: locked.frame.midX, y: locked.frame.midY)),
+              attempts < 5 {
+            card.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(card.frame.contains(CGPoint(x: locked.frame.midX, y: locked.frame.midY)),
+                      "the locked Add must be inside the card before a coordinate tap; "
+                      + "card \(card.frame), button \(locked.frame)")
+        locked.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Layers, 3 of 3"].exists,
                       "the cap is enforced by the model, not only by the label")
         XCTAssertEqual(app.otherElements["Drawing canvas"].value as? String,

@@ -109,7 +109,9 @@ export function Canvas() {
       // signal is persisted by state.ts, the popover that writes it is T06b's,
       // and this is the bridge that makes it reach the input path.
       effect(() => scene.setDrawWithFinger(S.drawWithFinger.value)),
-      effect(() => scene.setSegments(S.segments.value)),
+      // `.peek()` on the drag flag, so a gesture starting or ending does not by
+      // itself re-push the value — only an actual change of segments does.
+      effect(() => scene.setSegments(S.segments.value, S.symDragging.peek())),
       effect(() => scene.setMirror(S.mirror.value)),
       effect(() => scene.setBackground(S.bg.value)),
       effect(() => scene.setShowGuides(S.showGuides.value)),

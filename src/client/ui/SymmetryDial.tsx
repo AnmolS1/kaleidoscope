@@ -134,13 +134,43 @@ export function SymmetryDial() {
     return valueForPoint(x, y);
   };
 
+  /**
+   * Seal the gesture. Clearing the flag alone is not enough — the engine's
+   * coalesce key outlives the flag, so the NEXT change would still merge into
+   * this drag's undo entry.
+   */
+  const endGesture = () => {
+    S.symDragging.value = false;
+    S.scene.peek()?.endSymGesture();
+  };
+
   const onDown = (e: PointerEvent) => {
     const v = valueAt(e);
     if (v === null) return;
     e.preventDefault();
     dragging.current = true;
-    svgRef.current?.setPointerCapture(e.pointerId);
+    // Both state writes happen BEFORE the DOM call, and both orderings are
+    // load-bearing.
+    //
+    // `setPointerCapture` throws `NotFoundError` when there is no live pointer
+    // with that id. It sat first here, and the throw skipped BOTH lines below:
+    // `dragging.current` had already been set, so the drag kept running with
+    // the gesture flag never raised, and every move of the sweep committed its
+    // own undo entry. The sweep still looked perfect on screen — only the undo
+    // stack knew.
+    //
+    // The flag also has to precede `set(v)`, because the effect that pushes the
+    // value into the engine reads the flag with `.peek()` at the moment of the
+    // write: raised afterwards, the first step of the drag would anchor its own
+    // entry and the rest would merge behind it, leaving a stray step that a
+    // depth-only assertion would happily call correct.
+    S.symDragging.value = true;
     set(v);
+    try {
+      svgRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      // No live pointer to capture. The drag still tracks via the move handler.
+    }
   };
   const onMove = (e: PointerEvent) => {
     if (!dragging.current) return;
@@ -150,7 +180,18 @@ export function SymmetryDial() {
   const onUp = (e: PointerEvent) => {
     if (!dragging.current) return;
     dragging.current = false;
-    svgRef.current?.releasePointerCapture(e.pointerId);
+    // Seal FIRST. `releasePointerCapture` throws `NotFoundError` when the
+    // pointer is no longer captured — which the touch suite provokes with
+    // synthetic events, and a real pointer can do by leaving the document —
+    // and a throw on that line would skip the seal, silently merging the NEXT
+    // change into this gesture's undo entry. Ordering the state change ahead
+    // of the DOM call is what keeps one failure from becoming two.
+    endGesture();
+    try {
+      svgRef.current?.releasePointerCapture(e.pointerId);
+    } catch {
+      // Already released, or never captured. Nothing to undo about it.
+    }
   };
 
   const guides = Array.from({ length: value }, (_, k) => (k * 360) / value);
@@ -244,7 +285,16 @@ export function SymmetryDial() {
         max={MAX_SEGMENTS}
         step={1}
         value={value}
-        onInput={(e) => set(+(e.target as HTMLInputElement).value)}
+        onInput={(e) => {
+          // A HELD arrow key fires `input` repeatedly with no keyup in between,
+          // so coalescing on every input and sealing on key-up is what makes a
+          // held press one undo entry while three separate presses stay three.
+          S.symDragging.value = true;
+          set(+(e.target as HTMLInputElement).value);
+        }}
+        onKeyUp={endGesture}
+        onPointerUp={endGesture}
+        onBlur={endGesture}
         aria-label="Symmetry segments"
         aria-valuetext={`${value} segments, ${mirrored ? "mirrored" : "rotational"}`}
       />

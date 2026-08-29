@@ -133,10 +133,23 @@
   gap: 2px;
 }
 
-/* Both lines are buttons (select / open symmetry), so they have to shed every
-   default button style and keep the ellipsis a plain span would give them. */
+/* The mono line is one line of text holding two controls with a literal ` · `
+   between them, so it is NOT a flex container: a flex gap would replace that
+   separator's own spaces and the composed line would stop reading `12 · D · 70%`.
+   Inline layout keeps the string, and `nowrap` keeps it on one line at the 24-fold
+   worst case (`24 · D · 100%`, ~78px inside the ~112px the mid column gets). */
+.layer-line {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Both lines are buttons (select / open symmetry / open opacity), so they have to
+   shed every default button style and keep the ellipsis a plain span would give
+   them. */
 .layer-name,
-.layer-sym {
+.layer-sym,
+.layer-opacity {
   max-width: 100%;
   padding: 0;
   border: none;
@@ -153,12 +166,16 @@
   font-weight: 500;
   color: var(--color-graphite);
 }
-.layer-sym {
-  /* `.mono` supplies size, tracking, case and colour. */
+.layer-sym,
+.layer-opacity {
+  /* `.mono` on the LINE supplies size, tracking, case and colour; the buttons
+     inherit it, which is why neither one carries `.mono` itself. */
   text-transform: uppercase;
 }
 .layer-name:focus-visible,
 .layer-sym:focus-visible,
+.layer-opacity:focus-visible,
+.layer-opacity-range:focus-visible,
 .link-inline:focus-visible {
   outline: 2px solid var(--color-crane);
   outline-offset: 2px;
@@ -187,6 +204,52 @@
   background: transparent;
   color: var(--color-graphite-60);
   cursor: pointer;
+}
+
+/* ---- the opacity slider -------------------------------------------------
+   A full-width second line inside the row. The row only wraps while the slider
+   is open, so a closed row keeps exactly the geometry the frames draw (and the
+   layout the 44px hit-test measures) — `flex-wrap` on every row would let a long
+   name push the eye onto its own line at some width nobody tested. */
+.layer-row.is-opacity-open {
+  flex-wrap: wrap;
+  /* The row's 8px `gap` is a COLUMN gap; left alone it also opens 8px between
+     the two lines, on top of the slider's own 44px target box. */
+  row-gap: 0;
+}
+/* Wrapping is decided from each item's HYPOTHETICAL size, before any shrinking:
+   with `flex-basis: auto` the middle column measures its own longest line, so a
+   long layer name pushed the EYE onto a line of its own the moment the row was
+   allowed to wrap (44px of empty row, and the eye no longer beside the name it
+   belongs to). Zeroing the basis while the slider is open makes the first line
+   exactly grip · thumbnail · text · eye again, and the only thing that can wrap
+   is the slider, which is what `flex-basis: 100%` asks for. */
+.layer-row.is-opacity-open .layer-mid {
+  flex-basis: 0;
+}
+.layer-opacity-edit {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+.layer-opacity-range {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* DESIGN.md §2's 44px, spent on the TARGET rather than on the painted track —
+     the same trade `.layer-eye` makes. */
+  min-height: 44px;
+  accent-color: var(--color-crane);
+  /* The panel scrolls on a touch screen; without this the first few pixels of a
+     drag are read as a scroll and the thumb jumps when the gesture is handed
+     back. Same reason `.layer-grip` takes it. */
+  touch-action: none;
+}
+.layer-opacity-value {
+  flex: 0 0 auto;
+  width: 36px;
+  text-align: right;
 }
 
 /* ---- footer + footnote ---- */
@@ -390,5 +453,12 @@
   }
   .layer-foot .chip:disabled {
     color: GrayText;
+  }
+  /* `accent-color` is ignored in forced colours, so the slider would render in
+     the system's own colours — which is correct, but the row's 55% dim is gone
+     too, so nothing else needs saying here. The value readout must not stay
+     GrayText-adjacent, though: it is live data, not a disabled control. */
+  .layer-opacity-value {
+    color: CanvasText;
   }
 }

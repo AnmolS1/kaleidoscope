@@ -209,6 +209,71 @@ describe("DrawingDoc — what is undoable", () => {
     expect(doc.canUndo).toBe(false);
   });
 
+  it("a dial sweep is ONE undo step, and undo lands on the value before it", () => {
+    const doc = new DrawingDoc();
+    const id = doc.activeLayerId;
+    const before = doc.activeLayer.sym.segments; // 12
+
+    // Every integer the ring crosses on the way from 12 to 24 — the shape that
+    // produced 22 undo entries before coalescing.
+    for (let v = 13; v <= 24; v++) doc.setLayerSym(id, { segments: v, mirror: true }, true);
+    doc.endSymGesture();
+
+    expect(doc.activeLayer.sym.segments).toBe(24);
+    doc.undo();
+    // The assertion that matters. Depth alone would also pass if the FIRST step
+    // of the sweep had opened its own entry and the rest had merged behind it —
+    // that lands on 13, not 12, and leaves a stray entry the user must undo
+    // twice to escape.
+    expect(doc.activeLayer.sym.segments).toBe(before);
+    expect(doc.canUndo).toBe(false);
+  });
+
+  it("two dial sweeps are two undo steps", () => {
+    const doc = new DrawingDoc();
+    const id = doc.activeLayerId;
+
+    for (const v of [13, 14, 15]) doc.setLayerSym(id, { segments: v, mirror: true }, true);
+    doc.endSymGesture();
+    for (const v of [16, 17]) doc.setLayerSym(id, { segments: v, mirror: true }, true);
+    doc.endSymGesture();
+
+    expect(doc.activeLayer.sym.segments).toBe(17);
+    doc.undo();
+    expect(doc.activeLayer.sym.segments).toBe(15);
+    doc.undo();
+    expect(doc.activeLayer.sym.segments).toBe(12);
+  });
+
+  it("discrete symmetry changes stay separate steps", () => {
+    const doc = new DrawingDoc();
+    const id = doc.activeLayerId;
+    // Three arrow presses, each sealed — the control for the sweep above. If
+    // coalescing leaked into the uncoalesced path, these would collapse into
+    // one and undo would jump straight back to 12.
+    for (const v of [13, 14, 15]) doc.setLayerSym(id, { segments: v, mirror: true });
+    doc.undo();
+    expect(doc.activeLayer.sym.segments).toBe(14);
+    doc.undo();
+    expect(doc.activeLayer.sym.segments).toBe(13);
+  });
+
+  it("a sweep on one layer never merges into a sweep on another", () => {
+    const doc = new DrawingDoc();
+    const first = doc.activeLayerId;
+    doc.addLayer();
+    const second = doc.activeLayerId;
+    expect(second).not.toBe(first);
+
+    // No endSymGesture between them: only the per-layer key separates these.
+    doc.setLayerSym(first, { segments: 20, mirror: true }, true);
+    doc.setLayerSym(second, { segments: 6, mirror: true }, true);
+
+    doc.undo();
+    expect(doc.layers.find((l) => l.id === second)!.sym.segments).toBe(12);
+    expect(doc.layers.find((l) => l.id === first)!.sym.segments).toBe(20);
+  });
+
   it("an uncoalesced opacity change is its own step", () => {
     const doc = new DrawingDoc();
     const id = doc.activeLayerId;

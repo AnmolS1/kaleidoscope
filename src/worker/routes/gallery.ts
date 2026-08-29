@@ -30,6 +30,13 @@ gallery.get("/gallery", async (c) => {
       author: { name: a.author_name, avatar: a.author_avatar },
       thumb: `/api/artworks/${a.id}/thumb`,
       altText: a.alt_text ?? templateAlt(a),
+      // `segments === 0` means the visible layers disagree — the piece is
+      // "layered", not 0-fold. Cards need it to render that copy (DESIGN.md
+      // "Layered copy"), and the row already carries it: the list queries are
+      // SELECT *, so this is serialization, not a new read.
+      segments: a.segments,
+      mirror: !!a.mirror,
+      layers: a.layers,
       likes: a.likes,
       createdAt: a.created_at,
     })),
@@ -81,6 +88,13 @@ gallery.get("/users/me/artworks", requireAuth, async (c) => {
       visibility: a.visibility,
       thumb: `/api/artworks/${a.id}/thumb`,
       altText: a.alt_text ?? templateAlt(a),
+      // `segments === 0` means the visible layers disagree — the piece is
+      // "layered", not 0-fold. Cards need it to render that copy (DESIGN.md
+      // "Layered copy"), and the row already carries it: the list queries are
+      // SELECT *, so this is serialization, not a new read.
+      segments: a.segments,
+      mirror: !!a.mirror,
+      layers: a.layers,
       likes: a.likes,
       createdAt: a.created_at,
     })),
