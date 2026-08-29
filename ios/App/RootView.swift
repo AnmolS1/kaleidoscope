@@ -75,9 +75,23 @@ struct SavedPiece: Identifiable {
     let id: String
 }
 
+/// About. Deliberately carries NO link to the web app.
+///
+/// Guideline 3.1.1 forbids buttons or calls to action directing customers to a
+/// purchasing mechanism other than in-app purchase. This screen used to offer
+/// "Draw your own online" pointing at `Config.webURL`; that was harmless while
+/// the web had nothing to sell, and stops being harmless the moment Plus ships
+/// there, because the same product is then buyable through Lemon Squeezy one tap
+/// from an App Store build. It would have become a rejection at the worst
+/// possible time — a review cycle after the paywall lands, not before it.
+///
+/// Nothing is lost by removing it: since 1.2 the app draws natively in the Draw
+/// tab, so the button pointed at a worse version of a feature already onboard.
+///
+/// If it is ever wanted back, the compliant shape is to show it only when the
+/// server positively reports Plus as DISABLED on the web, failing closed on nil
+/// — not to link unconditionally.
 struct AboutView: View {
-    @Environment(\.openURL) private var openURL
-
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -90,15 +104,6 @@ struct AboutView: View {
                         .foregroundStyle(Blueprint.graphite)
                     Text("A random public mandala from the Kaleidoscope community, on your home screen. No account, no tracking — it simply shows public artwork and rotates on a schedule you pick.")
                         .foregroundStyle(Blueprint.graphite.opacity(0.8))
-                    Button {
-                        openURL(Config.webURL)
-                    } label: {
-                        Label("Draw your own online", systemImage: "safari")
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(Blueprint.crease)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

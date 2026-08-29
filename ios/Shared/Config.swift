@@ -8,7 +8,10 @@ enum Config {
     /// (`wrangler dev --remote`) — the app's Info.plist carries a debug-only ATS exception for it.
     static let baseURL = URL(string: "https://kaleidoscope.ponderance.dev")!
 
-    /// The public website — used for "Draw your own" and as a fallback host for deep links.
+    /// The public website. Used for artwork PERMALINKS and as a fallback host
+    /// for deep links — deliberately NOT for any "draw on the web" call to
+    /// action, which would be a Guideline 3.1.1 exposure once Plus is buyable
+    /// there. See AboutView.
     static let webURL = URL(string: "https://kaleidoscope.ponderance.dev")!
 
     /// URL scheme the widget uses to open a specific piece in the app.

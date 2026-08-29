@@ -133,9 +133,12 @@ struct ShuffleViewer: View {
                 }
             }
 
-            Button("Draw your own") { openURL(Config.webURL) }
-                .font(.footnote)
-                .foregroundStyle(Blueprint.crease)
+            // No "Draw your own" link to the web app here either — see AboutView
+            // for the reasoning. A CTA to `Config.webURL` becomes a Guideline
+            // 3.1.1 problem the moment Plus is buyable there, and the Draw tab
+            // already does this natively. "Open on the web" above SURVIVES: it
+            // points at one specific piece's permalink, which is content rather
+            // than a purchasing mechanism.
         }
         .padding()
         .gesture(DragGesture(minimumDistance: 30).onEnded { _ in advance() })

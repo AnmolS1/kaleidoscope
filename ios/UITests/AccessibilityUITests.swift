@@ -159,9 +159,16 @@ final class AccessibilityUITests: XCTestCase {
         }
 
         // 5) Shuffle viewer (full-screen sheet; network-backed).
+        //
+        // The load anchor is "Open on the web", which appears once an item has
+        // arrived. It used to be "Draw your own" — a link to the web app that
+        // was removed as a Guideline 3.1.1 exposure. Note the failure shape that
+        // would have caused: the `if` simply would not fire, the capture would
+        // silently stop producing 05-shuffle-viewer, and the suite would still
+        // pass. An anchor that no longer exists does not fail, it just waits.
         if app.buttons["Shuffle"].waitForExistence(timeout: 5) {
             app.buttons["Shuffle"].tap()
-            if app.buttons["Draw your own"].waitForExistence(timeout: 12) {
+            if app.buttons["Open on the web"].waitForExistence(timeout: 12) {
                 snap(app, "05-shuffle-viewer")
             }
             if app.buttons["Done"].exists { app.buttons["Done"].tap() }
