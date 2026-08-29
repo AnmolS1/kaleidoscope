@@ -18,6 +18,11 @@ final class StudioScreenshotUITests: XCTestCase {
         XCUIDevice.shared.orientation = orientation
         let app = XCUIApplication()
         app.launchEnvironment["KALEIDO_DEMO"] = "1"
+        // Marketing shots run at the PLUS cap. At the free cap the same panel
+        // reads `3 of 3` with a locked Add and a Plus footnote, which is correct
+        // behaviour and the wrong thing to lead a product page with. The locked
+        // state is covered by `LayerCapUITests` instead of by a screenshot.
+        app.launchEnvironment["KALEIDO_LAYER_CAP"] = "8"
         app.launch()
         XCTAssertTrue(app.otherElements["Drawing canvas"].waitForExistence(timeout: 20))
         return app
@@ -126,6 +131,7 @@ final class StudioScreenshotUITests: XCTestCase {
         app.launchArguments += ["-UIPreferredContentSizeCategoryName",
                                 "UICTContentSizeCategoryAccessibilityXL"]
         app.launchEnvironment["KALEIDO_DEMO"] = "1"
+        app.launchEnvironment["KALEIDO_LAYER_CAP"] = "8"
         app.launch()
         XCTAssertTrue(app.otherElements["Drawing canvas"].waitForExistence(timeout: 20))
         snap("a11y3-01-studio")

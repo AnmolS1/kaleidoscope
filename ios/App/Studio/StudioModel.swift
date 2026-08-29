@@ -526,6 +526,16 @@ final class StudioModel: ObservableObject {
 
     @Published var showPencilBanner: Bool = false
 
+    /// The name of the layer that refused the last stroke because it is hidden,
+    /// or nil. The studio raises DESIGN.md §3's nudge from this and clears it.
+    ///
+    /// A NAME rather than an id: the nudge quotes it (`"Highlights" is hidden…`)
+    /// and it is captured before the attempt, so a rename or a reorder between
+    /// the refusal and the nudge cannot make the sentence describe a different
+    /// layer than the one that refused. Same shape as the web's
+    /// `onHiddenLayerRefusal(layerName)`.
+    @Published var refusedHiddenLayer: String?
+
     // View transform (1–8×). Owned here rather than by the view so an export or
     // a save is never affected by it.
     @Published private(set) var viewScale: CGFloat = 1
@@ -663,10 +673,40 @@ final class StudioModel: ObservableObject {
 
     // MARK: Strokes
 
+    /// Commit a stroke to the active layer — or refuse it, if that layer is
+    /// hidden.
+    ///
+    /// **A hidden layer refuses ink; it is never auto-unhidden** (PLAN §4,
+    /// DESIGN.md §3). Before this guard, a stroke drawn while the active layer
+    /// was hidden landed anyway: `KaleidoCanvasView` already declines to draw it
+    /// ("what you see while drawing is what commits"), so the user watched
+    /// nothing appear while the ink silently entered the document, counted toward
+    /// `strokeCount`, and shipped in the saved vector. The web had the same
+    /// defect in `history.ts`; both clients now refuse identically.
+    ///
+    /// Three properties this has to keep, matched to the web's implementation:
+    ///
+    /// - **No undo step.** Returning early rather than calling `mutate` is what
+    ///   guarantees it: a history entry holding no change leaves the user
+    ///   pressing undo and watching nothing happen.
+    /// - **The stroke is dropped** — not committed and hidden, not deferred.
+    /// - **The refusal names the layer**, captured BEFORE the attempt.
+    ///
+    /// The empty-stroke guard stays FIRST, deliberately: a zero-point stroke is a
+    /// stray tap, not a refusal, and firing the nudge for one would make the most
+    /// common accidental gesture produce a message about layers.
     func commit(_ stroke: Stroke) {
         guard !stroke.pts.isEmpty else { return }
+        let active = doc.activeLayer
+        guard active.visible else {
+            refusedHiddenLayer = active.name
+            return
+        }
         mutate { $0.commitStroke(stroke) }
     }
+
+    /// Called by the studio once it has raised the refusal nudge.
+    func clearHiddenLayerRefusal() { refusedHiddenLayer = nil }
 
     @discardableResult
     func deleteStroke(layerId: String, index: Int) -> Bool {

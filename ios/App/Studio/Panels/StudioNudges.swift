@@ -18,16 +18,8 @@ enum StudioNudge: Equatable {
     case newLayerSymmetry(String)
     /// Remove-stroke retargeted the active layer.
     case switchedLayer(String)
-    /// A stroke was refused because the active layer is hidden.
-    ///
-    /// **UNWIRED.** Nothing raises this. The refusal it reports does not exist:
-    /// `StudioModel.commit` appends to the active layer whatever its `visible`
-    /// flag, and `StudioModel.swift` is T11's file. The copy is kept verbatim
-    /// here — with its CTA and its handler in `StudioView.nudgeAction` — so that
-    /// adding `guard activeLayer.visible` to `commit` is the only change needed
-    /// to switch it on. It is deliberately NOT raised in the meantime: "nothing
-    /// was drawn" is a false statement while the stroke is landing, which is
-    /// worse than showing no nudge at all.
+    /// A stroke was refused because the active layer is hidden. Raised from
+    /// `StudioModel.refusedHiddenLayer`, which the commit guard sets.
     case hiddenLayer(String)
 
     var systemImage: String {
