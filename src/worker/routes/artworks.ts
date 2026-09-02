@@ -159,6 +159,27 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
   const meta = validateDrawingJson(drawing);
   if (!meta.ok) return c.json({ error: meta.error }, 400);
 
+  // 🔴 CHECK THE BYTES WE ARE ABOUT TO STORE, not only the ones we were sent.
+  //
+  // `deserialize` caps the INPUT at VECTOR_HARD_CAP_BYTES, and this route then
+  // stores `serialize(meta.drawing)` — a different string. Canonicalizing
+  // usually shrinks it (rounding kills long floats), but for an input that is
+  // ALREADY canonical the v1 -> v2 layer wrapper is a flat +67 bytes with
+  // nothing to compensate. Measured: an input 7 bytes under the cap stores 60
+  // bytes over it.
+  //
+  // Storing that is silent, permanent data loss. Every reader parses what came
+  // out of R2 — `?v=1`, `?v=2`, iOS `deserializeV2`, the hash backfill — and all
+  // of them throw `vector too large` on a piece the save reported as 201. Worse,
+  // `content_hash` is computed from the CALLER's bytes, so the row carries a
+  // valid hash and looks perfectly healthy in D1 while the drawing is dead.
+  //
+  // Same self-destruct shape as M8, which is what this pass exists to fix.
+  const canonical = serialize(meta.drawing);
+  if (new TextEncoder().encode(canonical).length > CAPS.vectorBytes) {
+    return c.json({ error: "vector_too_large" }, 413);
+  }
+
   const image = fileFrom(form.get("image"));
   const thumb = fileFrom(form.get("thumb"));
   const og = fileFrom(form.get("og"));
@@ -252,7 +273,7 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
   // served verbatim to every reader including iOS. Re-serializing makes the
   // stored form the one the format defines, so what comes out is what the hash
   // was computed over.
-  await putVectorGz(c.env, id, serialize(meta.drawing));
+  await putVectorGz(c.env, id, canonical);
   await putWebp(c.env, keys.image(id), imageBytes);
   await putWebp(c.env, keys.thumb(id), await thumb.arrayBuffer());
   if (og && og.size <= CAPS.ogBytes) {

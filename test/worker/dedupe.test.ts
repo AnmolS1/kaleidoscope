@@ -7,7 +7,8 @@
 
 import { describe, it, expect } from "vitest";
 import app from "../../src/worker/index";
-import { contentHash } from "../../src/shared/vector";
+import { CAPS } from "../../src/worker/lib/validate";
+import { contentHash, deserialize, serialize } from "../../src/shared/vector";
 import {
   BASE,
   makeD1,
@@ -371,5 +372,83 @@ describe("a drawing with nothing visible is never deduped", () => {
     const again = await save(env, saveForm({ drawing: visible, title: "Two" }));
     expect(again.status).toBe(200);
     expect(((await again.json()) as { deduped: boolean }).deduped).toBe(true);
+  });
+});
+
+// A save whose CANONICAL form crosses the byte cap the input passed.
+//
+// `deserialize` caps the input; the row stores `serialize(meta.drawing)`, which
+// is a different string. Canonicalizing usually shrinks it, but an input that is
+// already canonical grows by exactly the v1 -> v2 layer wrapper — measured at
+// +67 bytes — with nothing to compensate. Stored, that piece is unreadable by
+// every reader (`?v=1`, `?v=2`, iOS, the backfill) while its `content_hash`,
+// computed from the CALLER's bytes, makes the row look healthy.
+describe("the bytes we STORE are capped, not just the bytes we were sent", () => {
+  const enc = new TextEncoder();
+  /** A canonical v1 drawing with `n` points — `serialize` changes no number. */
+  const v1 = (n: number) =>
+    JSON.stringify({
+      v: 1,
+      bg: "light",
+      sym: { segments: 6, mirror: true },
+      strokes: [
+        {
+          tool: "solid",
+          color: "#e84a27",
+          size: 6,
+          opacity: 1,
+          pts: Array.from({ length: n }, (_, i) => [((i % 800) - 400) / 1000, 0.123, 0.5]),
+        },
+      ],
+    });
+
+  /** Largest point count whose `size(json)` still satisfies `fits`. */
+  function largest(size: (json: string) => number): string {
+    let lo = 100;
+    let hi = 30000;
+    while (lo < hi) {
+      const m = Math.ceil((lo + hi) / 2);
+      if (size(v1(m)) <= CAPS.vectorBytes) lo = m;
+      else hi = m - 1;
+    }
+    return v1(lo);
+  }
+  /** The largest drawing the INPUT cap accepts — whose STORED form overflows. */
+  const largestAccepted = () => largest((j) => enc.encode(j).length);
+  /** The largest whose CANONICAL form fits, which is the honest limit.
+   *  Guarded because `deserialize` throws on a candidate the INPUT cap already
+   *  refuses, and a throw inside the search is not a size. */
+  const largestStorable = () =>
+    largest((j) => {
+      if (enc.encode(j).length > CAPS.vectorBytes) return Number.MAX_SAFE_INTEGER;
+      return enc.encode(serialize(deserialize(j))).length;
+    });
+
+  it("413s the save whose canonical form would not fit", async () => {
+    const { DB, env } = ctx();
+    const drawing = largestAccepted();
+    // The premise, asserted rather than assumed: the input fits and the stored
+    // form does not. If canonicalization ever stops growing this shape, this
+    // line fails and the test below stops meaning anything.
+    expect(enc.encode(drawing).length).toBeLessThanOrEqual(CAPS.vectorBytes);
+    expect(enc.encode(serialize(deserialize(drawing))).length).toBeGreaterThan(CAPS.vectorBytes);
+
+    const res = await save(env, saveForm({ drawing, title: "Just too big" }));
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "vector_too_large" });
+    // And nothing was written — a row with an unreadable blob is worse than no
+    // row, because the hash makes it look fine.
+    expect(DB._db.prepare("SELECT COUNT(*) AS n FROM artworks").get()).toEqual({ n: 0 });
+  });
+
+  it("CONTROL: the largest drawing that genuinely FITS still saves and still parses", async () => {
+    const { env } = ctx();
+    const drawing = largestStorable();
+    expect(enc.encode(serialize(deserialize(drawing))).length).toBeLessThanOrEqual(CAPS.vectorBytes);
+
+    const res = await save(env, saveForm({ drawing, title: "Fits" }));
+    expect(res.status).toBe(201);
+    // The point of the whole guard: what we stored can be read back.
+    expect(() => deserialize(serialize(deserialize(drawing)))).not.toThrow();
   });
 });
