@@ -1,0 +1,36 @@
+-- Recompute every content_hash (REVIEW.md S16 + S17).
+--
+-- `serializeForHash` — the definition of this column — gained two
+-- normalizations, so every hash computed under the old definition is stale:
+--
+--   S17  hex colour case is folded, because #ABCDEF and #abcdef are the same
+--        colour. The app's own palette is UPPERCASE, so this affects very
+--        nearly every existing row.
+--   S16  a stack that `flattenToV1` accepts is hashed FLAT, because the
+--        layered and flattened forms are the same picture by the code's own
+--        argument. A pre-1.2 client that fetched the `?v=1` form and re-saved
+--        it used to get a duplicate instead of `deduped`.
+--
+-- Nulling is the trigger: the backfill route selects on `content_hash IS NULL`
+-- and `setContentHash` writes with the same predicate, so no new code is needed
+-- and re-running this file is harmless.
+--
+-- 🔴 OPERATIONAL NOTES — read before deploying.
+--
+-- 1. DEDUPE IS BLIND until the backfill finishes. Saves still work; two
+--    identical drawings saved inside the window both land as separate pieces.
+--    Run `POST /api/admin/backfill-hash` until `processed` is 0, immediately
+--    after the deploy, and keep the window short.
+--
+-- 2. SOME ROWS WILL LEGITIMATELY KEEP A NULL HASH. S16 merges pieces that used
+--    to be distinct, so if one user holds both a layered piece and its
+--    flattened twin, the unique (user_id, content_hash) index accepts only the
+--    first; the second is reported `duplicate_or_already_set` and keeps NULL.
+--    That is correct — they ARE the same picture — and it means the T20 check
+--    "NULL hash count = 0" can no longer be satisfied. Compare against the
+--    count of rows the backfill reports as skipped-duplicate instead.
+--
+-- 3. The partial unique index is `WHERE content_hash IS NOT NULL`, so setting
+--    the column to NULL removes those entries cleanly; nothing to drop or
+--    rebuild.
+UPDATE artworks SET content_hash = NULL;

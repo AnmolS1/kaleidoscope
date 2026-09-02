@@ -319,8 +319,46 @@ export function serialize(d: DrawingV2): string {
  *
  * Layer ORDER and per-layer opacity and symmetry are kept, because all three
  * change the render.
+ *
+ * Two normalizations beyond that, both added 2026-09-01 (REVIEW S16, S17) and
+ * both requiring the content_hash re-backfill in migration 0006:
+ *
+ * 1. **Hex colour case is folded.** `#ABCDEF` and `#abcdef` are the same
+ *    colour and render identically, so they are the same picture.
+ *
+ * 2. **A stack that FLATTENS is hashed flat.** `flattenToV1` already decides
+ *    when N layers are render-equivalent to one — same symmetry throughout,
+ *    every layer at opacity 1, no `po`/`sm`. When that holds, the layered form
+ *    and the single-layer form ARE the same picture by this codebase's own
+ *    argument, and they used to hash differently: a pre-1.2 client that fetched
+ *    the flattened `?v=1` form and re-saved it got a duplicate instead of
+ *    `deduped`. The conditions are read off `flattenToV1` rather than restated,
+ *    so the two cannot drift apart.
+ *
+ * Anything that changes the picture still separates two drawings; these only
+ * merge things the renderer cannot tell apart.
  */
 export function serializeForHash(d: DrawingV2): string {
+  const fold = (st: Stroke): Stroke =>
+    st.color === "spectrum" ? st : { ...st, color: st.color.toLowerCase() };
+
+  // Hash the flattened form when the drawing genuinely flattens. `flattenToV1`
+  // owns that decision; calling it is what keeps the two definitions identical.
+  const flat = flattenToV1(d);
+  if (flat) {
+    return JSON.stringify({
+      v: 2,
+      bg: flat.bg,
+      layers: [
+        {
+          opacity: round(1, OPACITY_DECIMALS),
+          sym: { segments: flat.sym.segments, mirror: flat.sym.mirror },
+          strokes: flat.strokes.map((st) => compactStroke(fold(st))),
+        },
+      ],
+    });
+  }
+
   return JSON.stringify({
     v: 2,
     bg: d.bg,
@@ -329,24 +367,7 @@ export function serializeForHash(d: DrawingV2): string {
       .map((l) => ({
         opacity: round(l.opacity, OPACITY_DECIMALS),
         sym: { segments: l.sym.segments, mirror: l.sym.mirror },
-        // 🔴 Hex case is deliberately NOT folded here (REVIEW S17, reverted
-        // 2026-09-01 after measuring the cost).
-        //
-        // `#ABCDEF` and `#abcdef` are the same picture and hash differently,
-        // which is a real defect. But this projection defines every
-        // `content_hash` already stored, and the app's own palette is
-        // UPPERCASE (#E84A27 and friends) — so folding case changes the hash of
-        // essentially every existing piece. Dedupe compares a freshly computed
-        // hash against the stored one, so a user re-saving their own drawing
-        // would get a duplicate row instead of `deduped`, and the "you already
-        // saved this" pre-flight would stop recognising their work.
-        //
-        // Fixing it therefore needs a coordinated re-backfill (null every
-        // content_hash, re-run POST /api/admin/backfill-hash, accept a window
-        // where dedupe is blind), not a one-line change. Flagged for Anmol
-        // rather than shipped quietly: the cure is worse than the disease until
-        // that migration is planned.
-        strokes: l.strokes.map(compactStroke),
+        strokes: l.strokes.map((st) => compactStroke(fold(st))),
       })),
   });
 }

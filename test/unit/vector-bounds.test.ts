@@ -2,7 +2,7 @@
 // platform could not survive, and one that destroyed the drawing on re-save.
 
 import { describe, it, expect } from "vitest";
-import { deserialize, serialize, MIN_SIZE, MAX_COORD } from "../../src/shared/vector";
+import { deserialize, serialize, contentHash, MIN_SIZE, MAX_COORD } from "../../src/shared/vector";
 
 const stroke = (over: Record<string, unknown> = {}) => ({
   tool: "solid",
@@ -76,5 +76,69 @@ describe("a stroke size below the rounding grid is refused (M8)", () => {
       const once = serialize(deserialize(doc(stroke({ pts: [[0, 0, p], [0.1, 0.1, p]] }))));
       expect(serialize(deserialize(once))).toBe(once);
     }
+  });
+});
+
+// REVIEW.md S16 + S17 — two things that are the same picture must hash the
+// same. Both required the content_hash re-backfill in migration 0006.
+describe("the hash projection merges what the renderer cannot tell apart", () => {
+  const layered = (over: Partial<{ opacity: number; sym2: number; po: 1; sm: 1 }> = {}) =>
+    JSON.stringify({
+      v: 2,
+      bg: "light",
+      layers: [
+        { id: "l1", name: "a", visible: true, opacity: 1, sym: { segments: 6, mirror: true },
+          strokes: [{ tool: "solid", color: "#E84A27", size: 6, opacity: 1,
+                      pts: [[0, 0, 1], [0.1, 0.1, 1]], ...(over.po ? { po: 1 } : {}) }] },
+        { id: "l2", name: "b", visible: true, opacity: over.opacity ?? 1,
+          sym: { segments: over.sym2 ?? 6, mirror: true },
+          strokes: [{ tool: "solid", color: "#1D9E75", size: 4, opacity: 1,
+                      pts: [[0.2, 0.2, 1], [0.3, 0.3, 1]], ...(over.sm ? { sm: 1 } : {}) }] },
+      ],
+    });
+
+  /** The same picture as `layered()`, drawn as one layer. */
+  const flat = JSON.stringify({
+    v: 2,
+    bg: "light",
+    layers: [
+      { id: "l1", name: "only", visible: true, opacity: 1, sym: { segments: 6, mirror: true },
+        strokes: [
+          { tool: "solid", color: "#E84A27", size: 6, opacity: 1, pts: [[0, 0, 1], [0.1, 0.1, 1]] },
+          { tool: "solid", color: "#1D9E75", size: 4, opacity: 1, pts: [[0.2, 0.2, 1], [0.3, 0.3, 1]] },
+        ] },
+    ],
+  });
+
+  it("S16: a stack that flattens hashes the same as its flattened form", async () => {
+    expect(await contentHash(layered())).toBe(await contentHash(flat));
+  });
+
+  it("S16: and the conditions come from flattenToV1, so they move together", async () => {
+    // Each of these is a reason flattenToV1 refuses, and each must therefore
+    // keep the layered form distinct from the flat one.
+    for (const [why, json] of [
+      ["a different symmetry", layered({ sym2: 12 })],
+      ["a layer below full opacity", layered({ opacity: 0.5 })],
+      ["a pressure-opacity stroke", layered({ po: 1 })],
+      ["a smoothed stroke", layered({ sm: 1 })],
+    ] as Array<[string, string]>) {
+      expect(await contentHash(json), why).not.toBe(await contentHash(flat));
+    }
+  });
+
+  it("S17: hex colour case does not split a drawing in two", async () => {
+    const upper = flat;
+    const lower = flat.replace("#E84A27", "#e84a27").replace("#1D9E75", "#1d9e75");
+    expect(await contentHash(upper)).toBe(await contentHash(lower));
+  });
+
+  it("CONTROL: genuinely different pictures still hash differently", async () => {
+    const other = flat.replace("#1D9E75", "#1D9E76");
+    expect(await contentHash(flat)).not.toBe(await contentHash(other));
+  });
+
+  it("CONTROL: the WIRE format is untouched — stored bytes keep their case", () => {
+    expect(serialize(deserialize(flat))).toContain("#E84A27");
   });
 });

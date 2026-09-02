@@ -341,8 +341,11 @@ export async function setArtworkHash(
       .run();
     return (res.meta?.changes ?? 0) > 0;
   } catch (e) {
+    // Same narrowing as insertArtwork (S5): only the dedupe index means "this
+    // row is a duplicate". A foreign-key failure reported as one would be
+    // recorded as `duplicate_or_already_set` and quietly never retried.
     const msg = e instanceof Error ? e.message : String(e);
-    if (/UNIQUE|constraint/i.test(msg)) return false;
+    if (/unique/i.test(msg) && /content_hash/i.test(msg)) return false;
     throw e;
   }
 }
