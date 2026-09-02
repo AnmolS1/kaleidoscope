@@ -215,9 +215,24 @@ export class History {
     this.coalesceKey = null;
   }
 
-  /** Change the state WITHOUT an undo entry (visibility, rename). */
-  replace(next: DrawingV2): void {
-    this.cur = next;
+  /**
+   * Change the state WITHOUT an undo entry (visibility, rename).
+   *
+   * 🔴 Applied to the WHOLE stack, not just to `cur` (S7).
+   *
+   * Keeping these off the undo stack is right — nobody expects ⌘Z to re-hide a
+   * layer they just showed. But writing them to `cur` alone left every snapshot
+   * in `past` still carrying the OLD value, so the next unrelated undo restored
+   * one: hide a layer, press ⌘Z for a stroke, and the layer comes back — and it
+   * is in the saved picture, because the save reads `cur`. Same for renames.
+   *
+   * Mapping over `past` and `future` too makes the change genuinely outside the
+   * timeline, which is what "not undoable" was supposed to mean.
+   */
+  replaceAll(map: (d: DrawingV2) => DrawingV2): void {
+    this.cur = map(this.cur);
+    this.past = this.past.map(map);
+    this.future = this.future.map(map);
     // A non-undoable edit still ends a gesture: coalescing an opacity drag into
     // a state the user has since renamed would undo the rename too.
     this.coalesceKey = null;
@@ -356,7 +371,7 @@ export class DrawingDoc {
     if (this.hist.current.bg === bg) return false;
     // Background is a property of the drawing but not an ink edit; it rides
     // outside history the same way the theme toggle always has.
-    this.hist.replace({ ...this.hist.current, bg });
+    this.hist.replaceAll((d) => ({ ...d, bg }));
     return true;
   }
 
@@ -437,8 +452,12 @@ export class DrawingDoc {
     if (!next) return false;
     this.hist.commit(next);
     if (this.active === id) {
-      // Fall to whatever now occupies that slot, or the new top.
-      this.active = next.layers[Math.min(i, next.layers.length - 1)].id;
+      // Fall to whatever now occupies that slot, or the new top — but never to
+      // a HIDDEN layer (S8). Landing there makes the next stroke get silently
+      // refused with a toast naming a layer the user never chose, which reads
+      // as the app ignoring them.
+      const fallback = next.layers[Math.min(i, next.layers.length - 1)]!;
+      this.active = fallback.visible ? fallback.id : topVisibleLayerId(next);
     }
     return true;
   }
@@ -460,7 +479,7 @@ export class DrawingDoc {
   setLayerVisible(id: string, visible: boolean): boolean {
     const layer = findLayer(this.hist.current, id);
     if (!layer || layer.visible === visible) return false;
-    this.hist.replace(withLayer(this.hist.current, id, (l) => ({ ...l, visible }))!);
+    this.hist.replaceAll((d) => withLayer(d, id, (l) => ({ ...l, visible })) ?? d);
     return true;
   }
 
@@ -470,7 +489,7 @@ export class DrawingDoc {
     if (name === null) return false;
     const layer = findLayer(this.hist.current, id);
     if (!layer || layer.name === name) return false;
-    this.hist.replace(withLayer(this.hist.current, id, (l) => ({ ...l, name }))!);
+    this.hist.replaceAll((d) => withLayer(d, id, (l) => ({ ...l, name })) ?? d);
     return true;
   }
 

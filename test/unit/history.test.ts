@@ -55,12 +55,32 @@ describe("History (snapshot stack)", () => {
     expect(h.canRedo).toBe(false);
   });
 
-  it("replace() changes the state without an undo entry", () => {
+  it("replaceAll() changes the state without an undo entry", () => {
     const a = fresh();
     const h = new History(a);
-    h.replace({ ...a, bg: "dark" });
+    h.replaceAll((d) => ({ ...d, bg: "dark" }));
     expect(h.current.bg).toBe("dark");
     expect(h.canUndo).toBe(false);
+  });
+
+  // S7. Keeping these off the stack is right; writing them only to `cur` was
+  // not. Every snapshot in `past` still carried the OLD value, so the next
+  // unrelated undo quietly restored it — and the save reads `cur`, so the
+  // reverted state is what got published.
+  it("a non-undoable change survives an undo of something else", () => {
+    const a = fresh();
+    const h = new History(a);
+    h.commit({ ...a, bg: "dark" }); // an ordinary, undoable edit
+    h.replaceAll((d) => ({ ...d, layers: d.layers.map((l) => ({ ...l, name: "Renamed" })) }));
+    expect(h.current.layers[0]!.name).toBe("Renamed");
+
+    h.undo(); // undo the bg change, NOT the rename
+    expect(h.current.bg).toBe("light");
+    expect(h.current.layers[0]!.name, "the rename must not be undone").toBe("Renamed");
+
+    // And it survives a redo too, for the same reason.
+    h.redo();
+    expect(h.current.layers[0]!.name).toBe("Renamed");
   });
 
   it("coalesces consecutive commits with the same key into one entry", () => {

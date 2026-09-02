@@ -487,3 +487,32 @@ describe("visibleStrokes vs totalStrokes", () => {
     expect(doc.visibleStrokes).toBe(1);
   });
 });
+
+// REVIEW.md S8 — after removing a layer, the active layer must not be a HIDDEN
+// one. Landing there makes the next stroke get silently refused with a toast
+// naming a layer the user never chose.
+describe("removeLayer never leaves the active layer hidden (S8)", () => {
+  it("skips a hidden neighbour and lands on a visible layer", () => {
+    const doc = new DrawingDoc(undefined, 8);
+    const a = doc.activeLayerId;          // bottom, visible
+    const b = doc.addLayer()!;            // middle
+    const c = doc.addLayer()!;            // top, active
+    doc.setLayerVisible(b, false);        // the slot the removal would fall into
+
+    doc.setActiveLayer(c);
+    expect(doc.removeLayer(c)).toBe(true);
+
+    const active = doc.layers.find((l) => l.id === doc.activeLayerId)!;
+    expect(active.visible, "the active layer after a removal must be visible").toBe(true);
+    expect(doc.activeLayerId).toBe(a);
+  });
+
+  it("CONTROL: with a visible neighbour it still falls into that slot", () => {
+    const doc = new DrawingDoc(undefined, 8);
+    doc.addLayer();
+    const c = doc.addLayer()!;
+    doc.setActiveLayer(c);
+    expect(doc.removeLayer(c)).toBe(true);
+    expect(doc.layers.find((l) => l.id === doc.activeLayerId)!.visible).toBe(true);
+  });
+});
