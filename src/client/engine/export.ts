@@ -180,6 +180,13 @@ function strokeOpacity(stroke: Stroke): string {
  * exported SVG has the curve that was on screen.
  */
 
+/** Pressure 0..1 → width multiplier. MUST match `widthFactor` in brush.ts, or
+ *  the SVG and the PNG of the same drawing disagree — which is the bug
+ *  `segmentPaths` exists to close. */
+function widthFactor(pressure: number): number {
+  return 0.35 + 0.65 * Math.max(0, Math.min(1, pressure));
+}
+
 /**
  * A stroke as one `<path>` per segment, each carrying its own pressure-derived
  * width — the SVG counterpart of the segment loop in `brush.ts`.
@@ -213,31 +220,6 @@ function segmentPaths(stroke: Stroke, S: number, scale: number): string {
   return out.join("");
 }
 
-/** Pressure 0..1 → width multiplier. MUST match `widthFactor` in brush.ts, or
- *  the SVG and the PNG of the same drawing disagree — which is the bug this
- *  whole function exists to close. */
-function widthFactor(pressure: number): number {
-  return 0.35 + 0.65 * Math.max(0, Math.min(1, pressure));
-}
-
-function pathData(stroke: Stroke, S: number): string {
-  const pts = stroke.pts;
-  if (pts.length === 1) {
-    // tiny dot as a 1-unit line so it renders with round caps
-    const x = (pts[0][0] * S).toFixed(2);
-    const y = (pts[0][1] * S).toFixed(2);
-    return `M${x} ${y} L${x} ${y}`;
-  }
-  const f = (n: number): string => (n * S).toFixed(2);
-  let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
-  for (const seg of strokeSegments(stroke)) {
-    d +=
-      seg.c1x === undefined
-        ? `L${f(seg.x)} ${f(seg.y)}`
-        : `C${f(seg.c1x)} ${f(seg.c1y!)} ${f(seg.c2x!)} ${f(seg.c2y!)} ${f(seg.x)} ${f(seg.y)}`;
-  }
-  return d;
-}
 
 /** Whether animated replay capture is available in this browser. */
 export function canRecordReplay(): boolean {

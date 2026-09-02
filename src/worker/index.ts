@@ -69,7 +69,9 @@ app.get("/api/me", async (c) => {
     : null;
 
   const enabled = envFlag(c.env.PLUS_ENABLED);
-  let plus: PlusState | null = null;
+  // Assigned in both branches below — signed in and signed out each build
+  // their own block (S18), so there is no "no plus" case left to default to.
+  let plus: PlusState;
   if (user) {
     const sources = await plusSources(c.env, user.id);
     const active = sources.length > 0;
