@@ -280,10 +280,20 @@ export async function publishArtwork(
      WHERE id = ?
        AND user_id = ?
        AND visibility != 'public'
-       AND (SELECT COUNT(*) FROM artworks
-            WHERE user_id = ? AND visibility = 'public' AND published_at >= ?) < ?`,
+       AND (
+         -- A piece first published BEFORE the epoch never occupies a slot, so
+         -- re-publishing it cannot need one (S3). Without this the app's own
+         -- advice — "make an older piece private to free a slot" — could strand
+         -- that piece at 402 permanently: it frees nothing when hidden, because
+         -- it never counted, and then cannot come back because the user is at
+         -- cap. COALESCE above already keeps its original published_at, so this
+         -- branch cannot be used to smuggle a new piece in under the cap.
+         (published_at IS NOT NULL AND published_at < ?)
+         OR (SELECT COUNT(*) FROM artworks
+             WHERE user_id = ? AND visibility = 'public' AND published_at >= ?) < ?
+       )`,
   )
-    .bind(opts.now, opts.now, opts.id, opts.userId, opts.userId, opts.epoch, opts.cap)
+    .bind(opts.now, opts.now, opts.id, opts.userId, opts.epoch, opts.userId, opts.epoch, opts.cap)
     .run();
   return (res.meta?.changes ?? 0) > 0;
 }

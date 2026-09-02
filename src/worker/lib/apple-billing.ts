@@ -38,6 +38,15 @@ export const APPLE_ROOT_CA_G3_SHA256 =
 // cross-checked Node + Python). The leaf must be an App Store JWS/receipt-signing
 // cert and the intermediate must be Apple WWDR — "chains to G3" is NOT enough, or
 // any Apple-issued end-entity cert could sign forged transactions.
+/**
+ * The most certificates an `x5c` may contain before we refuse to parse it.
+ *
+ * Apple sends three (leaf → WWDR intermediate → root). The ceiling exists
+ * because parsing happens before the signature is verified, on a route with no
+ * other credential, so an oversized chain is free CPU for whoever sends it.
+ */
+const MAX_CHAIN_CERTS = 5;
+
 const APPLE_LEAF_MARKER_OID = "1.2.840.113635.100.6.11.1";
 const APPLE_WWDR_INTERMEDIATE_OID = "1.2.840.113635.100.6.2.1";
 
@@ -83,6 +92,15 @@ export async function verifyAppleJws(
   if (x5c.length < 2 || !x5c.every((c): c is string => typeof c === "string")) {
     throw new Error("apple_chain_too_short");
   }
+  // CAP THE CHAIN BEFORE PARSING ANY OF IT (S1).
+  //
+  // The route is unauthenticated by design — the signature IS the credential —
+  // so the work done before that signature is checked is reachable by anyone.
+  // Every cert in x5c was parsed up front, and X.509 parsing is not cheap:
+  // measured 2 certs → 50ms, 3000 → 783ms, linear. A real Apple chain is
+  // leaf + intermediate + root; five is already generous for a future
+  // cross-signed anchor, and nothing legitimate approaches it.
+  if (x5c.length > MAX_CHAIN_CERTS) throw new Error("apple_chain_too_long");
   const certs = x5c.map((b64) => new x509.X509Certificate(b64));
 
   // 1) Pin the anchor: the root (last cert) must be Apple Root CA G3.

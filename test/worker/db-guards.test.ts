@@ -84,3 +84,47 @@ describe("only the dedupe index means 'duplicate' (S5)", () => {
     expect(err).not.toBeInstanceOf(DuplicateHashError);
   });
 });
+
+describe("a pre-epoch piece can always come back (S3)", () => {
+  // The asymmetry that stranded pieces: a piece first published before the
+  // epoch does not COUNT against the cap, but re-publishing it still demanded a
+  // free slot. So the app's own advice — "make an older piece private to free a
+  // slot" — freed nothing (it never counted) and then could not be undone.
+  const EPOCH = 1_000_000;
+
+  it("re-publishes at the cap, and does not consume a slot doing it", async () => {
+    const { DB, env } = ctx();
+    // Ten post-epoch public pieces: exactly at a cap of 10.
+    for (let i = 0; i < 10; i++) {
+      seedArtwork(DB, { id: `p${i}`, user_id: "u1", visibility: "public", published_at: EPOCH + i });
+    }
+    // An older piece the user has since made private.
+    seedArtwork(DB, { id: "old", user_id: "u1", visibility: "private", published_at: EPOCH - 5000 });
+
+    const ok = await publishArtwork(env, {
+      id: "old", userId: "u1", cap: 10, epoch: EPOCH, now: Date.now(),
+    });
+    expect(ok, "a pre-epoch piece must not need a free slot").toBe(true);
+    expect(vis(DB, "old")).toBe("public");
+
+    // And it still does not count: published_at is preserved, not restamped.
+    const pub = DB._db.prepare("SELECT published_at FROM artworks WHERE id='old'").get() as {
+      published_at: number;
+    };
+    expect(pub.published_at).toBe(EPOCH - 5000);
+  });
+
+  it("CONTROL: a piece that never counted is not a way past the cap for NEW pieces", async () => {
+    const { DB, env } = ctx();
+    for (let i = 0; i < 10; i++) {
+      seedArtwork(DB, { id: `p${i}`, user_id: "u1", visibility: "public", published_at: EPOCH + i });
+    }
+    // Never published: published_at IS NULL, so the cap applies in full.
+    seedArtwork(DB, { id: "fresh", user_id: "u1", visibility: "private", published_at: null });
+    const ok = await publishArtwork(env, {
+      id: "fresh", userId: "u1", cap: 10, epoch: EPOCH, now: Date.now(),
+    });
+    expect(ok, "a new piece at the cap must still be refused").toBe(false);
+    expect(vis(DB, "fresh")).toBe("private");
+  });
+});

@@ -13,6 +13,7 @@
 // why both signature paths are fail-closed and mutation-tested.
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { AppEnv } from "../middleware";
 import { requireAuth, requireCsrf } from "../middleware";
 import { checkAll } from "../lib/ratelimit";
@@ -37,6 +38,44 @@ export const billing = new Hono<AppEnv>();
 
 /** §2.3: 10/h on both authenticated billing routes. */
 const BILLING_RULE = { limit: 10, windowSec: 3600 };
+
+/**
+ * Ceiling for the two UNAUTHENTICATED webhook routes (S1).
+ *
+ * Both are open by design — the signature is the only credential — so every
+ * byte of work before that signature is checked is reachable by anyone: an
+ * x5c chain to parse on the Apple side, an HMAC over the raw body on the LS
+ * side. Keyed by IP because there is no user to key on yet.
+ *
+ * Deliberately loose. Apple retries notifications and Lemon Squeezy retries for
+ * three days, so a tight limit would drop deliveries we actually want; this is
+ * a ceiling on abuse, not a throttle on normal traffic. A dropped webhook is
+ * re-sent by both providers, so 429 is safe here in a way it would not be on a
+ * user-facing write.
+ */
+const WEBHOOK_IP_RULE = { limit: 300, windowSec: 60 };
+
+/**
+ * Record a webhook that did NOT result in a grant (S2).
+ *
+ * There was no `console.*` anywhere in the billing files, so an LS storefront
+ * purchase — one made from LS's own product page, which carries no
+ * `custom_data` and therefore no user to attach to — answered
+ * `200 {ignored:true}` and vanished: money taken, nothing granted, no trace, no
+ * repair path, and no way to even discover it had happened.
+ *
+ * `console.warn` reaches Workers Logs, which is the only observability this
+ * project has. Deliberately no PII beyond ids that already exist in D1.
+ */
+function logNoGrant(source: string, reason: string, detail: Record<string, unknown> = {}): void {
+  console.warn("billing: no grant", { source, reason, ...detail });
+}
+
+
+/** The client IP, or a single shared bucket when the header is absent. */
+function ipKey(c: Context<AppEnv>, route: string): string {
+  return `billing:${route}:ip:${c.req.header("CF-Connecting-IP") ?? "unknown"}:m`;
+}
 
 // ---- entitlement writes ---------------------------------------------------
 //
@@ -201,6 +240,12 @@ billing.post("/apple", requireAuth, requireCsrf, async (c) => {
 // credential. Two nested JWS: the notification envelope, and the transaction
 // inside it — both verified against the same pinned chain.
 billing.post("/apple/notifications", async (c) => {
+  // Unauthenticated route: bound the work an anonymous caller can ask for
+  // before the signature is checked (S1). 429 is safe here — both providers
+  // retry, so a dropped delivery comes back.
+  if (!(await checkAll(c.env, [{ key: ipKey(c, "notifications"), rule: WEBHOOK_IP_RULE }]))) {
+    return c.json({ error: "rate_limited" }, 429);
+  }
   const productId = (c.env.PLUS_PRODUCT_ID ?? "").trim();
   const bundleId = (c.env.APPLE_BUNDLE_ID ?? "").trim();
   if (!productId || !bundleId) return c.json({ error: "not_configured" }, 503);
@@ -266,6 +311,12 @@ billing.post("/apple/notifications", async (c) => {
 // assertion in the tests is therefore "no entitlement row exists", not the
 // status code — a bad signature is the one case that stays a hard 401.
 billing.post("/lemonsqueezy", async (c) => {
+  // Unauthenticated route: bound the work an anonymous caller can ask for
+  // before the signature is checked (S1). 429 is safe here — both providers
+  // retry, so a dropped delivery comes back.
+  if (!(await checkAll(c.env, [{ key: ipKey(c, "lemonsqueezy"), rule: WEBHOOK_IP_RULE }]))) {
+    return c.json({ error: "rate_limited" }, 429);
+  }
   // The raw bytes, exactly as sent. Re-serializing a parsed body would change
   // key order and whitespace, so the HMAC would match only bodies we built
   // ourselves and never a real webhook.
@@ -292,23 +343,35 @@ billing.post("/lemonsqueezy", async (c) => {
         : null;
 
   if (event === "order_refunded") {
-    if (!orderId) return c.json({ ok: true, ignored: true, reason: "missing_order_id" });
+    if (!orderId) {
+      logNoGrant("lemonsqueezy", "missing_order_id");
+      return c.json({ ok: true, ignored: true, reason: "missing_order_id" });
+    }
     const removed = await revokeEntitlement(c.env, "lemonsqueezy", orderId);
     return c.json({ ok: true, removed });
   }
 
-  if (event !== "order_created") return c.json({ ok: true, ignored: true, reason: "event" });
+  if (event !== "order_created") {
+    logNoGrant("lemonsqueezy", "event", { event });
+    return c.json({ ok: true, ignored: true, reason: "event" });
+  }
 
   const check = checkLsOrder(body, {
     variantId: (c.env.LS_VARIANT_ID ?? "").trim(),
     allowTest: testModeAllowed(c.env),
   });
-  if (!check.ok) return c.json({ ok: true, ignored: true, reason: check.reason });
+  if (!check.ok) {
+    // The one that loses money silently: a storefront purchase has no
+    // custom_data, so `check.reason` is "no_user" and nobody ever hears about it.
+    logNoGrant("lemonsqueezy", check.reason, { orderId });
+    return c.json({ ok: true, ignored: true, reason: check.reason });
+  }
 
   // `entitlements.user_id` has a FK to `users`. A custom_data user_id that no
   // longer resolves would raise a constraint error and turn into a 500, which
   // LS would then retry forever; check first and answer cleanly instead.
   if (!(await getUserById(c.env, check.userId))) {
+    logNoGrant("lemonsqueezy", "unknown_user", { orderId: check.orderId, userId: check.userId });
     return c.json({ ok: true, ignored: true, reason: "unknown_user" });
   }
 
@@ -318,6 +381,7 @@ billing.post("/lemonsqueezy", async (c) => {
   // from the original. 200 rather than an error code, because a non-2xx here
   // makes LS retry the thing we are declining.
   if (await isRevoked(c.env, "lemonsqueezy", check.orderId)) {
+    logNoGrant("lemonsqueezy", "revoked", { orderId: check.orderId });
     return c.json({ ok: true, ignored: true, reason: "revoked" });
   }
 
