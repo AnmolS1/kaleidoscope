@@ -49,8 +49,15 @@ final class AuthModel: ObservableObject {
         if let data = Keychain.get(Self.account),
            let stored = try? JSONDecoder().decode(StoredSession.self, from: data) {
             session = stored
-            Task { await validate() }
         }
+        // Runs with or WITHOUT a stored session (REVIEW S18). The worker and the
+        // web got this in `cc48257`; iOS did not, and iOS is the platform Apple
+        // reviews — every path to `/api/me` here was behind `guard let session`,
+        // so `plus` stayed nil when signed out, `surfaceVisible(nil)` was false,
+        // and the You tab rendered no Plus section at all. Someone who
+        // reinstalls and has not signed back in could not find Restore, which is
+        // the exact case S18 was filed about.
+        Task { await validate() }
     }
 
     private func persist(_ stored: StoredSession) {
@@ -69,12 +76,21 @@ final class AuthModel: ObservableObject {
     /// Re-check a restored token; drop it if the server rejects it. Network
     /// errors are tolerated (stay signed in offline).
     func validate() async {
-        guard let stored = session else { return }
+        guard let stored = session else {
+            // No session: still ask, so the SURFACE flag lands. Nothing
+            // user-specific comes back (`active: false`, `enabled: false`), so
+            // this cannot grant anything — and a failure leaves `plus` nil,
+            // which `surfaceVisible` reads as hidden. Still fails closed.
+            await loadAnonymousPlus()
+            return
+        }
         do {
             let me = try await client.me(token: stored.token)
             guard let user = me.user else {
                 clearLocal() // token no longer valid
-                plus = nil
+                // The session is gone but the DEPLOY's surface flag is not, and
+                // Restore is exactly what this person now needs.
+                await loadAnonymousPlus()
                 return
             }
             persist(StoredSession(token: stored.token, csrf: stored.csrf, user: user))
@@ -104,8 +120,16 @@ final class AuthModel: ObservableObject {
     /// the visibility of a piece changes). Never clears the session: this is a
     /// refresh, and a failed refresh must leave the last known state standing.
     func refreshPlus() async {
-        guard let stored = session else { return }
-        if let me = try? await client.me(token: stored.token), let p = me.plus { plus = p }
+        if let me = try? await client.me(token: session?.token), let p = me.plus { plus = p }
+    }
+
+    /// Fetch the deploy-level Plus block with no session attached.
+    ///
+    /// Separate from `refreshPlus` so the intent is visible at the call sites:
+    /// this one is about what the DEPLOY offers, not about what this account
+    /// owns. On failure `plus` is left alone, so the gate stays closed.
+    private func loadAnonymousPlus() async {
+        if let me = try? await client.me(token: nil), let p = me.plus { plus = p }
     }
 
     // MARK: Sign in with Apple
@@ -203,6 +227,10 @@ final class AuthModel: ObservableObject {
             try? await client.logout(token: stored.token, csrf: stored.csrf)
         }
         clearLocal()
+        // `clearLocal` nils `plus`, which is right for the entitlement and wrong
+        // for the SURFACE — signing out must not remove the way back in. Someone
+        // who signs out and then wants Restore is precisely S18's case.
+        await loadAnonymousPlus()
     }
 
     func deleteAccount() async -> Bool {

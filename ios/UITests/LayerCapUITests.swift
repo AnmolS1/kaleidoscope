@@ -38,6 +38,14 @@ final class LayerCapUITests: XCTestCase {
     /// PLUS_SURFACE_ENABLED, so without this the test asserts whatever the
     /// current rollout happens to be and goes red on a flag flip that has
     /// nothing to do with the panel.
+    /// 🔴 `cap` IS NOT OPTIONAL IN PRACTICE ANY MORE.
+    ///
+    /// These cases used to pass `nil` and lean on `auth.layerCap`'s local
+    /// fallback of 3, which held only because a signed-out app had no `plus`
+    /// block at all. Delivering S18 on iOS — a signed-out client now fetches
+    /// `/api/me` so the surface flag can reach it — means the block arrives, and
+    /// with cap enforcement off the server's honest answer is 8. The tests were
+    /// reading the deploy's flag state through a default. Drive the cap.
     private func launch(cap: Int?, surface: Bool = true) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
@@ -56,7 +64,7 @@ final class LayerCapUITests: XCTestCase {
     /// Default: 3 layers into a cap of 3. Add is locked and the panel says how to
     /// unlock it — `LayersStates` panel 1.
     func testFreeCapLocksAddAndOffersTheWayOut() {
-        let app = launch(cap: nil)
+        let app = launch(cap: 3)
 
         XCTAssertTrue(app.staticTexts["Layers, 3 of 3"].exists,
                       "the header counts against the CAP, not against MAX_LAYERS")
@@ -140,7 +148,7 @@ final class LayerCapUITests: XCTestCase {
 
     /// At the free cap, Add does nothing — the locked chip is not a soft gate.
     func testAddAtTheFreeCapDoesNotAddALayer() {
-        let app = launch(cap: nil)
+        let app = launch(cap: 3)
         // A disabled element cannot be tapped by XCUITest, so tap where it sits
         // instead: that exercises the model's own cap rather than the label's.
         //
@@ -177,7 +185,7 @@ final class LayerCapUITests: XCTestCase {
     /// which is exactly what a user at the cap would tap. The count still shows;
     /// it is the OFFER that disappears.
     func testWithTheSurfaceOffTheFootnoteCountsAndDoesNotOffer() {
-        let app = launch(cap: nil, surface: false)
+        let app = launch(cap: 3, surface: false)
         XCTAssertTrue(app.staticTexts["Layers: 3 of 3"].waitForExistence(timeout: 5),
                       "the count is not gated — only the offer is")
         XCTAssertFalse(app.buttons[footnote].exists,

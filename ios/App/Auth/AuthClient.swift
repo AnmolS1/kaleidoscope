@@ -113,10 +113,14 @@ struct AuthClient {
     /// Returns the whole response, not just the user: since 1.2 `/api/me` also
     /// carries `plus` (the layer cap and the public-post count), and the save
     /// dialog and the layers panel both read it.
-    func me(token: String) async throws -> MeResponse {
+    /// `token` is OPTIONAL. `/api/me` answers 200 to an anonymous caller and
+    /// still carries the `plus` block, because the surface flag is a property of
+    /// the DEPLOY and not of a user (REVIEW S18) — which is what lets a signed-
+    /// out person find Restore.
+    func me(token: String?) async throws -> MeResponse {
         var req = URLRequest(url: url("api/me"))
         req.cachePolicy = .reloadIgnoringLocalCacheData
-        authorized(&req, token: token, csrf: nil)
+        if let token { authorized(&req, token: token, csrf: nil) }
         let data = try await send(req)
         return try decode(MeResponse.self, data)
     }

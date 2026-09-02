@@ -134,7 +134,14 @@ struct PlusSheetInput: Equatable {
             // so a test for "the panel offers the way out" was really a test of
             // the current rollout state and went red when it changed.
             if let forced = ProcessInfo.processInfo.environment["KALEIDO_PLUS_SURFACE"] {
-                return forced == "1"
+                // Stands in for the DEPLOY'S FLAG — it does NOT stand in for
+                // having received a block. `plus != nil` stays required, because
+                // a hook that answers true with no block bypasses the client's
+                // whole data path: a test of "does a signed-out user reach
+                // Restore" then passes whether or not `/api/me` was ever asked,
+                // which is exactly how the first version of that test greeted
+                // its own mutant with a pass.
+                return forced == "1" && plus != nil
             }
         #endif
         return plus?.surface ?? false
