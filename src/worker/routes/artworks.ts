@@ -532,7 +532,33 @@ artworks.patch("/:id", requireAuth, requireCsrf, async (c) => {
   if (art.user_id !== user.id) return c.json({ error: "forbidden" }, 403);
   const now = Date.now();
 
-  const body = (await c.req.json().catch(() => ({}))) as { title?: string; visibility?: string };
+  // An unparseable body is an ERROR, not an empty edit (minor).
+  //
+  // `.catch(() => ({}))` turned malformed JSON into "no fields supplied", which
+  // then fell through to a 200 that changed nothing — including `updated_at`.
+  // A client with a serialization bug got a success it could not distinguish
+  // from a real one. Note the deliberate asymmetry: an EMPTY body is still fine
+  // (some clients send none), it is unparseable content that is rejected.
+  const raw = await c.req.text();
+  let body: { title?: string; visibility?: string };
+  if (raw.trim() === "") {
+    body = {};
+  } else {
+    try {
+      body = JSON.parse(raw) as { title?: string; visibility?: string };
+    } catch {
+      return c.json({ error: "bad_json" }, 400);
+    }
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return c.json({ error: "bad_json" }, 400);
+    }
+  }
+
+  // And a PATCH that supplies nothing to change is a no-op, reported as one
+  // rather than as a successful edit.
+  if (body.title === undefined && body.visibility === undefined) {
+    return c.json({ ok: true, changed: false });
+  }
 
   // The title rule applies only when the body actually carries a title. A
   // visibility-only edit on one of the old "Untitled" rows must keep working —

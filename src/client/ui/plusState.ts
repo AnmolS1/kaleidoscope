@@ -75,6 +75,16 @@ export const RATE_LIMITED_MESSAGE =
   "Too many attempts just now. Give it a few minutes and try again.";
 export const GENERIC_ERROR_MESSAGE =
   "Couldn't reach the checkout. Nothing was charged — try again in a moment.";
+/**
+ * A 503 from the checkout route is PERMANENT, not transient (minor).
+ *
+ * It means Plus is not on sale here yet — either the surface flag is off or the
+ * Lemon Squeezy ids are still empty. The generic message tells the user to "try
+ * again in a moment", which is advice about a condition no amount of retrying
+ * changes; they then retry, and eventually collect a rate limit for it.
+ */
+export const UNAVAILABLE_MESSAGE =
+  "Kaleidoscope Plus isn't on sale here yet. Nothing was charged.";
 
 /**
  * Map a failed billing call onto a sheet state.
@@ -96,6 +106,9 @@ export function plusOutcomeForError(err: unknown): PlusOutcome {
     if (err.status === 401) return { kind: "sign-in" };
     if (err.status === 409 && err.code === "bound_elsewhere") return { kind: "bound-elsewhere" };
     if (err.status === 429) return { kind: "error", message: RATE_LIMITED_MESSAGE };
+    // Before the generic branch: 503 is "not on sale", which is a different
+    // thing from "the network hiccuped" and deserves different advice.
+    if (err.status === 503) return { kind: "error", message: UNAVAILABLE_MESSAGE };
   }
   return { kind: "error", message: GENERIC_ERROR_MESSAGE };
 }

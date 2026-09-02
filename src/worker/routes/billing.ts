@@ -406,14 +406,22 @@ billing.get("/checkout", requireAuth, async (c) => {
   // While Plus is dark there is nothing to sell. The grant paths above stay
   // live on purpose even then — refusing to RECORD a payment we already took
   // would be much worse than recording one that is not yet useful.
-  if (!envFlag(c.env.PLUS_ENABLED)) return c.json({ error: "not_enabled" }, 503);
+  // Gated on the SURFACE, not on cap enforcement. If the paywall is visible,
+  // the buy button behind it has to work — otherwise the review window shows a
+  // purchase the user can see and cannot make.
+  if (!envFlag(c.env.PLUS_SURFACE_ENABLED)) return c.json({ error: "not_enabled" }, 503);
+
+  // CONFIG BEFORE THE RATE LIMIT (minor). `not_configured` is permanent: the LS
+  // ids are empty, and no amount of retrying fills them. Charging the per-user
+  // budget for it meant ten clicks on a button that can never work earned a 429
+  // — so the user was told to slow down about a thing that was never going to
+  // happen, and the honest error was replaced by a misleading one.
+  const url = checkoutUrl(c.env, user.id);
+  if (!url) return c.json({ error: "not_configured" }, 503);
 
   if (!(await checkAll(c.env, [{ key: `billing:checkout:${user.id}:h`, rule: BILLING_RULE }]))) {
     return c.json({ error: "rate_limited" }, 429);
   }
-
-  const url = checkoutUrl(c.env, user.id);
-  if (!url) return c.json({ error: "not_configured" }, 503);
 
   return c.json({ url });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "../../src/client/api";
 import {
   GENERIC_ERROR_MESSAGE,
+  UNAVAILABLE_MESSAGE,
   PLUS_PRICE,
   RATE_LIMITED_MESSAGE,
   plusOutcomeForError,
@@ -107,15 +108,26 @@ describe("plusOutcomeForError — codes that have their own state never fall thr
     expect(RATE_LIMITED_MESSAGE).not.toBe(GENERIC_ERROR_MESSAGE);
   });
 
-  it("503 and a plain network failure land on the generic error", () => {
+  // 503 is PERMANENT — Plus is not on sale here yet — so it no longer shares
+  // the generic "try again in a moment" message, which was advice about a
+  // condition retrying cannot change.
+  it("503 says it is not on sale; a network failure keeps the generic error", () => {
     expect(plusOutcomeForError(new ApiError(503, "not_enabled"))).toEqual({
       kind: "error",
-      message: GENERIC_ERROR_MESSAGE,
+      message: UNAVAILABLE_MESSAGE,
+    });
+    expect(plusOutcomeForError(new ApiError(503, "not_configured"))).toEqual({
+      kind: "error",
+      message: UNAVAILABLE_MESSAGE,
     });
     expect(plusOutcomeForError(new TypeError("Failed to fetch"))).toEqual({
       kind: "error",
       message: GENERIC_ERROR_MESSAGE,
     });
+    // The three messages are distinct, or the split achieves nothing.
+    expect(new Set([UNAVAILABLE_MESSAGE, GENERIC_ERROR_MESSAGE, RATE_LIMITED_MESSAGE]).size).toBe(3);
+    // And it does not promise a retry will help.
+    expect(UNAVAILABLE_MESSAGE).not.toMatch(/try again/i);
   });
 
   it("the generic message says nothing was charged", () => {

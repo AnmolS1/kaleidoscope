@@ -380,7 +380,7 @@ describe("POST /api/billing/apple — gates", () => {
     // A single `billing:<user>` key would give both routes ONE 10/h budget, so
     // ten checkout fetches would 429 the purchase report — paid, not granted.
     const { DB, env } = ctx({
-      PLUS_ENABLED: "true",
+      PLUS_SURFACE_ENABLED: "true",
       LS_STORE_ID: "ponderance",
       LS_CHECKOUT_ID: CHECKOUT_ID,
       LS_VARIANT_ID: VARIANT,
@@ -995,7 +995,9 @@ describe("GET /api/billing/checkout", () => {
     );
 
   const READY = {
-    PLUS_ENABLED: "true",
+    // The SURFACE flag gates checkout now, not cap enforcement: if the paywall
+    // is visible the buy button behind it has to work (REVIEW L1 split them).
+    PLUS_SURFACE_ENABLED: "true",
     LS_STORE_ID: "ponderance",
     LS_CHECKOUT_ID: CHECKOUT_ID,
     LS_VARIANT_ID: VARIANT,
@@ -1033,11 +1035,32 @@ describe("GET /api/billing/checkout", () => {
     expect((await get(env, null)).status).toBe(401);
   });
 
-  it("503s while PLUS_ENABLED is false", async () => {
-    const { env } = ctx({ ...READY, PLUS_ENABLED: "false" });
+  it("503s while the Plus surface is off", async () => {
+    const { env } = ctx({ ...READY, PLUS_SURFACE_ENABLED: "false" });
     const res = await get(env);
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: "not_enabled" });
+  });
+
+  // The review window: caps off, surface on. The reviewer has to be able to
+  // buy, so enforcement must NOT gate the checkout.
+  it("sells while the surface is on even though caps are not enforced", async () => {
+    const { env } = ctx({ ...READY, PLUS_ENABLED: "false" });
+    const res = await get(env);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { url: string }).url).toContain("/checkout/buy/");
+  });
+
+  // A permanent condition must not burn the retry budget (minor): the ids are
+  // empty and no amount of retrying fills them, so the honest 503 must survive
+  // being clicked repeatedly rather than turning into a 429.
+  it("keeps answering not_configured however many times it is asked", async () => {
+    const { env } = ctx({ ...READY, LS_CHECKOUT_ID: "" });
+    for (let i = 0; i < 15; i++) {
+      const res = await get(env);
+      expect(res.status, `attempt ${i + 1}`).toBe(503);
+      expect(await res.json()).toEqual({ error: "not_configured" });
+    }
   });
 
   it("503s cleanly when LS_STORE_ID or LS_CHECKOUT_ID is unset, rather than emitting a broken URL", async () => {
