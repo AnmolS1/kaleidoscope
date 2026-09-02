@@ -62,7 +62,6 @@ test.describe("save dialog states", () => {
     await page.getByRole("button", { name: "Remix" }).click();
     await page.waitForURL((u) => u.pathname === "/");
 
-    const events = await armShowLayersListener(page);
     await openSave(page);
 
     await expect(dialog(page)).toHaveAttribute("data-save-state", "nothing-visible");
@@ -74,9 +73,15 @@ test.describe("save dialog states", () => {
     await expect(page.getByLabel("Title")).toHaveCount(0);
     await expect(page.locator(".ts-widget")).toHaveCount(0);
 
+    // Assert the PANEL OPENS, not that an event fired.
+    //
+    // This used to arm its own `kaleido:show-layers` listener and count events —
+    // which nothing in the app listened for, so the button did nothing and the
+    // test passed anyway. A test that installs the only listener for the seam
+    // it is checking will pass with the feature deleted.
     await page.getByRole("button", { name: "Show layers" }).click();
-    expect(await events()).toBe(1);
     await expect(dialog(page)).toHaveCount(0);
+    await expect(page.locator(".layers-panel, .layers-sheet").first()).toBeVisible();
   });
 
   test("2b. an EMPTY canvas gets the headline but not the hidden-layer claim", async ({ page }) => {
@@ -573,13 +578,3 @@ async function submitUntil(page: Page, settled: ReturnType<Page["locator"]>): Pr
   }).toPass({ timeout: 20_000 });
 }
 
-/** Count `kaleido:show-layers` events, the seam the panel (T06c) will listen on. */
-async function armShowLayersListener(page: Page): Promise<() => Promise<number>> {
-  await page.evaluate(() => {
-    (window as unknown as { __showLayers: number }).__showLayers = 0;
-    window.addEventListener("kaleido:show-layers", () => {
-      (window as unknown as { __showLayers: number }).__showLayers++;
-    });
-  });
-  return () => page.evaluate(() => (window as unknown as { __showLayers: number }).__showLayers);
-}

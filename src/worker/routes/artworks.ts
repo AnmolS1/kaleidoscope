@@ -40,7 +40,6 @@ import {
   readVectorJson,
   variantEtag,
   deleteArtworkObjects,
-  IMMUTABLE_CACHE,
   cacheFor,
 } from "../lib/r2";
 import { templateAlt } from "../lib/alttext";

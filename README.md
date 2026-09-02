@@ -132,10 +132,20 @@ npm run lint
 npm test               # vitest: unit + worker tests
 npm run test:e2e       # playwright (starts the dev server itself)
 npm run build
-npm run deploy         # vite build + wrangler deploy
 npm run db:migrate     # d1 migrations, --remote
 npm run db:migrate:local
 ```
+
+**Deploying.** The supported path is a push to `prod`, which runs the whole gate
+in CI and then migrates and deploys. `npm run deploy` exists for the rare
+hand-deploy and now runs that same gate itself — typecheck, lint, tests, build,
+**migrations**, then `wrangler deploy`.
+
+It used to be `vite build && wrangler deploy`: no gates, no migrations, and it
+shipped the working tree including uncommitted changes. Deploying 1.2's worker
+that way against an unmigrated D1 answers `no such column` to every save,
+`/api/me` and billing call. `deploy:unsafe` is still there for when you
+genuinely mean it — the name is the point.
 
 Local secrets live in `.dev.vars` (gitignored). For local OAuth it points
 `PUBLIC_BASE_URL` and `GOOGLE_REDIRECT_URI` at `localhost:5173` and sets

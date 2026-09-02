@@ -15,7 +15,8 @@ import {
   type ArtworkMeta,
   type HashLookup,
 } from "../api";
-import { renderTurnstile } from "./turnstile";
+import { renderTurnstile, resetTurnstile } from "./turnstile";
+import { layersOpen } from "./LayersPanel";
 import { EyeOffIcon, GalleryIcon, LayersIcon } from "./Icons";
 import {
   primaryLabel,
@@ -290,6 +291,19 @@ function SaveDialogInner() {
       S.navigate(`/p/${res.id}`);
     } catch (e) {
       setBusy(false);
+      // 🔴 Spend the Turnstile token and get a fresh one before any retry.
+      //
+      // The worker verifies Turnstile FIRST and tokens are single-use, so any
+      // POST that reached the server has burned it — including the ones that
+      // came back 429 or 500. Without this, "Try again" re-posts the spent
+      // token, gets 403 turnstile_failed, renders the same generic error, and
+      // can never succeed: only closing and reopening the dialog recovered.
+      // `resetTurnstile` existed for this and had zero callers.
+      //
+      // The e2e test could not catch it because it aborts the connection, so
+      // siteverify never runs and the token is never spent.
+      setToken(null);
+      resetTurnstile();
       if (e instanceof ApiError && e.status === 409 && e.code === "duplicate_of_other") {
         const of = typeof e.data.of === "string" ? e.data.of : null;
         if (of) {
@@ -317,7 +331,12 @@ function SaveDialogInner() {
       setHint(
         e instanceof ApiError && e.code === "rate_limited"
           ? "You're saving very fast — try again in a moment."
-          : null,
+          : e instanceof ApiError && e.code === "turnstile_failed"
+            // Its own message: the generic one told the user to retry the exact
+            // thing that just failed, which is what made the dead end feel like
+            // a broken app rather than a check to redo.
+            ? "The robot check expired. It has been reset — press Try again."
+            : null,
       );
       S.announce("Couldn't reach the gallery");
     }
@@ -533,7 +552,12 @@ function SaveDialogInner() {
                     // component with no signal in state.ts yet. A DOM event
                     // keeps this button honest without reaching into a file
                     // this task does not own; the panel (or App) listens.
-                    window.dispatchEvent(new CustomEvent("kaleido:show-layers"));
+                    // The signal the panel actually reads. This used to
+                    // dispatch a `kaleido:show-layers` CustomEvent that nothing
+                    // in the app listened for — the button did nothing, and the
+                    // e2e test passed because it installed its OWN listener, so
+                    // it would have passed with the feature deleted.
+                    layersOpen.value = true;
                     close();
                   }}
                 >
