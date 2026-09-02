@@ -51,25 +51,6 @@ func defaultLayerName(_ id: String) -> String {
     "Layer \(id.dropFirst())"
 }
 
-/// A duplicate's name, truncated to whatever the shared validator accepts, so a
-/// 40-unit name duplicated repeatedly can never produce an unsaveable drawing.
-///
-/// The web slices by UTF-16 code unit and leans on its `normalizeLayerName`
-/// rejecting lone surrogates to skip a cut through the middle of a pair. Swift's
-/// `normalizeLayerName` has no lone-surrogate clause (it cannot need one — see
-/// its doc comment), so a literal port of that loop would ACCEPT a half pair the
-/// web rejects. Dropping whole `Character`s instead is provably the same result:
-/// every cut the web rejects is a mid-pair cut, and the cut below it is a
-/// grapheme boundary, so both loops converge on the same string.
-func copyName(_ name: String) -> String {
-    var candidate = "\(name) copy"
-    while !candidate.isEmpty {
-        if let n = normalizeLayerName(candidate) { return n }
-        candidate = String(candidate.dropLast())
-    }
-    return ""
-}
-
 func addStrokeTo(_ d: DrawingV2, layerId: String, stroke: Stroke) -> DrawingV2? {
     withLayer(d, layerId) { var l = $0; l.strokes.append(stroke); return l }
 }
@@ -317,7 +298,17 @@ final class DrawingDoc {
     }
 
     // --- strokes ---
+    /// Add a stroke to the active layer. False when it was refused.
+    ///
+    /// The hidden-layer refusal lives HERE, matching the web twin, and not only
+    /// in the one caller that happens to check first (REVIEW.md minor mI1). It
+    /// is the document's invariant — a stroke on a hidden layer is one nobody
+    /// could see being drawn and nobody would find afterwards — so a second
+    /// caller, or a refactor of the first, must not be able to get past it. The
+    /// caller keeps its own check because it also builds the user-facing nudge,
+    /// which needs the layer's name before the attempt.
     func commitStroke(_ stroke: Stroke) -> Bool {
+        guard activeLayer.visible else { return false }
         guard let next = addStrokeTo(hist.current, layerId: activeLayerId, stroke: stroke) else { return false }
         hist.commit(next)
         return true

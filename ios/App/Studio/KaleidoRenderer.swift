@@ -253,20 +253,43 @@ enum KaleidoRenderer {
     }
 
     /// Highlight every image of one stroke — phase one of Remove-stroke.
+    ///
+    /// TWO passes, matching the web (REVIEW.md minor mI4): a translucent CRANE
+    /// halo the width of the ink plus 5pt each side, and a thin DASHED crane
+    /// outline on top. This drew one solid black-or-white stroke instead — no
+    /// dashes, and a colour the design system does not use for selection — so
+    /// the same gesture on the same drawing looked like a different feature on
+    /// each platform, and on a busy piece the solid band read as ink rather than
+    /// as a selection.
+    ///
+    /// The constants are the web's, converted once: HALO_PX 5, OUTLINE_PX 1.5,
+    /// dash 5-on 4-off, all in points because both sides work in CSS/UIKit
+    /// points at this stage.
     static func highlightStroke(_ stroke: Stroke, sym: Symmetry, in ctx: CGContext,
                                 size: CGSize, half: CGFloat, color: UIColor) {
         guard !stroke.pts.isEmpty else { return }
         let cx = size.width / 2
         let cy = size.height / 2
         let scale = half / CGFloat(REFERENCE_HALF)
-        let width = max(3, CGFloat(stroke.size) * scale + 4)
+        let haloWidth = max(3, CGFloat(stroke.size) * scale + HighlightMetrics.haloPt * 2)
         let cubics = stroke.sm ? smoothStroke(stroke.pts) : nil
+
+        // Pass 1: the halo. Pass 2: the dashed outline, same path.
+        for pass in 0..<2 {
         ctx.saveGState()
         ctx.setBlendMode(.normal)
-        ctx.setStrokeColor(color.cgColor)
+        if pass == 0 {
+            ctx.setStrokeColor(color.withAlphaComponent(HighlightMetrics.haloAlpha).cgColor)
+            ctx.setLineWidth(haloWidth)
+            ctx.setLineDash(phase: 0, lengths: [])
+        } else {
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(HighlightMetrics.outlinePt)
+            ctx.setLineDash(phase: 0, lengths: HighlightMetrics.dash)
+        }
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
-        ctx.setLineWidth(width)
+        let width = pass == 0 ? haloWidth : HighlightMetrics.outlinePt
         for image in symmetryImages(segments: sym.segments, mirror: sym.mirror) {
             ctx.saveGState()
             ctx.translateBy(x: cx, y: cy)
@@ -300,9 +323,23 @@ enum KaleidoRenderer {
             ctx.restoreGState()
         }
         ctx.restoreGState()
+        }
     }
 
     private static func uiColor(_ rgb: RGB) -> UIColor {
         UIColor(red: CGFloat(rgb.r), green: CGFloat(rgb.g), blue: CGFloat(rgb.b), alpha: 1)
     }
+}
+
+/// Remove-stroke highlight metrics, taken from the web's RemoveStroke.tsx so the
+/// two platforms show the same selection.
+enum HighlightMetrics {
+    /// HALO_PX: how far the translucent band extends past the ink, each side.
+    static let haloPt: CGFloat = 5
+    /// The halo's alpha — `.remove-halo { stroke-opacity: 0.35 }`.
+    static let haloAlpha: CGFloat = 0.35
+    /// OUTLINE_PX: the dashed line's width.
+    static let outlinePt: CGFloat = 1.5
+    /// 5 on, 4 off.
+    static let dash: [CGFloat] = [5, 4]
 }

@@ -106,6 +106,23 @@ final class SerializeGoldenTests: XCTestCase {
         }
     }
 
+    /// REVIEW.md minor mI7 — duplicating a near-limit layer trims the name, and
+    /// the two platforms trimmed by different units.
+    ///
+    /// The web sliced by UTF-16 code unit, which cuts INSIDE a grapheme cluster
+    /// made of several scalars: a truncated ZWJ family, a lone regional
+    /// indicator. Swift dropped whole `Character`s. Of seven boundary cases
+    /// three disagreed. Both drop clusters now; this is what makes that a
+    /// checked fact rather than a comment claiming it.
+    func testCopyNameMatchesWeb() throws {
+        let cases = try loadGolden().copyNames
+        XCTAssertFalse(cases.isEmpty, "no copyName fixtures loaded")
+        for f in cases {
+            XCTAssertEqual(copyName(f.name), f.expected,
+                           "copyName drift for \(f.name.debugDescription)")
+        }
+    }
+
     func testV2PaletteAndTopSymMatchWeb() throws {
         for f in try loadGolden().v2 {
             let d = try makeDrawing(f.drawing)

@@ -9,6 +9,8 @@ import KaleidoEngine
 
 struct LayersPanel: View {
     @ObservedObject var model: StudioModel
+    @EnvironmentObject private var auth: AuthModel
+    @EnvironmentObject private var router: AppRouter
     /// Opens the symmetry popover scoped to a specific layer (tapping its sym line).
     var onEditSymmetry: (String) -> Void
     /// Fired when a nudge should be shown (e.g. a new layer inheriting symmetry).
@@ -71,12 +73,32 @@ struct LayersPanel: View {
             Hairline().padding(.vertical, 8)
             footer
             if let note = capNote {
-                Text(note)
-                    .font(Blueprint.mono(.caption2))
-                    .textCase(nil)
-                    .foregroundStyle(Blueprint.graphite.opacity(0.7))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 6)
+                Group {
+                    switch note {
+                    case .full:
+                        Text("All \(MAX_LAYERS) layers in use")
+                    case let .capped(count, cap, offersPlus):
+                        if offersPlus {
+                            // The mention is the TAP TARGET (REVIEW.md minor
+                            // mI9). It read as a link on the web and as inert
+                            // prose here, so the one place a user meets the
+                            // layer cap named the way out and did not offer it.
+                            (Text("Layers: \(count) of \(cap) · ")
+                                + Text("Kaleidoscope Plus").foregroundColor(Blueprint.craneText)
+                                + Text(" unlocks \(MAX_LAYERS)"))
+                                .onTapGesture { router.openPlus() }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("Opens Kaleidoscope Plus")
+                        } else {
+                            Text("Layers: \(count) of \(cap)")
+                        }
+                    }
+                }
+                .font(Blueprint.mono(.caption2))
+                .textCase(nil)
+                .foregroundStyle(Blueprint.graphite.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
             }
         }
         .padding(10)
@@ -134,12 +156,19 @@ struct LayersPanel: View {
 
     /// DESIGN.md §3: the cap is a state, not a punishment — the free string names
     /// the way out, and the Plus string just says the stack is full.
-    private var capNote: String? {
+    ///
+    /// 🔴 GATED ON THE SURFACE, exactly as the web is (S14). The mention only
+    /// becomes a BUTTON when `PlusSheet` would actually render — an ungated one
+    /// is a control that visibly does nothing, which is precisely what a user at
+    /// the cap would tap. That state is reachable: `/api/me` degrades to a plus
+    /// block with the surface off, and the free layer cap still applies. With
+    /// the surface off the user gets the count and no offer.
+    private var capNote: LayerCapNote? {
         guard !model.canAddLayer else { return nil }
-        if model.layerCap < MAX_LAYERS {
-            return "Layers: \(model.layers.count) of \(model.layerCap) · Kaleidoscope Plus unlocks \(MAX_LAYERS)"
-        }
-        return "All \(MAX_LAYERS) layers in use"
+        guard model.layerCap < MAX_LAYERS else { return .full }
+        return PlusSheetInput.surfaceVisible(auth.plus)
+            ? .capped(count: model.layers.count, cap: model.layerCap, offersPlus: true)
+            : .capped(count: model.layers.count, cap: model.layerCap, offersPlus: false)
     }
 
     /// Reorder by one place. A drag would be the frame's gesture, but a
@@ -393,4 +422,14 @@ private struct ReorderActions: ViewModifier {
             .accessibilityAction(named: Text("Move down")) { if canMoveDown { onMove(-1) } }
             .accessibilityAction(named: Text("Rename"), onRename)
     }
+}
+
+/// What the layers panel's cap footnote says.
+///
+/// A type rather than a String so the "and here is the way out" half can be a
+/// control, and so the surface gate is a value the panel carries rather than a
+/// condition re-derived at the point of rendering.
+enum LayerCapNote: Equatable {
+    case full
+    case capped(count: Int, cap: Int, offersPlus: Bool)
 }

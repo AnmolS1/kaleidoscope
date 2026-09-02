@@ -44,6 +44,16 @@ enum PostOutcome: Equatable {
     case duplicateOtherPrivate
     /// 201 `capReached`: the piece IS saved, unlisted, because the wall was full.
     case capReached(id: String, cap: Int?, count: Int?)
+    /// 200 `deduped`: the user ALREADY had this exact picture, so the server
+    /// handed back the existing piece and wrote nothing.
+    ///
+    /// Reachable whenever the pre-flight did not see the match — it failed, it
+    /// was rate-limited, or the drawing became identical after it ran. The field
+    /// was decoded and discarded (REVIEW.md minor mI8), so this reported an
+    /// ordinary save: the sheet dismissed, and the title and visibility the user
+    /// had just chosen were silently not applied, because a dedupe never mutates
+    /// the piece it matches.
+    case deduped(id: String)
     /// Network or any other refusal.
     case failed
 }
@@ -112,6 +122,10 @@ func resolveSaveState(_ i: SaveStateInput) -> SaveStateKind {
         case .duplicateOtherPrivate: return .duplicateOtherPrivate
         case .failed: return .error
         case .capReached: return .atCap
+        // The state that already says the right thing: "you have this picture
+        // already", with Open it and Edit title & visibility. Edit is the only
+        // route to the rename the save just failed to make.
+        case .deduped: return .selfUnchanged
         }
     }
 

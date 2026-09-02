@@ -17,6 +17,21 @@ final class AppRouter: ObservableObject {
 
     func markSaved() { gallerySaveToken += 1 }
 
+    /// A request to show the Plus sheet, raised from anywhere and honoured by
+    /// the You tab.
+    ///
+    /// The sheet itself needs `onSwitchAccount` and `onSignIn`, and both open
+    /// the AUTH sheet — which lives in `YouView`. Presenting Plus from the
+    /// studio directly would mean a second copy of that pair, and the two could
+    /// then disagree about what "switch account" does. So the studio asks, and
+    /// the one owner answers (REVIEW.md minor mI9).
+    @Published var plusRequest = 0
+
+    func openPlus() {
+        tab = Self.youTab
+        plusRequest += 1
+    }
+
     init() {
         // Test hook, DEBUG-only: the key string must sit inside the #if, or a
         // Release binary still carries it and tells a reader what to try.

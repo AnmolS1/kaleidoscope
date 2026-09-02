@@ -157,7 +157,13 @@ struct ArtworkView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Manage").font(.headline).foregroundStyle(Blueprint.graphite)
             Menu {
-                ForEach(Visibility.allCases) { v in
+                // Public disappears at the cap, the way the save sheet already
+                // removes it (REVIEW.md minor mI5). Offering it here meant the
+                // menu invited a choice the server was guaranteed to refuse, and
+                // the user learned the cap existed by being told no. The piece's
+                // CURRENT visibility is always offered, so a public piece can
+                // still be seen as public and moved off.
+                ForEach(manageVisibilities(current: d.visibility, capReached: auth.plus?.capReached ?? false)) { v in
                     Button(v.label) { Task { await setVisibility(v.rawValue) } }
                 }
             } label: {
@@ -239,14 +245,14 @@ struct ArtworkView: View {
             await auth.refreshPlus()
             await load()
         } catch let error as AuthError where error.code == "cap_reached" {
-            // 402 on a PATCH to public. The cap is a CURRENT count, so both
-            // exits are real; the Plus half is suppressed while `plus.enabled`
-            // is false, where it would name something the user cannot buy.
-            let cap = error.body?.cap.map(String.init) ?? "?"
-            let base = "Public wall is full (\(cap) of \(cap)). Make another piece private to free a slot"
-            errorText = (auth.plus?.enabled ?? false)
-                ? base + ", or get Kaleidoscope Plus."
-                : base + "."
+            // 402 on a PATCH to public. One copy of this string, in SaveSheet
+            // (REVIEW.md minor mI2) — this file had its own, and that copy read
+            // the CAP into both halves of "N of M", so a user 9 pieces into a
+            // limit of 10 was told "10 of 10". The count is what the body
+            // carries for exactly this reason.
+            errorText = patchCapNote(count: error.body?.count ?? auth.plus?.publicCount,
+                                     cap: error.body?.cap ?? auth.plus?.publicCap,
+                                     plusEnabled: auth.plus?.enabled ?? false)
         } catch {
             errorText = "Couldn't update visibility."
         }
@@ -266,4 +272,21 @@ struct ArtworkView: View {
 struct ShareURL: Identifiable {
     let id = UUID()
     let url: URL
+}
+
+/// Visibility options the Manage menu offers for a piece currently at `current`.
+///
+/// A free function so the rule is table-testable, which is the point: it has
+/// three inputs and one of them (the piece's own state) is the exception that
+/// makes the other two safe.
+///
+/// At the cap, Public is dropped — the save sheet already does this, and
+/// offering it here meant the menu invited a choice the server was guaranteed to
+/// refuse, so a user learned the cap existed by being told no (REVIEW.md minor
+/// mI5). Unless the piece is ALREADY public: removing it then would hide the
+/// piece's own state from the control that displays it, and leave no way to see
+/// what you are moving away from.
+func manageVisibilities(current: String, capReached: Bool) -> [Visibility] {
+    guard capReached, current != Visibility.public.rawValue else { return Visibility.allCases }
+    return Visibility.allCases.filter { $0 != .public }
 }

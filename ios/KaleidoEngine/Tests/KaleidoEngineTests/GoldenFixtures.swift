@@ -12,6 +12,15 @@ struct Golden: Decodable {
     let v1: [V1Fixture]
     let v2: [V2Fixture]
     let smooth: SmoothGolden
+    /// Layer-duplicate names, trimmed to the format's limit. Here because both
+    /// sides trim by extended grapheme cluster and "both implement UAX #29" is a
+    /// claim about two separate implementations (REVIEW.md minor mI7).
+    let copyNames: [CopyNameFixture]
+
+    struct CopyNameFixture: Decodable {
+        let name: String
+        let expected: String
+    }
 
     struct V1Fixture: Decodable {
         let name: String

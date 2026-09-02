@@ -9,6 +9,7 @@ struct YouView: View {
     @State private var showAuth = false
     @State private var confirmDelete = false
     @State private var confirmSignOut = false
+    @EnvironmentObject private var router: AppRouter
     @State private var showPlus = false
     /// The sheet was opened by the "Restore purchase" row, so it should start a
     /// restore rather than wait to be told.
@@ -55,6 +56,10 @@ struct YouView: View {
                 #endif
             }
             .sheet(isPresented: $showAuth) { AuthSheet().environmentObject(auth) }
+            // Raised from elsewhere — today the layers panel's cap footnote.
+            // Both sheets this pair can open live here, so this is the only
+            // place that can present Plus without duplicating them.
+            .onChange(of: router.plusRequest) { _, _ in showPlus = true }
             .sheet(isPresented: $showPlus) {
                 PlusSheet(
                     // "Switch account" and "Sign in to continue" both end up in

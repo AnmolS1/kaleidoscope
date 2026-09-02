@@ -303,3 +303,29 @@ public func shouldKeepPoint(prev: StrokePoint?, next: StrokePoint, minDistNorm: 
     guard let prev else { return true }
     return hypot(next.x - prev.x, next.y - prev.y) >= minDistNorm
 }
+
+/// A duplicate's name, truncated to whatever the shared validator accepts, so a
+/// 40-unit name duplicated repeatedly can never produce an unsaveable drawing.
+///
+/// Drops whole `Character`s — extended grapheme clusters.
+///
+/// 🔴 The previous note here claimed this was PROVABLY the same string the web
+/// produced, on the argument that every cut the web rejects is a mid-surrogate-
+/// pair cut. That argument only covers surrogate pairs. A cluster made of
+/// several scalars — an emoji ZWJ family, a pair of regional indicators, a
+/// Devanagari conjunct — has interior boundaries the web's UTF-16 slice would
+/// happily cut at and `normalizeLayerName` would happily accept, and there the
+/// two answers differed: of seven boundary cases, three (REVIEW.md minor mI7).
+///
+/// The web now drops clusters too, via `Intl.Segmenter`, because this is the
+/// better answer: `👨‍👩` and a lone regional indicator are not names anyone
+/// meant. Both sides implement UAX #29, and the boundary cases are pinned in
+/// `golden.json` so that agreement is CHECKED rather than argued.
+public func copyName(_ name: String) -> String {
+    var candidate = "\(name) copy"
+    while !candidate.isEmpty {
+        if let n = normalizeLayerName(candidate) { return n }
+        candidate = String(candidate.dropLast())
+    }
+    return ""
+}

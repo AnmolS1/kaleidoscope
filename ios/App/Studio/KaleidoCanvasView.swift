@@ -465,9 +465,12 @@ final class KaleidoCanvasView: UIView {
         if let hit = model.pendingHit,
            let layer = findLayer(model.drawing, hit.layerId),
            hit.index < layer.strokes.count {
+            // CRANE, the selection colour the web uses — not the black/white
+            // `accent` (REVIEW.md minor mI4), which is the hover ring's colour
+            // and made a selection look like ink.
             KaleidoRenderer.highlightStroke(layer.strokes[hit.index], sym: layer.sym, in: ctx,
                                             size: bounds.size, half: half,
-                                            color: Self.accent(model.background))
+                                            color: UIColor(Blueprint.crane))
         }
 
         if let hover = hoverPoint {

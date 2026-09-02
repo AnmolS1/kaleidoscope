@@ -94,8 +94,19 @@ targets:
             CFBundleURLSchemes: [kaleidoscopewidget]
           - CFBundleURLName: dev.ponderance.kaleidoscope.auth
             CFBundleURLSchemes: [kaleidoscope]
-        # DEBUG/local only: lets the Simulator reach `wrangler dev --remote` over loopback.
-        # Production image URLs stay HTTPS; never ship a broader ATS exception.
+        # 🔴 THIS SHIPS IN RELEASE. It used to say "DEBUG/local only", which was
+        # not true — xcodegen writes ONE Info.plist for every configuration, and
+        # ATS keys are not among the settings Xcode will substitute per config
+        # (a `$(VAR)` here produces a STRING where ATS wants a boolean, which
+        # fails silently in the direction that breaks local dev). REVIEW.md
+        # minor mI6.
+        #
+        # What it actually grants: cleartext HTTP to LOCAL hosts only —
+        # loopback, .local, link-local. Never to the public internet. And no
+        # Release code path can reach a local host: `Config.baseURL` and
+        # `Config.webURL` are compile-time HTTPS constants and the only override
+        # is inside `#if DEBUG`. `ConfigTests` asserts exactly that, so the
+        # claim has a test behind it instead of a comment.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
     dependencies:
@@ -176,8 +187,12 @@ targets:
         CFBundleDisplayName: Kaleidoscope
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        # Extensions are separate bundles and do NOT inherit the host app's ATS, so the
-        # widget needs its own debug-only loopback exception for the wrangler-dev selection call.
+        # Extensions are separate bundles and do NOT inherit the host app's ATS, so
+        # the widget carries its own loopback exception for the wrangler-dev
+        # selection call. Same correction as the app target above: this ships in
+        # Release too, it permits cleartext to LOCAL hosts only, and the widget
+        # reads the same `Config.baseURL` whose only non-HTTPS value is behind
+        # `#if DEBUG`.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSExtension:

@@ -1572,5 +1572,35 @@
         "y": 0.42
       }
     ]
-  }
+  },
+  "copyNames": [
+    {
+      "name": "Layer 1",
+      "expected": "Layer 1 copy"
+    },
+    {
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa👨‍👩‍👧",
+      "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé",
+      "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé "
+    },
+    {
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa🇬🇧🇬🇧🇬🇧",
+      "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa🇬🇧🇬🇧"
+    },
+    {
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaक्षि",
+      "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "name": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "expected": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+    }
+  ]
 }

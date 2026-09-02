@@ -27,6 +27,17 @@ import {
   type Symmetry,
 } from "../../src/shared/vector";
 import { smoothStroke } from "../../src/shared/smooth";
+import { copyName } from "../../src/client/engine/history";
+
+const COPY_NAME_CASES = [
+  "Layer 1",
+  "a".repeat(40),                 // already at the limit
+  "a".repeat(35) + "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}", // ZWJ family at the boundary
+  "a".repeat(38) + "\u00e9",       // NFC-composed, one scalar
+  "a".repeat(30) + "\u{1F1EC}\u{1F1E7}\u{1F1EC}\u{1F1E7}\u{1F1EC}\u{1F1E7}", // flags
+  "a".repeat(37) + "\u0915\u094D\u0937\u093F",     // Devanagari conjunct
+  "\u{1F600}".repeat(20),          // nothing but clusters
+];
 
 const root = process.cwd();
 
@@ -498,7 +509,16 @@ const out = {
   v1: v1Fixtures,
   v2: v2Fixtures,
   smooth: { alpha: smooth.alpha, points: smooth.points, cubics: smooth.cubics },
+  // REVIEW.md minor mI7. Duplicating a layer appends " copy" and trims until the
+  // 40-unit name limit accepts it. The trim used to run by UTF-16 code unit on
+  // the web and by grapheme cluster in Swift, and for a cluster made of several
+  // scalars those are different answers — a truncated ZWJ family, a lone
+  // regional indicator. Both drop clusters now, and these pin it: "both
+  // implement UAX #29" is a claim about two separate implementations, which is
+  // exactly the kind of claim that belongs in a fixture rather than a comment.
+  copyNames: COPY_NAME_CASES.map((name) => ({ name, expected: copyName(name) })),
 };
+
 
 const outPath = join(root, "ios/KaleidoEngine/Tests/KaleidoEngineTests/Fixtures/golden.json");
 mkdirSync(dirname(outPath), { recursive: true });

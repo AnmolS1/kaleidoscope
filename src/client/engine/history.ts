@@ -71,13 +71,44 @@ export function defaultLayerName(id: string): string {
  * A duplicate's name. Truncated to whatever the shared validator accepts, so a
  * 40-unit name duplicated repeatedly can never produce an unsaveable drawing.
  */
-function copyName(name: string): string {
-  const candidate = `${name} copy`;
-  for (let cut = candidate.length; cut >= 0; cut--) {
-    const n = normalizeLayerName(candidate.slice(0, cut));
+/**
+ * `"<name> copy"`, trimmed until the format will store it.
+ *
+ * Trimmed by GRAPHEME CLUSTER, not by UTF-16 code unit (REVIEW.md minor mI7).
+ * Slicing by code unit cut through clusters, so duplicating a near-limit layer
+ * produced names ending in half a ZWJ family (`👨‍👩`) or a lone regional
+ * indicator — and, because the Swift port drops whole `Character`s, the two
+ * platforms answered differently for the same document. Proven, not assumed:
+ * of seven boundary cases three diverged, including emoji families, flags and
+ * Devanagari conjuncts.
+ *
+ * Swift's rule is the correct one, so the web moved. Both now implement UAX #29
+ * extended grapheme clusters, and `golden.json` carries the boundary cases so
+ * "both implement UAX #29" is checked rather than asserted.
+ *
+ * The fallback exists only for a runtime with no `Intl.Segmenter`. It drops
+ * whole CODE POINTS, which is worse than clusters but never splits a surrogate
+ * pair — the one thing `normalizeLayerName` rejects outright.
+ */
+export function copyName(name: string): string {
+  let candidate = `${name} copy`;
+  while (candidate.length > 0) {
+    const n = normalizeLayerName(candidate);
     if (n !== null) return n;
+    candidate = dropLastCluster(candidate);
   }
   return "";
+}
+
+function dropLastCluster(s: string): string {
+  if (typeof Intl !== "undefined" && typeof Intl.Segmenter === "function") {
+    const parts = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)];
+    parts.pop();
+    return parts.map((p) => p.segment).join("");
+  }
+  const cps = [...s];
+  cps.pop();
+  return cps.join("");
 }
 
 export function addStrokeTo(d: DrawingV2, layerId: string, stroke: Stroke): DrawingV2 | null {

@@ -34,6 +34,9 @@ struct SaveSheet: View {
     @State private var twin: ArtworkDetail?
     @State private var errorText: String?
     @State private var savedId: String?
+    /// The already-in-the-gallery twin, shown in a sheet over this one rather
+    /// than handed to Safari.
+    @State private var twinPreview: SavedPiece?
     /// `SaveSelfUnchanged` has swapped its piece card for the edit form.
     @State private var editing = false
     /// A message from the last failed edit (the cap note).
@@ -91,8 +94,12 @@ struct SaveSheet: View {
 
     private var titleInvalid: Bool { titleIsInvalid(title) }
 
-    /// The user's own piece with this exact picture, per the pre-flight.
+    /// The user's own piece with this exact picture.
+    ///
+    /// From the POST first, then the pre-flight: a 200 `deduped` is the SAME
+    /// fact arriving later, and it is the one the pre-flight missed.
     private var mineId: String? {
+        if case let .deduped(id) = post { return id }
         if case let .done(lookup) = preflight { return lookup.mine }
         return nil
     }
@@ -162,6 +169,20 @@ struct SaveSheet: View {
             // pointing at it would leave the control showing NOTHING selected.
             .onChange(of: capReached) { _, atCap in
                 if atCap && visibility == .public { visibility = .unlisted }
+            }
+            // The twin, in the app. Same shape RootView uses for the piece it
+            // has just saved: its own NavigationStack so ArtworkView has a bar
+            // to hang Done off, presented over this sheet.
+            .sheet(item: $twinPreview) { piece in
+                NavigationStack {
+                    ArtworkView(id: piece.id)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { twinPreview = nil }
+                            }
+                        }
+                }
+                .environmentObject(auth)
             }
         }
     }
@@ -406,7 +427,14 @@ struct SaveSheet: View {
                     Image(systemName: "square.grid.2x2")
                 }
                 .foregroundStyle(Blueprint.graphite)
-                Link("Open the piece it matches", destination: Config.webURL.appendingPathComponent("p/\(of)"))
+                // IN THE APP, not Safari (REVIEW.md minor mI3). This was a
+                // `Link` to the website, which is both worse — the app has an
+                // artwork screen with the owner's controls on it — and a
+                // Guideline 3.1.1 exposure the moment Plus is buyable on the
+                // web, since it hands the user a route to a purchase outside
+                // in-app purchase. AboutView already carries that reasoning for
+                // why this app links out nowhere.
+                Button("Open the piece it matches") { twinPreview = SavedPiece(id: of) }
                     .tint(Blueprint.craneText)
             } else {
                 Label {
@@ -626,6 +654,15 @@ struct SaveSheet: View {
                 post = .capReached(id: result.id, cap: result.cap, count: result.count)
                 savedId = result.id
                 await auth.refreshPlus()
+                return
+            }
+            if result.deduped == true {
+                // 200, not 201: nothing was written. Dismissing here would
+                // report a save that did not happen and quietly drop the title
+                // and visibility just chosen, since a dedupe never mutates the
+                // piece it matched (REVIEW.md minor mI8).
+                post = .deduped(id: result.id)
+                savedId = result.id
                 return
             }
             await auth.refreshPlus()
