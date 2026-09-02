@@ -11,6 +11,9 @@ struct GalleryView: View {
     @State private var nextCursor: String?
     @State private var loading = false
     @State private var loadedOnce = false
+    /// The gallerySaveToken this view has already loaded for. Distinguishes a
+    /// real save from a mere re-appearance — see the note on the .task below.
+    @State private var loadedToken: Int?
     @State private var showShuffle = false
 
     private let client = AuthClient()
@@ -52,7 +55,18 @@ struct GalleryView: View {
         }
         // Loads on first appearance, and reloads whenever a piece is saved
         // (gallerySaveToken changes) so a new public piece shows without relaunch.
-        .task(id: router.gallerySaveToken) { await loadFirst(reset: true) }
+        //
+        // 🔴 `.task(id:)` fires on APPEARANCE as well as on an id change (S21),
+        // so this ran on every return to the Gallery tab: pagination was thrown
+        // away and page 1 refetched, losing the user's scroll position and
+        // everything they had loaded. `MyPiecesView` gets this right with a
+        // `loadedOnce` guard; this is the same idea keyed on the token, so a
+        // genuine save still reloads and a mere re-appearance does not.
+        .task(id: router.gallerySaveToken) {
+            guard loadedToken != router.gallerySaveToken else { return }
+            loadedToken = router.gallerySaveToken
+            await loadFirst(reset: true)
+        }
     }
 
     @ViewBuilder
@@ -110,6 +124,17 @@ struct GalleryThumb: View {
                 .lineLimit(1)
             if let name = card.author?.name {
                 Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            // The symmetry line, matching the web card (S22). Rendered only when
+            // the server actually sent the fields, so an older response shows
+            // the card exactly as before rather than a fabricated "0-fold".
+            if let segments = card.segments {
+                Text(ArtworkMeta.summary(segments: segments,
+                                         mirror: card.mirror ?? false,
+                                         layers: card.layers))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
         // One VoiceOver element per card: alt text, then title, then author.

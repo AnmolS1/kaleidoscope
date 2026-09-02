@@ -18,8 +18,26 @@ enum DialGeometry {
     static let start: Double = -240
     static let size: CGFloat = 220
     static var ringRadius: CGFloat { size / 2 - 30 }
-    static let centerRadius: CGFloat = 30
-    static let labelOffset: CGFloat = 17
+    /// RADIUS, not diameter (S20). DESIGN.md §3 specifies "a 30px center disc",
+    /// and the web uses `CENTRE_DISC_R = 15`. This held 30, so the disc rendered
+    /// at 60pt across — double the spec, covering two thirds of the live
+    /// symmetry preview the dial exists to show.
+    static let centerRadius: CGFloat = 15
+
+    /// Presses inside this radius do not drag the ring.
+    ///
+    /// WIDER than the disc, and deliberately its own constant (S20). The mirror
+    /// toggle ships at the 44pt touch minimum (radius 22) even though it only
+    /// LOOKS 30pt across, so a press that misses the button by a point must not
+    /// silently spin the dial instead. This used to reuse `centerRadius`, which
+    /// meant correcting the disc to its specified size would also have shrunk
+    /// the dead zone from 30 to 15 — quietly making the toggle easy to miss.
+    /// Same value as the web's `DEAD_ZONE_R`.
+    static let deadZoneRadius: CGFloat = 24
+    /// ring + 21 (S20). 17 is the value DESIGN.md documents as REJECTED: it puts
+    /// the handle 1.5px on top of the "24" label, measured against real glyph
+    /// boxes. 21 clears every label, tightest 2.35px at "24".
+    static let labelOffset: CGFloat = 21
 
     /// Segment count → angle in radians, in the SVG convention the design uses
     /// (0° at 3 o'clock, y down).
@@ -195,7 +213,7 @@ struct SymmetryDial: View {
                 let offset = CGSize(width: value.location.x - center.x,
                                     height: value.location.y - center.y)
                 // Ignore touches on the centre disc — that is the mirror button.
-                guard hypot(offset.width, offset.height) > DialGeometry.centerRadius else { return }
+                guard hypot(offset.width, offset.height) > DialGeometry.deadZoneRadius else { return }
                 let next = DialGeometry.segments(atOffset: offset)
                 guard next != sym.segments else { return }
                 if !dragging { feedback.prepare(); dragging = true }

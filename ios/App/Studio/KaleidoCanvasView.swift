@@ -51,6 +51,10 @@ final class KaleidoCanvasView: UIView {
     // Gesture state
     private var pinchStartScale: CGFloat = 1
     private var panStartOffset: CGSize = .zero
+    /// The view offset when a pinch began. Separate from panStartOffset because
+    /// pan and pinch run SIMULTANEOUSLY, so each needs its own baseline —
+    /// sharing one made the second gesture to start clobber the first.
+    private var pinchStartOffset: CGSize = .zero
     private weak var panGesture: UIPanGestureRecognizer?
 
     override init(frame: CGRect) {
@@ -345,9 +349,36 @@ final class KaleidoCanvasView: UIView {
         case .began:
             cancelStroke()
             pinchStartScale = model.viewScale
-            panStartOffset = model.viewOffset
+            pinchStartOffset = model.viewOffset
         case .changed:
-            model.setView(scale: pinchStartScale * g.scale, offset: model.viewOffset, in: bounds.size)
+            // ANCHORED AT THE PINCH MIDPOINT (S23).
+            //
+            // This used to change only the scale and pass the offset through
+            // unchanged, so the zoom was always about the view's CENTRE: pinch
+            // into a corner and the thing you were pinching slid away from your
+            // fingers. The web anchors at the midpoint; this is the same idea in
+            // this view's coordinates.
+            //
+            // The transform is `screen = C + offset + s * (p - C)`, so holding
+            // the drawing point under the midpoint fixed across a scale change
+            // gives `offset' = u - (s'/s) * (u - offset)`, where `u` is the
+            // midpoint relative to the centre. Sanity check: with u = 0 and
+            // offset = 0 it is the identity, and doubling the scale about a
+            // point 100pt right of centre moves the offset to -100pt, which is
+            // exactly what keeps that point still.
+            //
+            // Translation is NOT applied here: the two-finger pan recognizer
+            // runs simultaneously (see shouldRecognizeSimultaneouslyWith) and
+            // already moves the view by the fingers' travel. Panning here too
+            // would double it.
+            let target = pinchStartScale * g.scale
+            let clamped = min(StudioModel.maxZoom, max(StudioModel.minZoom, target))
+            let mid = g.location(in: self)
+            let u = CGSize(width: mid.x - bounds.width / 2, height: mid.y - bounds.height / 2)
+            let k = pinchStartScale > 0 ? clamped / pinchStartScale : 1
+            let offset = CGSize(width: u.width - k * (u.width - pinchStartOffset.width),
+                                height: u.height - k * (u.height - pinchStartOffset.height))
+            model.setView(scale: clamped, offset: offset, in: bounds.size)
         default:
             break
         }

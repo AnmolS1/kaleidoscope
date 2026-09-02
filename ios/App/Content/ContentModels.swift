@@ -17,6 +17,17 @@ struct GalleryCard: Codable, Identifiable, Equatable {
     /// predating the alt-text backend still decode; `accessibleAltText` supplies
     /// a synthesized fallback at the call site.
     let altText: String?
+    /// Symmetry summary fields. Optional so a response predating them still
+    /// decodes — and so a missing value renders nothing rather than "0-fold".
+    ///
+    /// `segments == 0` is the contract signal for "the visible layers
+    /// disagree", i.e. the piece is LAYERED. The worker has sent these since
+    /// 1.2 for exactly this line; iOS never decoded them, so every card was
+    /// missing the one thing that says a piece has layers — and
+    /// `ArtworkMeta.summary` was written, unit-tested, and called from nowhere.
+    let segments: Int?
+    let mirror: Bool?
+    let layers: Int?
 }
 
 struct GalleryPage: Codable {
