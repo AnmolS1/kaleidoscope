@@ -313,14 +313,50 @@ export async function countPublicSince(env: Env, userId: string, epoch: number):
   return Number(row?.n ?? 0);
 }
 
-/** Rows still missing a content hash (everything saved before 1.2), for the
- *  T02c backfill. Until it finishes the remix block is off for those pieces. */
-export async function listArtworksMissingHash(env: Env, limit: number): Promise<Artwork[]> {
-  const { results } = await env.DB.prepare(
-    "SELECT * FROM artworks WHERE content_hash IS NULL ORDER BY created_at DESC LIMIT ?",
-  )
-    .bind(limit)
-    .all<Artwork>();
+/** A position in the backfill sweep — the last row a batch looked at. */
+export interface HashCursor {
+  createdAt: number;
+  id: string;
+}
+
+/**
+ * Rows still missing a content hash, for the T02c backfill.
+ *
+ * 🔴 PAGED BY CURSOR, and it has to be. Without one this took the NEWEST
+ * `limit` rows every time, and a row that can never be hashed never leaves the
+ * `content_hash IS NULL` set — so permanently-skipped rows pile up at the head
+ * of that fixed ordering. Measured: 60 unhashable rows and one good older one
+ * gives `scanned=50 processed=0 skipped=50`, forever, with the good row
+ * unreachable. `processed: 0` is the signal to stop, so the sweep reports
+ * itself finished having skipped everything behind the blockage.
+ *
+ * That went from theoretical to certain in this release: migration 0006 nulled
+ * every hash, so the whole table must be traversed, and the reasons a row is
+ * permanently skipped now include `nothing_visible` (mA3) and the duplicates
+ * S16 deliberately merges.
+ *
+ * The cursor is `(created_at, id)`, not `created_at` alone — timestamps are not
+ * unique, and a bare `created_at <` cursor silently drops every row that shares
+ * a second with the last one scanned. `id` breaks the tie, and the ORDER BY
+ * names both so the pagination and the ordering cannot disagree.
+ */
+export async function listArtworksMissingHash(
+  env: Env,
+  limit: number,
+  cursor?: HashCursor | null,
+): Promise<Artwork[]> {
+  const sql = cursor
+    ? `SELECT * FROM artworks
+        WHERE content_hash IS NULL
+          AND (created_at < ? OR (created_at = ? AND id < ?))
+        ORDER BY created_at DESC, id DESC LIMIT ?`
+    : `SELECT * FROM artworks
+        WHERE content_hash IS NULL
+        ORDER BY created_at DESC, id DESC LIMIT ?`;
+  const stmt = cursor
+    ? env.DB.prepare(sql).bind(cursor.createdAt, cursor.createdAt, cursor.id, limit)
+    : env.DB.prepare(sql).bind(limit);
+  const { results } = await stmt.all<Artwork>();
   return results ?? [];
 }
 

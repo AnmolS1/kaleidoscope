@@ -113,7 +113,7 @@ describe("POST /api/admin/backfill-hash", () => {
 
     const res = await run(c.env);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ scanned: 1, processed: 1, skipped: [] });
+    expect(await res.json()).toEqual({ scanned: 1, processed: 1, skipped: [], next: null });
     expect(readRow(c.DB, "a1").content_hash).toBe(await contentHash(json));
   });
 
@@ -143,7 +143,7 @@ describe("POST /api/admin/backfill-hash", () => {
     const second = await runJson(c.env);
     // `processed: 0` alone is also what a run that skipped everything would
     // report, so assert on the DATA: the rows are byte-identical to run 1.
-    expect(second).toEqual({ scanned: 0, processed: 0, skipped: [] });
+    expect(second).toEqual({ scanned: 0, processed: 0, skipped: [], next: null });
     expect([readRow(c.DB, "a1"), readRow(c.DB, "a2")]).toEqual(after1);
   });
 
@@ -235,7 +235,7 @@ describe("POST /api/admin/backfill-hash", () => {
     await seedPiece(c, "theirs", "u2", same);
 
     const body = await runJson(c.env);
-    expect(body).toEqual({ scanned: 2, processed: 2, skipped: [] });
+    expect(body).toEqual({ scanned: 2, processed: 2, skipped: [], next: null });
     const h = await contentHash(same);
     expect(readRow(c.DB, "mine").content_hash).toBe(h);
     expect(readRow(c.DB, "theirs").content_hash).toBe(h);
@@ -245,7 +245,77 @@ describe("POST /api/admin/backfill-hash", () => {
     const c = ctx();
     seedArtwork(c.DB, { id: "done", user_id: "u1", content_hash: "f".repeat(64) });
     const res = await run(c.env);
-    expect(await res.json()).toEqual({ scanned: 0, processed: 0, skipped: [] });
+    expect(await res.json()).toEqual({ scanned: 0, processed: 0, skipped: [], next: null });
     expect(readRow(c.DB, "done").content_hash).toBe("f".repeat(64));
+  });
+});
+
+// The sweep must not wedge behind rows that can never be hashed.
+//
+// Without paging the scan took the newest N rows every time, and a row that
+// cannot be hashed never leaves the `content_hash IS NULL` set — so the stuck
+// ones pile up at the head of a fixed ordering and hide everything behind them.
+// `processed: 0` then reports the sweep finished while most of the table is
+// untouched. Migration 0006 nulled every hash, so this is the state production
+// starts the backfill in, not a hypothetical.
+describe("the backfill pages past rows it can never hash", () => {
+  /** 60 NEWEST rows with no blob in R2 — permanently skipped, more than a batch. */
+  function withBlockage() {
+    const c = ctx();
+    for (let i = 0; i < 60; i++) {
+      seedArtwork(c.DB, {
+        id: `stuck${i}`,
+        user_id: "u1",
+        created_at: 2_000_000 + i,
+        content_hash: null,
+      });
+    }
+    return c;
+  }
+
+  it("reaches a good row sitting behind 60 unhashable ones", async () => {
+    const c = withBlockage();
+    const json = drawingV1(7);
+    await seedPiece(c, "reachable", "u1", json, { created_at: 1_000_000 });
+
+    let after: string | undefined;
+    let hashed = 0;
+    for (let i = 0; i < 10; i++) {
+      const b = (await (await run(c.env, after ? { after } : {})).json()) as {
+        processed: number;
+        next: string | null;
+      };
+      hashed += b.processed;
+      if (b.next === null) break;
+      after = b.next;
+    }
+
+    // Before paging this was 0: the first batch was 50 stuck rows, `processed`
+    // was 0, and `processed: 0` is the documented signal to stop.
+    expect(hashed).toBe(1);
+    expect(readRow(c.DB, "reachable").content_hash).toBe(await contentHash(json));
+  });
+
+  it("CONTROL: the first batch really is all blockage, so paging is what saved it", async () => {
+    const c = withBlockage();
+    await seedPiece(c, "reachable", "u1", drawingV1(7), { created_at: 1_000_000 });
+
+    const first = (await (await run(c.env)).json()) as {
+      scanned: number;
+      processed: number;
+      next: string | null;
+    };
+    expect(first.scanned).toBe(50);
+    expect(first.processed).toBe(0);
+    // And it hands back somewhere to continue FROM, which is the whole fix.
+    expect(first.next).not.toBeNull();
+  });
+
+  it("a sweep that reaches the end says so with a null cursor", async () => {
+    const c = ctx();
+    await seedPiece(c, "only", "u1", drawingV1(7));
+    const b = (await (await run(c.env)).json()) as { processed: number; next: string | null };
+    expect(b.processed).toBe(1);
+    expect(b.next).toBeNull();
   });
 });

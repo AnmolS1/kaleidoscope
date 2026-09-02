@@ -30,6 +30,13 @@
 --    "NULL hash count = 0" can no longer be satisfied. Compare against the
 --    count of rows the backfill reports as skipped-duplicate instead.
 --
+--    🔴 AND PAGE THE SWEEP. `POST /api/admin/backfill-hash` returns a `next`
+--    cursor; drive the loop on THAT, not on `processed`. A row that can never be
+--    hashed never leaves the `content_hash IS NULL` set, so the unhashable ones
+--    collect at the head of the scan's ordering and hide everything behind them
+--    — 60 of them gives `scanned=50 processed=0` forever, with good rows
+--    unreachable. `processed: 0` describes the BATCH, not the table.
+--
 -- 3. The partial unique index is `WHERE content_hash IS NOT NULL`, so setting
 --    the column to NULL removes those entries cleanly; nothing to drop or
 --    rebuild.

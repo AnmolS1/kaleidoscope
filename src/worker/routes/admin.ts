@@ -78,6 +78,17 @@ admin.post("/backfill-alt", requireAuth, requireCsrf, async (c) => {
  *  parses and a SHA-256. */
 const HASH_BATCH_MAX = 50;
 
+/** `"<created_at>:<id>"` back into a cursor. Anything unparseable starts over. */
+function parseCursor(raw: unknown): { createdAt: number; id: string } | null {
+  if (typeof raw !== "string") return null;
+  const at = raw.indexOf(":");
+  if (at <= 0) return null;
+  const createdAt = Number(raw.slice(0, at));
+  const id = raw.slice(at + 1);
+  if (!Number.isFinite(createdAt) || !id) return null;
+  return { createdAt, id };
+}
+
 /**
  * Admin-only: backfill `content_hash` + `layers` for pre-1.2 rows.
  *
@@ -99,17 +110,29 @@ const HASH_BATCH_MAX = 50;
  * WRONG hash would be far worse: it makes two different drawings look identical
  * and would block a legitimate save as `duplicate_of_other`.
  *
- * Skipped rows can in principle starve the batch (the query is ordered, so 50
- * stuck rows at the head hide everything behind them). That shows up as
- * `processed: 0` with a non-empty `skipped`, and the release step's NULL count
- * catches it — which is why the ids are returned rather than just a tally.
+ * Skipped rows WOULD starve the sweep, and the note that used to sit here said
+ * the release step's NULL count would catch it — while migration 0006's own
+ * notes say that check can no longer be satisfied. Two documents in one release,
+ * disagreeing about the safety net.
+ *
+ * Neither is load-bearing now: the scan is PAGED (`after` / `next`), so a run of
+ * unhashable rows is stepped over instead of blocking everything behind it.
+ * Drive the loop on `next`, never on `processed` — `processed: 0` is a fact
+ * about one batch. The skipped ids are still returned per row so an operator can
+ * tell "nothing left to do" from "these N can never be done".
  */
 admin.post("/backfill-hash", requireAuth, requireCsrf, async (c) => {
   if (c.get("user")!.role !== "admin") return c.json({ error: "forbidden" }, 403);
-  const body = (await c.req.json().catch(() => ({}))) as { batch?: number };
+  const body = (await c.req.json().catch(() => ({}))) as { batch?: number; after?: unknown };
   const batch = Math.min(HASH_BATCH_MAX, Math.max(1, Number(body.batch) || HASH_BATCH_MAX));
 
-  const rows = await listArtworksMissingHash(c.env, batch);
+  // `after` is the previous batch's `next`, opaque to the caller: "<created_at>:<id>".
+  // Paging is what stops a run of unhashable rows wedging the sweep — see
+  // `listArtworksMissingHash`. Malformed or absent means start from the top,
+  // which is also what a caller who wants a fresh sweep sends.
+  const cursor = parseCursor(body.after);
+
+  const rows = await listArtworksMissingHash(c.env, batch, cursor);
 
   let processed = 0;
   // Reasons are `missing_blob` | `unreadable_blob` | `duplicate_or_already_set` |
@@ -173,5 +196,12 @@ admin.post("/backfill-hash", requireAuth, requireCsrf, async (c) => {
     }
   }
 
-  return c.json({ scanned: rows.length, processed, skipped });
+  // `next` is the position AFTER the last row looked at — including the ones
+  // that were skipped, which is the entire point. Null when this batch reached
+  // the end, which is the only honest "the sweep is finished" signal:
+  // `processed === 0` means "this batch could not hash anything", and that is
+  // a description of the batch, not of the table.
+  const last = rows[rows.length - 1];
+  const next = rows.length < batch || !last ? null : `${last.created_at}:${last.id}`;
+  return c.json({ scanned: rows.length, processed, skipped, next });
 });
