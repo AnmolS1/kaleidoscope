@@ -8,8 +8,9 @@
 import { describe, it, expect } from "vitest";
 import app from "../../src/worker/index";
 import {
-  makeD1, makeKV, makeR2, makeEnv, seedUser, seedSession, seedArtwork, bearer,
+  makeD1, makeKV, makeR2, makeEnv, seedUser, seedSession, seedArtwork, saveForm, bearer,
 } from "./helpers";
+import { serialize, deserialize } from "../../src/shared/vector";
 
 function ctx() {
   const DB = makeD1();
@@ -120,5 +121,68 @@ describe("private artwork bytes are not publicly cacheable (M5)", () => {
     const res = await app.request("/api/artworks/unl/image", { headers: bearer("s1") }, env as never);
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toMatch(/(^|[ ,])public/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REVIEW.md M6, second half — what the worker STORES.
+// ---------------------------------------------------------------------------
+
+describe("the stored vector is the canonical form, not the caller's bytes", () => {
+  // The worker used to persist exactly what the client posted and serve it back
+  // untouched, so every question about the wire form — key order, hex case,
+  // numeric formatting, whitespace — was answered by an arbitrary client's JSON
+  // encoder, for every reader including iOS. Re-serializing makes the stored
+  // bytes the ones the format defines, which is also the form the content hash
+  // was computed over.
+  it("a differently-encoded but equivalent drawing is stored canonically", async () => {
+    const DB = makeD1();
+    const SESSIONS = makeKV();
+    const ART = makeR2();
+    seedUser(DB, "u1");
+    seedSession(SESSIONS, "s1", "u1");
+    const env = makeEnv({ DB, SESSIONS, ART, RATELIMIT: makeKV() });
+
+    // Same drawing, deliberately odd encoding: pretty-printed, keys out of the
+    // order the serializer emits.
+    const odd = JSON.stringify(
+      {
+        bg: "light",
+        v: 2,
+        layers: [
+          {
+            strokes: [
+              { opacity: 1, color: "#E84A27", pts: [[0, 0, 1], [0.1, 0.1, 1]], size: 6, tool: "solid" },
+            ],
+            sym: { mirror: true, segments: 6 },
+            visible: true,
+            opacity: 1,
+            name: "Layer 1",
+            id: "l1",
+          },
+        ],
+      },
+      null,
+      2,
+    );
+
+    const res = await app.request(
+      "/api/artworks",
+      { method: "POST", headers: bearer("s1"), body: saveForm({ drawing: odd }) },
+      env as never,
+    );
+    expect(res.status).toBe(201);
+    const { id } = (await res.json()) as { id: string };
+
+    const storedGz = ART.store.get(`vec/${id}.json.gz`);
+    expect(storedGz, "the vector must have been written").toBeTruthy();
+    const text = await new Response(
+      new Response(storedGz as BodyInit).body!.pipeThrough(new DecompressionStream("gzip")),
+    ).text();
+
+    // Byte-for-byte the canonical serialization — not the pretty-printed input.
+    expect(text).toBe(serialize(deserialize(odd)));
+    expect(text).not.toBe(odd);
+    expect(text).not.toMatch(/\n/); // the input had newlines; the canonical form has none
   });
 });

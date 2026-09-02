@@ -144,6 +144,20 @@ public let MAX_LAYERS = 8
 public let MAX_LAYER_NAME = 40
 public let MAX_STROKES_TOTAL = 5000
 public let MAX_POINTS_TOTAL = 200_000
+
+/// Numeric bounds enforced on PARSE — the exact mirror of `src/shared/vector.ts`.
+///
+/// The format is written by one platform and read by the other, so these are
+/// not cosmetic. `Int(_:)` on a large Double is an uncatchable TRAP, so a
+/// drawing carrying `1e30` — which the web parser used to accept and the worker
+/// stored verbatim — crash-looped every iOS client that opened it.
+///
+/// `MIN_SIZE` is the rounding grid rather than an aesthetic floor: size
+/// serializes to two decimals, so anything smaller writes back as `0`, which
+/// the parser then rejects — the drawing destroys itself on the first re-save.
+public let MIN_SIZE = 0.01
+public let MAX_SIZE = 1_000.0
+public let MAX_COORD = 1_000.0
 public let VECTOR_HARD_CAP_BYTES = 256 * 1024
 
 public struct Layer: Equatable, Sendable {

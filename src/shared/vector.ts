@@ -95,6 +95,23 @@ export const MAX_LAYERS = 8;
 export const MAX_LAYER_NAME = 40;
 export const MAX_STROKES_TOTAL = 5000;
 export const MAX_POINTS_TOTAL = 200_000;
+
+/**
+ * Numeric bounds enforced on PARSE, on both platforms.
+ *
+ * None of these existed, and the format is written by one platform and read by
+ * the other, so an unbounded number is not a cosmetic problem: Swift's
+ * `Int(...)` conversion traps — uncatchably — well below what a double can
+ * hold, so a value this parser waved through crash-looped every iOS client that
+ * opened the piece.
+ *
+ * `MIN_SIZE` is the rounding grid, not an aesthetic minimum: size serializes to
+ * two decimals, so anything smaller writes back as `0`, which this same parser
+ * rejects — the piece destroys itself on the first re-save.
+ */
+export const MIN_SIZE = 0.01; // one unit of the 2dp serialization grid
+export const MAX_SIZE = 1_000; // far above any brush; well clear of the Int trap
+export const MAX_COORD = 1_000; // coords are normalized to ~[-1, 1]
 export const VECTOR_HARD_CAP_BYTES = 256 * 1024;
 
 const COORD_DECIMALS = 3;
@@ -368,7 +385,16 @@ function parseStroke(sv: unknown, where: string, budget: Budget): Stroke {
   if (typeof s.color !== "string" || (s.color !== "spectrum" && !HEX.test(s.color))) {
     throw new DrawingParseError(`${where}: bad color`);
   }
-  if (!isFiniteNumber(s.size) || s.size <= 0) throw new DrawingParseError(`${where}: bad size`);
+  // M8: the floor is the ROUNDING GRID, not zero.
+  //
+  // `size` is serialized to 2dp, so anything under 0.005 writes back as
+  // `"size":0` — which this same parser then rejects. A drawing saved at
+  // size 0.004 is accepted, stored, and permanently destroyed by the first
+  // client that re-saves it: /vector 500s, iOS throws, the hash backfill can
+  // never process it. Refuse it on the way in instead of losing the piece.
+  if (!isFiniteNumber(s.size) || s.size < MIN_SIZE || s.size > MAX_SIZE) {
+    throw new DrawingParseError(`${where}: bad size`);
+  }
   if (!isFiniteNumber(s.opacity) || s.opacity < 0 || s.opacity > 1) {
     throw new DrawingParseError(`${where}: bad opacity`);
   }
@@ -387,6 +413,18 @@ function parseStroke(sv: unknown, where: string, budget: Budget): Stroke {
     if (!Array.isArray(pv) || pv.length !== 3 || !pv.every(isFiniteNumber)) {
       throw new DrawingParseError(`${where}: bad pts`);
     }
+    // M6: BOUND THE NUMBERS, because the other platform traps on them.
+    //
+    // Coordinates are normalized to roughly [-1, 1] and pressure to [0, 1], and
+    // neither was range-checked at all. Swift's `Serialize` multiplies by the
+    // decimal scale and calls `Int(...)`, which TRAPS — uncatchably — above
+    // ~9.2e15. So one POST carrying `"x": 1e30` publishes a gallery item that
+    // crash-loops every iOS client that renders it, and the worker stored the
+    // caller's bytes verbatim and served them straight back.
+    if (Math.abs(pv[0]) > MAX_COORD || Math.abs(pv[1]) > MAX_COORD) {
+      throw new DrawingParseError(`${where}: coordinate out of range`);
+    }
+    if (pv[2] < 0 || pv[2] > 1) throw new DrawingParseError(`${where}: pressure out of range`);
     return [pv[0], pv[1], pv[2]] as Pt;
   });
 

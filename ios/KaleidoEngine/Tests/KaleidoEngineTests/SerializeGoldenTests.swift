@@ -185,6 +185,17 @@ final class SerializeGoldenTests: XCTestCase {
             (0.333, 3, "0.333"),
             (0.0005, 3, "0.001"),   // layer opacity: rounds up, no "0.0005"
             (0, 3, "0"),
+
+            // 🔴 REVIEW M7. The double where `floor(x + 0.5)` and JS Math.round
+            // part company: 0.004999999999999999 * 100 is exactly
+            // 0.49999999999999994, and adding 0.5 to that rounds UP to 1.0, so
+            // the old implementation emitted "0.01" where JS emits "0". `f=100`
+            // is both sizeDecimals and pressureDecimals, so this reached the
+            // wire on two different fields and split the content hash.
+            (0.004999999999999999, 2, "0"),
+            // The neighbours, so the fix is a boundary and not an off-by-one:
+            (0.005, 2, "0.01"),     // exactly half → up, as JS does
+            (0.0049, 2, "0"),
         ]
         for (n, d, want) in cases {
             XCTAssertEqual(VectorFormat.format(n, d), want, "format(\(n), \(d))")

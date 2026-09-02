@@ -14,7 +14,7 @@ import {
   capPolicy,
   parseVisibility,
 } from "../lib/validate";
-import { contentHash, deserialize, flattenToV1, serializeV1 } from "../../shared/vector";
+import { contentHash, deserialize, flattenToV1, serialize, serializeV1 } from "../../shared/vector";
 import type { DrawingV1 } from "../../shared/vector";
 import { newArtworkId } from "../lib/ids";
 import {
@@ -218,7 +218,17 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
   // 7. Store source-of-truth vector + renders. Keep the image bytes in hand so
   // the deferred alt-text upgrade can reuse them without re-reading R2.
   const imageBytes = await image.arrayBuffer();
-  await putVectorGz(c.env, id, drawing);
+  // Store the CANONICAL re-serialization, not the caller's bytes.
+  //
+  // `drawing` is whatever the client sent; `meta.drawing` is what the parser
+  // accepted. Storing the former meant the bytes we serve back were never
+  // normalized by anything — every question about the wire form (key order,
+  // duplicate keys, hex case, unicode normalization, numeric formatting) became
+  // a question about an arbitrary client's JSON encoder, and the answer was
+  // served verbatim to every reader including iOS. Re-serializing makes the
+  // stored form the one the format defines, so what comes out is what the hash
+  // was computed over.
+  await putVectorGz(c.env, id, serialize(meta.drawing));
   await putWebp(c.env, keys.image(id), imageBytes);
   await putWebp(c.env, keys.thumb(id), await thumb.arrayBuffer());
   if (og && og.size <= CAPS.ogBytes) {

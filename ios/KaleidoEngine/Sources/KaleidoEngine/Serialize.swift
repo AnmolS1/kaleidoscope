@@ -23,12 +23,34 @@ enum VectorFormat {
     static let sizeDecimals = 2
     static let opacityDecimals = 3
 
-    /// JS `Math.round(n * 10^d) / 10^d`, returned as the scaled integer
-    /// `Math.round(n * 10^d)`. `floor(x + 0.5)` reproduces Math.round for both
-    /// signs (e.g. round(-123.5) = -123, round(123.5) = 124).
+    /// JS `Math.round(n * 10^d)`, returned as the scaled integer.
+    ///
+    /// 🔴 NOT `floor(x + 0.5)`, which is what this used to be. The addition is
+    /// itself a rounding step, and there is a reachable double where the two
+    /// disagree: at `x = 0.49999999999999994`, `x + 0.5` rounds UP to exactly
+    /// 1.0, so `floor` gives 1 while JS `Math.round` gives 0. `0.004999999999999999 * 100`
+    /// is exactly that value, and `f = 100` is BOTH `sizeDecimals` and
+    /// `pressureDecimals` — so a single point could serialize differently on the
+    /// two platforms, silently splitting the content hash that dedupe and the
+    /// remix check are built on.
+    ///
+    /// Comparing the fractional part against 0.5 has no intermediate rounding:
+    /// `x - floor(x)` is exact at these magnitudes.
+    ///
+    /// Also TOTAL, where it used to trap. `Int(_:)` on a Double outside
+    /// Int64's range is an uncatchable runtime trap, not an error — so a
+    /// drawing carrying `1e30` (which the web parser used to accept and the
+    /// worker stored verbatim) crash-looped every iOS client that opened it.
+    /// The parser rejects those now, but this is the second line of defence and
+    /// it costs two comparisons.
     static func scaledRound(_ n: Double, _ decimals: Int) -> Int {
         let f = pow(10.0, Double(decimals))
-        return Int((n * f + 0.5).rounded(.down))
+        let x = n * f
+        guard x.isFinite else { return 0 }
+        // Well inside Int64, and far outside anything a real drawing produces.
+        let clamped = Swift.min(Swift.max(x, -9.0e15), 9.0e15)
+        let lower = clamped.rounded(.down)
+        return Int(clamped - lower >= 0.5 ? lower + 1 : lower)
     }
 
     /// Render a fixed-decimal number the way JS `Number.prototype.toString` would
@@ -265,8 +287,12 @@ private func parseStroke(_ sv: Any, _ where_: String, _ budget: inout Budget) th
     guard let color = s["color"] as? String, color == "spectrum" || isHexColor(color) else {
         throw DrawingParseError("\(where_): bad color")
     }
+    // The floor is the ROUNDING GRID, not zero: size serializes to 2dp, so a
+    // stroke below 0.005 writes back as `"size":0` and this same parser then
+    // rejects it — the piece is destroyed by the first client that re-saves it.
     guard let sizeNum = s["size"] as? NSNumber, !isBool(sizeNum),
-          sizeNum.doubleValue.isFinite, sizeNum.doubleValue > 0 else {
+          sizeNum.doubleValue.isFinite,
+          sizeNum.doubleValue >= MIN_SIZE, sizeNum.doubleValue <= MAX_SIZE else {
         throw DrawingParseError("\(where_): bad size")
     }
     guard let opacityNum = s["opacity"] as? NSNumber, !isBool(opacityNum),
@@ -299,6 +325,16 @@ private func parseStroke(_ sv: Any, _ where_: String, _ budget: inout Budget) th
                 throw DrawingParseError("\(where_): bad pts")
             }
             nums.append(num.doubleValue)
+        }
+        // Bound the numbers before they reach `scaledRound`. That function is
+        // total now, but a coordinate of 1e30 is not a drawing either way, and
+        // refusing it here is what keeps the two platforms agreeing on which
+        // documents exist at all.
+        guard abs(nums[0]) <= MAX_COORD, abs(nums[1]) <= MAX_COORD else {
+            throw DrawingParseError("\(where_): coordinate out of range")
+        }
+        guard nums[2] >= 0, nums[2] <= 1 else {
+            throw DrawingParseError("\(where_): pressure out of range")
         }
         pts.append(StrokePoint(x: nums[0], y: nums[1], pressure: nums[2]))
     }
