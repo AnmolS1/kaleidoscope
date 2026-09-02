@@ -12,6 +12,7 @@ import {
   validateTitle,
   hasV2Caps,
   capPolicy,
+  parseVisibility,
 } from "../lib/validate";
 import { contentHash, deserialize, flattenToV1, serializeV1 } from "../../shared/vector";
 import type { DrawingV1 } from "../../shared/vector";
@@ -40,6 +41,7 @@ import {
   variantEtag,
   deleteArtworkObjects,
   IMMUTABLE_CACHE,
+  cacheFor,
 } from "../lib/r2";
 import { templateAlt } from "../lib/alttext";
 import { generateAlt } from "../lib/genalt";
@@ -450,7 +452,7 @@ async function proxy(c: Context<AppEnv>, kind: "image" | "thumb") {
   if (!art) return c.json({ error: "not_found" }, 404);
   if (!canView(art, c.get("user")?.id)) return c.json({ error: "not_found" }, 404);
   const key = kind === "image" ? art.image_key : art.thumb_key;
-  const res = await serveObject(c.env, key);
+  const res = await serveObject(c.env, key, art.visibility);
   return res ?? c.json({ error: "not_found" }, 404);
 }
 
@@ -483,7 +485,7 @@ artworks.get("/:id/vector", async (c) => {
   if (!canView(art, c.get("user")?.id)) return c.json({ error: "not_found" }, 404);
 
   if (c.req.query("v") === "2") {
-    const res = await serveVectorJson(c.env, art.vector_key);
+    const res = await serveVectorJson(c.env, art.vector_key, art.visibility);
     return res ?? c.json({ error: "not_found" }, 404);
   }
 
@@ -504,9 +506,10 @@ artworks.get("/:id/vector", async (c) => {
   return new Response(serializeV1(flat), {
     headers: {
       "Content-Type": "application/json",
-      // Same immutable caching as the stored representation: the URL differs,
-      // so the two never share a cache entry.
-      "Cache-Control": IMMUTABLE_CACHE,
+      // Same caching as the stored representation: the URL differs, so the two
+      // never share a cache entry — but a private piece's flattened v1 form is
+      // no less private than its v2 one, so the directive follows visibility.
+      "Cache-Control": cacheFor(art.visibility),
       ETag: variantEtag(stored.etag, "v1"),
     },
   });
@@ -536,7 +539,10 @@ artworks.patch("/:id", requireAuth, requireCsrf, async (c) => {
     }
   }
 
-  const visibility = body.visibility !== undefined ? cleanVisibility(body.visibility) : undefined;
+  // Strict on PATCH: an unrecognised value is an error, not a default to
+  // "public". `cleanVisibility` would silently publish a private piece.
+  const visibility = parseVisibility(body.visibility);
+  if (visibility === null) return c.json({ error: "bad_visibility" }, 400);
 
   // Going public goes through the conditional publish so the cap check and the
   // visibility change are one statement. Everything else is a plain update that

@@ -14,6 +14,22 @@ export const keys = {
 };
 
 export const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
+/**
+ * The same year of immutability, but PRIVATE.
+ *
+ * A private piece's bytes are immutable in exactly the same way a public one's
+ * are — the content is addressed by id and never rewritten — so the freshness
+ * story is unchanged. What must change is WHO may keep a copy: the URL carries
+ * no per-user component, so `public` invites the browser cache, any
+ * intermediary, and (one "Cache Everything" rule away) Cloudflare's edge to
+ * store a private drawing and hand it to somebody else.
+ */
+export const PRIVATE_IMMUTABLE_CACHE = "private, max-age=31536000, immutable";
+
+/** Cache directive for an artwork representation, by the artwork's visibility. */
+export function cacheFor(visibility: string | null | undefined): string {
+  return visibility === "private" ? PRIVATE_IMMUTABLE_CACHE : IMMUTABLE_CACHE;
+}
 // Avatars are overwritten on each login, so they can't be immutable. A day of
 // freshness with a week of stale-while-revalidate keeps the edge fast without
 // pinning a stale picture forever.
@@ -38,14 +54,18 @@ export async function putVectorGz(env: Env, id: string, json: string): Promise<v
 }
 
 /** Serve the gzipped vector as decompressed JSON. */
-export async function serveVectorJson(env: Env, key: string): Promise<Response | null> {
+export async function serveVectorJson(
+  env: Env,
+  key: string,
+  visibility?: string | null,
+): Promise<Response | null> {
   const obj = await env.ART.get(key);
   if (!obj) return null;
   const stream = obj.body.pipeThrough(new DecompressionStream("gzip"));
   return new Response(stream, {
     headers: {
       "Content-Type": "application/json",
-      "Cache-Control": IMMUTABLE_CACHE,
+      "Cache-Control": cacheFor(visibility),
       ETag: obj.httpEtag,
     },
   });
@@ -94,12 +114,16 @@ export async function putWebp(env: Env, key: string, body: ArrayBuffer | Readabl
 }
 
 /** Build a cacheable Response from an R2 object, or null if missing. */
-export async function serveObject(env: Env, key: string): Promise<Response | null> {
+export async function serveObject(
+  env: Env,
+  key: string,
+  visibility?: string | null,
+): Promise<Response | null> {
   const obj = await env.ART.get(key);
   if (!obj) return null;
   const headers = new Headers();
   obj.writeHttpMetadata(headers);
-  headers.set("Cache-Control", IMMUTABLE_CACHE);
+  headers.set("Cache-Control", cacheFor(visibility));
   headers.set("ETag", obj.httpEtag);
   if (!headers.has("Content-Type")) headers.set("Content-Type", "application/octet-stream");
   return new Response(obj.body, { headers });

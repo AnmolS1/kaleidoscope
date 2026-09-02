@@ -136,8 +136,31 @@ export function hasV2Caps(header: string | undefined): boolean {
     .includes("v2");
 }
 
+/**
+ * SAVE-PATH default: an absent or unrecognised visibility means "public".
+ *
+ * Correct for POST, where the field is optional and public is the documented
+ * default. Do NOT reuse it on PATCH — see `parseVisibility`.
+ */
 export function cleanVisibility(raw: unknown): "public" | "unlisted" | "private" {
   return raw === "unlisted" || raw === "private" ? raw : "public";
+}
+
+/**
+ * PATCH-PATH parse: strict, because on an edit the same coercion PUBLISHES.
+ *
+ * `cleanVisibility` folds everything it does not recognise to "public". On the
+ * save path that is a default; on the edit path it is a coercion that makes a
+ * private piece public — `{"title":"x","visibility":null}` publishes, and so do
+ * `"Private"`, `"unlisted "`, `0` and `{}`. A client renaming a private piece
+ * with a slightly-wrong visibility field publishes it and stamps published_at.
+ *
+ * Returns undefined for "not supplied" and null for "supplied but invalid", so
+ * the caller can 400 on the second without treating it as the first.
+ */
+export function parseVisibility(raw: unknown): "public" | "unlisted" | "private" | null | undefined {
+  if (raw === undefined) return undefined;
+  return raw === "public" || raw === "unlisted" || raw === "private" ? raw : null;
 }
 
 // ---- env coercion --------------------------------------------------------
