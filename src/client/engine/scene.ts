@@ -1451,13 +1451,45 @@ function strokesFor(layer: Layer, opts: PaintDrawingOptions): readonly Stroke[] 
 }
 
 /**
+ * The most recent layer buffer, kept for reuse.
+ *
+ * S11: this used to allocate a fresh full-size surface PER LAYER PER FRAME,
+ * whenever the active layer was not the top one. At an iPad's DPR that is
+ * roughly 22MB a buffer — about 5GB/s of allocation at 60fps with four layers,
+ * all of it immediately garbage. The buffer is composited and finished with
+ * before the next layer needs one, so a single surface serves the whole frame;
+ * only its SIZE has to match the destination.
+ */
+let layerBuffer:
+  | { canvas: HTMLCanvasElement | OffscreenCanvas; ctx: AnyCtx; w: number; h: number }
+  | null = null;
+
+/**
  * An offscreen surface with the destination's exact backing-store geometry and
  * transform, so compositing it back is a 1:1 device-pixel copy.
+ *
+ * Reused across calls when the geometry matches. The returned surface is always
+ * CLEARED and its state reset, so a caller cannot see the previous layer's
+ * pixels or its transform.
  */
 function makeLayerBuffer(ctx: AnyCtx): { canvas: HTMLCanvasElement | OffscreenCanvas; ctx: AnyCtx } {
   const dest = ctx.canvas as { width?: number; height?: number } | undefined;
   const w = Math.max(1, Math.floor(dest?.width ?? 1));
   const h = Math.max(1, Math.floor(dest?.height ?? 1));
+
+  if (layerBuffer && layerBuffer.w === w && layerBuffer.h === h) {
+    const b = layerBuffer;
+    // Reset everything the previous layer may have left behind BEFORE
+    // clearing: clearRect honours the current transform, so clearing under a
+    // stale one wipes the wrong rectangle and leaves the last layer's ink
+    // behind — which looks exactly like a compositing bug.
+    b.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    b.ctx.globalAlpha = 1;
+    b.ctx.globalCompositeOperation = "source-over";
+    b.ctx.clearRect(0, 0, w, h);
+    if (typeof ctx.getTransform === "function") b.ctx.setTransform(ctx.getTransform());
+    return b;
+  }
 
   let canvas: HTMLCanvasElement | OffscreenCanvas;
   if (typeof OffscreenCanvas !== "undefined") {
@@ -1474,7 +1506,8 @@ function makeLayerBuffer(ctx: AnyCtx): { canvas: HTMLCanvasElement | OffscreenCa
   const bctx = canvas.getContext("2d") as AnyCtx | null;
   if (!bctx) throw new Error("layer compositing: no 2d context");
   if (typeof ctx.getTransform === "function") bctx.setTransform(ctx.getTransform());
-  return { canvas, ctx: bctx };
+  layerBuffer = { canvas, ctx: bctx, w, h };
+  return layerBuffer;
 }
 
 // ---- hit testing ---------------------------------------------------------

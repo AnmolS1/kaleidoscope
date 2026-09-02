@@ -177,3 +177,53 @@ test.describe("stored v1 drawings render through Scene unchanged", () => {
     expect(r.faded).not.toBe(r.one);
   });
 });
+
+// REVIEW.md S11 — the layer compositing buffer is now reused across layers and
+// frames rather than allocated fresh each time (~22MB per surface at iPad DPR,
+// roughly 5GB/s of immediate garbage at 60fps with four layers).
+//
+// The whole risk of reusing a surface is stale pixels, so that is what this
+// checks, with REAL pixels in a real browser: render a drawing, render a
+// different one through the same buffer, render the first again, and require
+// the two renders of it to be byte-identical.
+test("the reused layer buffer leaves no residue", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForSelector(".canvas-host canvas");
+
+  const render = (json: string) =>
+    page.evaluate(async (j: string) => {
+      const load = (p: string): Promise<any> => import(/* @vite-ignore */ p);
+      const S = await load("/src/client/state.ts");
+      const { deserialize } = await load("/src/shared/vector.ts");
+      const scene = S.scene.value;
+      if (!scene) throw new Error("scene not mounted");
+      scene.loadDrawing(deserialize(j));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const art = document.querySelector(".canvas-host")!.querySelectorAll("canvas")[1] as HTMLCanvasElement;
+      return art.toDataURL("image/png");
+    }, json);
+
+  // Two layers at partial opacity is the case that takes the buffered path at
+  // all: a single opaque layer uses the bypass and never allocates one.
+  const mk = (color: string) =>
+    JSON.stringify({
+      v: 2,
+      bg: "light",
+      layers: [
+        { id: "l1", name: "a", visible: true, opacity: 0.5, sym: { segments: 6, mirror: true },
+          strokes: [{ tool: "solid", color, size: 8, opacity: 1, pts: [[-0.4, -0.4, 1], [0.4, 0.4, 1]] }] },
+        { id: "l2", name: "b", visible: true, opacity: 0.5, sym: { segments: 4, mirror: false },
+          strokes: [{ tool: "solid", color, size: 8, opacity: 1, pts: [[0.2, -0.3, 1], [-0.2, 0.3, 1]] }] },
+      ],
+    });
+
+  const alone = await render(mk("#E84A27"));
+  await render(mk("#1D9E75")); // dirty the shared buffer with different ink
+  const after = await render(mk("#E84A27"));
+
+  expect(after, "a reused buffer must not carry the previous drawing's pixels").toBe(alone);
+  // And the control: the two drawings really do differ, so equality above means
+  // something. Without this, a renderer that drew nothing would pass.
+  const other = await render(mk("#1D9E75"));
+  expect(other).not.toBe(alone);
+});
