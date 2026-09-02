@@ -516,3 +516,29 @@ describe("removeLayer never leaves the active layer hidden (S8)", () => {
     expect(doc.layers.find((l) => l.id === doc.activeLayerId)!.visible).toBe(true);
   });
 });
+
+// REVIEW.md S10 — a layer at opacity 0 renders nothing, so it is not ink.
+describe("a fully transparent layer is not visible ink (S10)", () => {
+  it("does not count toward visibleStrokes, so the blank-save gate holds", () => {
+    const doc = new DrawingDoc(undefined, 8);
+    doc.commitStroke(stroke("#111111", [[0, 0, 1]]));
+    expect(doc.visibleStrokes).toBe(1);
+
+    doc.setLayerOpacity(doc.activeLayerId, 0);
+    expect(doc.visibleStrokes, "opacity 0 draws nothing, so it is not something to save").toBe(0);
+  });
+
+  it("CONTROL: a barely-visible layer still counts", () => {
+    const doc = new DrawingDoc(undefined, 8);
+    doc.commitStroke(stroke("#111111", [[0, 0, 1]]));
+    doc.setLayerOpacity(doc.activeLayerId, 0.01);
+    expect(doc.visibleStrokes).toBe(1);
+  });
+
+  it("and hiding still works the way it always did", () => {
+    const doc = new DrawingDoc(undefined, 8);
+    doc.commitStroke(stroke("#111111", [[0, 0, 1]]));
+    doc.setLayerVisible(doc.activeLayerId, false);
+    expect(doc.visibleStrokes).toBe(0);
+  });
+});

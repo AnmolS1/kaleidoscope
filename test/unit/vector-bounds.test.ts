@@ -2,7 +2,7 @@
 // platform could not survive, and one that destroyed the drawing on re-save.
 
 import { describe, it, expect } from "vitest";
-import { deserialize, serialize, MIN_SIZE, MAX_COORD } from "../../src/shared/vector";
+import { deserialize, serialize, contentHash, MIN_SIZE, MAX_COORD } from "../../src/shared/vector";
 
 const stroke = (over: Record<string, unknown> = {}) => ({
   tool: "solid",
@@ -76,5 +76,33 @@ describe("a stroke size below the rounding grid is refused (M8)", () => {
       const once = serialize(deserialize(doc(stroke({ pts: [[0, 0, p], [0.1, 0.1, p]] }))));
       expect(serialize(deserialize(once))).toBe(once);
     }
+  });
+});
+
+// REVIEW.md S17 — the same picture must hash the same.
+describe("hex colour case does not split the hash (S17)", () => {
+  const withColor = (c: string) => doc(stroke({ color: c }));
+
+  it("#ABCDEF and #abcdef are one drawing", async () => {
+    const upper = await contentHash(withColor("#ABCDEF"));
+    const lower = await contentHash(withColor("#abcdef"));
+    expect(upper).toBe(lower);
+  });
+
+  it("but the WIRE FORMAT is untouched, so existing artworks keep their bytes", () => {
+    // Folding case in `serialize` would rewrite every stored piece and change
+    // its hash — and break the frozen golden fixtures. The projection is the
+    // only place this belongs.
+    expect(serialize(deserialize(withColor("#ABCDEF")))).toContain("#ABCDEF");
+  });
+
+  it("CONTROL: genuinely different colours still hash differently", async () => {
+    expect(await contentHash(withColor("#ABCDEF"))).not.toBe(await contentHash(withColor("#ABCDEE")));
+  });
+
+  it("and 'spectrum' is left alone", async () => {
+    const a = await contentHash(withColor("spectrum"));
+    expect(typeof a).toBe("string");
+    expect(a).not.toBe(await contentHash(withColor("#abcdef")));
   });
 });

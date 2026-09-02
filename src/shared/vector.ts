@@ -329,7 +329,17 @@ export function serializeForHash(d: DrawingV2): string {
       .map((l) => ({
         opacity: round(l.opacity, OPACITY_DECIMALS),
         sym: { segments: l.sym.segments, mirror: l.sym.mirror },
-        strokes: l.strokes.map(compactStroke),
+        // Hex case folded HERE and not in `compactStroke` (S17).
+        //
+        // `#ABCDEF` and `#abcdef` are the same colour and render identically,
+        // so two drawings differing only in case are the same picture — but
+        // they hashed differently, which defeats dedupe. Folding it in the wire
+        // serializer instead would change the stored bytes of every existing
+        // artwork and therefore its hash, and break the frozen golden fixtures.
+        // The projection is exactly the place for "same picture" rules.
+        strokes: l.strokes.map((st) =>
+          compactStroke(st.color === "spectrum" ? st : { ...st, color: st.color.toLowerCase() }),
+        ),
       })),
   });
 }

@@ -169,6 +169,12 @@ function SaveDialogInner() {
   // DESIGN.md §4: on open, BEFORE Turnstile renders. The POST's duplicate checks
   // are the safety net; this is what puts "you already saved this" on screen
   // before the user has typed a title they will not get to use.
+  // Depends on the USER (S15). With `[]` deps this ran exactly once, and its
+  // first line returns early when `/api/me` has not landed yet — so a dialog
+  // opened before the session resolved sat on "Checking your gallery…"
+  // permanently, because the component never remounts and nothing re-ran the
+  // check. Re-running when the user arrives is the whole fix; `alive` already
+  // makes a superseded run harmless.
   useEffect(() => {
     if (!user || !scene || visibleStrokes === 0) return;
     let alive = true;
@@ -233,7 +239,7 @@ function SaveDialogInner() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [user?.id]);
 
   function onTitle(v: string) {
     setTitle(v);

@@ -1504,7 +1504,10 @@ export function hitTestDrawing(
 ): StrokeHit | null {
   for (let li = drawing.layers.length - 1; li >= 0; li--) {
     const layer = drawing.layers[li];
-    if (!layer.visible) continue;
+    // `opacity > 0` too (S10): a layer faded to zero draws nothing, so letting
+    // remove-stroke hit-test it selects a stroke the user cannot see — and the
+    // capsule then names a layer they have no reason to think is involved.
+    if (!layer.visible || layer.opacity <= 0) continue;
 
     // Precompute the point in every image frame once for the whole layer.
     const probes: Array<{ x: number; y: number }> = [];

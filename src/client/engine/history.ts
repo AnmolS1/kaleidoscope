@@ -338,7 +338,11 @@ export class DrawingDoc {
    */
   get visibleStrokes(): number {
     let n = 0;
-    for (const l of this.hist.current.layers) if (l.visible) n += l.strokes.length;
+    // `opacity > 0` as well as `visible` (S10). A layer faded to zero renders
+    // exactly nothing, so counting its strokes as ink lets the "nothing visible
+    // to save" gate pass and uploads a blank image — the same failure the
+    // hidden-layer case was written to prevent, reached by the other control.
+    for (const l of this.hist.current.layers) if (l.visible && l.opacity > 0) n += l.strokes.length;
     return n;
   }
   /** Whether another layer may be added under the current cap. */
