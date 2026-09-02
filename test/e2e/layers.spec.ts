@@ -256,18 +256,42 @@ test("Add locks at the cap, is unlocked below it, and says which cap it is", asy
 
 test("the cap the panel reports is the one /api/me actually hands it", async ({ page }) => {
   // The test above drives the signal, so on its own it would pass with the API
-  // never consulted. This is the other half: sign in and let the real
-  // `plus.layerCap` land, with the signed-out default as the control.
+  // never consulted. This is the other half.
+  //
+  // Asserted against the value FETCHED IN THE TEST, not against a hard-coded
+  // 3-then-8. The old pair encoded a deploy's flag state as a constant, so when
+  // the signed-out branch of /api/me started answering with a cap of its own
+  // (S18) the test failed while reporting nothing about the panel — and worse,
+  // it would have gone on passing had the constant happened to match. What the
+  // panel owes the API is agreement, whatever the API says.
+  const apiCap = async () =>
+    await page.evaluate(async () => {
+      const res = await fetch("/api/me", { credentials: "same-origin" });
+      return ((await res.json()) as { plus: { layerCap: number } }).plus.layerCap;
+    });
+
   await openPanel(page);
-  await expect(page.locator(".layers-count")).toHaveText("1 of 3");
+  await expect(page.locator(".layers-count")).toHaveText(`1 of ${await apiCap()}`);
+
   await testLogin(page, uniqueSub("layers-cap"));
   await page.waitForSelector(".canvas-host canvas");
   await openPanel(page);
-  await expect(page.locator(".layers-count")).toHaveText("1 of 8");
+  await expect(page.locator(".layers-count")).toHaveText(`1 of ${await apiCap()}`);
+
+  // CONTROL: the panel is READING the value, not printing a constant that
+  // happens to match. Nothing else in this file would fail if it were.
+  await setLayerCap(page, 5);
+  await expect(page.locator(".layers-count")).toHaveText("1 of 5");
 });
+
 
 test("Duplicate is capped too, and Delete stops at the last layer", async ({ page }) => {
   await openPanel(page);
+  // The cap is driven here rather than taken from the deploy's flags: this test
+  // is about what Duplicate and Delete do AT a cap, and reading the number off
+  // the current configuration made it fail whenever that configuration changed
+  // for reasons that have nothing to do with either button.
+  await setLayerCap(page, 3);
   await expect(page.getByRole("button", { name: "Delete layer" })).toBeDisabled();
   await addLayers(page, 1);
   await expect(page.getByRole("button", { name: "Delete layer" })).toBeEnabled();
@@ -345,6 +369,7 @@ test("an undo after a hide reverts the layer that was added, not the hide", asyn
   // the two worlds — if visibility were an undo step, this undo would restore
   // the eye and leave two layers standing.
   await openPanel(page);
+  await setLayerCap(page, 3); // the count, not the cap, is what this test reads
   await page.getByRole("button", { name: /^Add layer/ }).click();
   await expect(page.locator(".layers-count")).toHaveText("2 of 3");
   await page.getByRole("button", { name: "Hide Layer 1" }).click();

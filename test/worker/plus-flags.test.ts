@@ -69,6 +69,48 @@ describe("PLUS_SURFACE_ENABLED is independent of PLUS_ENABLED", () => {
   });
 });
 
+// REVIEW S18 gave the signed-out branch of /api/me a plus block, and gave it a
+// bare `plusLayerCap` — so anyone who had not signed in was told the LAYER CAP
+// was 8. Harmless while enforcement is off, and a silent giveaway the moment the
+// flag is flipped: no sign-in required, no purchase required.
+//
+// Lives here and not in the e2e. The e2e runs against ONE deploy configuration,
+// and under that configuration (`PLUS_ENABLED=false`) the wrong expression and
+// the right one produce the same 8 — a test that cannot tell them apart, which
+// is the shape of green that means nothing. Here the flag is an input.
+describe("a signed-out visitor is a free user, in both directions", () => {
+  async function anon(env: unknown) {
+    const res = await app.request("/api/me", {}, env as never);
+    expect(res.status).toBe(200);
+    return (await res.json()) as { plus: { layerCap: number; enabled: boolean; active: boolean } };
+  }
+
+  it("gets the FREE cap once enforcement is on", async () => {
+    const env = ctx({ PLUS_ENABLED: "true", CAP_EPOCH: "1000" });
+    const { plus } = await anon(env);
+    // The half that was wrong. `plusLayerCap` here would say 8.
+    expect(plus.layerCap).toBe(3);
+    expect(plus.active).toBe(false);
+  });
+
+  it("gets the FULL cap while enforcement is off, like everyone else", async () => {
+    // Not a lesser answer either: while nobody is capped, being signed out must
+    // not be a restriction of its own.
+    const env = ctx({ PLUS_ENABLED: "false" });
+    expect((await anon(env)).plus.layerCap).toBe(8);
+  });
+
+  it("answers exactly what a signed-in FREE account is told, under either flag", async () => {
+    for (const enabled of ["true", "false"]) {
+      const env = ctx({ PLUS_ENABLED: enabled, CAP_EPOCH: "1000" });
+      const out = await anon(env);
+      const res = await app.request("/api/me", { headers: bearer("s1") }, env as never);
+      const inn = (await res.json()) as { plus: { layerCap: number } };
+      expect(out.plus.layerCap, `PLUS_ENABLED=${enabled}`).toBe(inn.plus.layerCap);
+    }
+  });
+});
+
 describe("the deploy config itself", () => {
   const wrangler = readFileSync(join(process.cwd(), "wrangler.jsonc"), "utf8");
   const varOf = (k: string) => new RegExp(`"${k}"\\s*:\\s*"([^"]*)"`).exec(wrangler)?.[1];

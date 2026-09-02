@@ -145,12 +145,21 @@ app.get("/api/me", async (c) => {
     // grant anything: `active: false` means `owned()` stays false, `enabled:
     // false` means no cap is claimed, and both clients already resolve
     // "surface on, not signed in" to their sign-in state.
+    //
+    // `layerCap` is the SAME EXPRESSION the signed-in branch uses with
+    // `active: false` — a signed-out visitor is a free user, so the two must
+    // not disagree in either direction. Shipped as a bare `plusLayerCap` at
+    // first, which is what the comment above says this block must never do: it
+    // handed the Plus layer count to an anonymous visitor, and would have kept
+    // handing it out after the flag was flipped, with no sign-in required. The
+    // e2e layers suite caught it; the targeted test written alongside S18 did
+    // not, because it only looked at the field S18 added.
     plus = {
       active: false,
       sources: [],
       publicCount: 0,
       publicCap: null,
-      layerCap: plusLayerCap(c.env),
+      layerCap: enabled ? freeLayerCap(c.env) : plusLayerCap(c.env),
       enabled: false,
       surface: envFlag(c.env.PLUS_SURFACE_ENABLED),
     };
