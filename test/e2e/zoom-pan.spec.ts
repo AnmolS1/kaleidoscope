@@ -430,6 +430,73 @@ async function touch(
 }
 
 test.describe("touch gestures", () => {
+  // REVIEW.md minor mE4 — a finger that crossed the canvas edge mid-pinch froze
+  // the gesture.
+  //
+  // `abortStroke()` RELEASES the first finger's capture on its way into the
+  // pinch, and only the newly-landed pointer was captured afterwards. An
+  // uncaptured pointer fires `pointerleave` when it crosses the element edge,
+  // and this class treats a leave as a lift — so the touch left the map,
+  // `touchMetrics()` could no longer find two points, and the pinch stopped
+  // responding until every finger came up.
+  //
+  // Asserted at the MECHANISM, because synthetic pointer ids cannot actually be
+  // captured (`setPointerCapture` throws for them, which is why the call is
+  // wrapped) — so a behavioural test here would pass for the wrong reason. What
+  // is checkable is which ids the gesture ASKS to capture.
+  test("a pinch captures every finger, not just the one that just landed", async ({ page }) => {
+    const g = await studio(page);
+    const cx = g.cssW / 2;
+    const cy = g.cssH / 2;
+
+    const captured = await page.evaluate(
+      async (p: { cx: number; cy: number }) => {
+        const load = (path: string): Promise<any> => import(/* @vite-ignore */ path);
+        const S = await load("/src/client/state.ts");
+        S.drawWithFinger.value = true;
+
+        const host = document.querySelector(".canvas-host")!;
+        const live = host.querySelectorAll("canvas")[2] as HTMLCanvasElement;
+        const r = live.getBoundingClientRect();
+
+        const asked: number[] = [];
+        const real = live.setPointerCapture.bind(live);
+        live.setPointerCapture = (id: number) => {
+          asked.push(id);
+          return real(id); // still throws for a synthetic id; the caller catches
+        };
+
+        const send = (type: string, id: number, x: number, y: number) =>
+          live.dispatchEvent(
+            new PointerEvent(type, {
+              pointerId: id, pointerType: "touch",
+              pressure: type === "pointerup" ? 0 : 0.5,
+              isPrimary: id === 1, bubbles: true, cancelable: true,
+              clientX: r.left + x, clientY: r.top + y,
+            }),
+          );
+
+        // One finger draws, then a second lands and converts it to a pinch.
+        send("pointerdown", 1, p.cx - 40, p.cy);
+        send("pointermove", 1, p.cx - 20, p.cy);
+        const beforeSecond = asked.length;
+        send("pointerdown", 2, p.cx + 60, p.cy);
+        const duringPinch = asked.slice(beforeSecond);
+        send("pointerup", 1, p.cx - 40, p.cy);
+        send("pointerup", 2, p.cx + 60, p.cy);
+        return { duringPinch, firstFingerAlone: beforeSecond };
+      },
+      { cx, cy },
+    );
+
+    // CONTROL: the lone drawing finger takes exactly one capture, so the count
+    // below is about the pinch and not about capture being called everywhere.
+    expect(captured.firstFingerAlone).toBe(1);
+    // BOTH fingers. Before the fix this was [2] — the first finger, whose
+    // capture abortStroke had just released, was left loose.
+    expect([...captured.duringPinch].sort()).toEqual([1, 2]);
+  });
+
   test("a second finger cancels the stroke the first had started", async ({ page }) => {
     const g = await studio(page);
     const cx = g.cssW / 2;

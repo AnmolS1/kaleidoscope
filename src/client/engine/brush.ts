@@ -77,8 +77,19 @@ export function strokeSegments(stroke: Stroke): StrokeSegment[] {
  * compose — glow at full pressure is still 0.7, not 1.
  */
 function poAlpha(stroke: Stroke, pressure: number): number {
-  const base = stroke.tool === "glow" ? stroke.opacity * 0.7 : stroke.opacity;
-  return pressureAlpha(base, pressure);
+  return pressureAlpha(baseAlpha(stroke), pressure);
+}
+
+/**
+ * The alpha a stroke paints at before pressure — glow's ×0.7 folded in.
+ *
+ * Exported because the SVG export needs the SAME number and used to compute its
+ * own without the glow factor, so a glow stroke came out of `exportSVG` at full
+ * opacity while the canvas painted it at 0.7 (REVIEW.md minor mE3). One
+ * definition rather than two that agree by inspection.
+ */
+export function baseAlpha(stroke: Stroke): number {
+  return stroke.tool === "glow" ? stroke.opacity * 0.7 : stroke.opacity;
 }
 
 /** Mean pressure over a stroke's points. Used where one alpha must stand in for

@@ -5,7 +5,7 @@
 // fallback. Square output suits the centered mandala.
 
 import { forEachImage, imageTransformSvg } from "./symmetry";
-import { meanPressure, representativeColor, strokeSegments } from "./brush";
+import { baseAlpha, meanPressure, representativeColor, strokeSegments } from "./brush";
 import { paintDrawing } from "./scene";
 import {
   REFERENCE_HALF,
@@ -87,17 +87,30 @@ export async function exportOG(drawing: DrawingV2, w = 1200, h = 630): Promise<B
  * The layer name rides in a <title> only. It is metadata, never rendered text,
  * and it is XML-escaped because layer names are user input.
  *
- * Two long-standing approximations remain: spectrum strokes collapse to one
- * representative hue (a single <path> cannot gradient along its length) and glow
- * strokes use screen blending to stand in for additive compositing. Paint order
- * within a layer is image-major here where the canvas is stroke-major, which can
- * differ where two strokes of one layer overlap near the center.
+ * Approximations that remain, each because SVG has no way to say the thing:
+ *
+ *  - Spectrum strokes collapse to one representative hue; a single <path>
+ *    cannot gradient along its length.
+ *  - Glow uses `mix-blend-mode:screen` where the canvas uses `lighter`. Screen
+ *    is `a+b-ab`, additive is `a+b`, so glow over a LIGHT background still comes
+ *    out slightly darker here — the `ab` term. `plus-lighter` is the exact
+ *    match and was NOT used: it is a recent CSS value that vector editors do not
+ *    implement, and an SVG that renders wrong in Illustrator is worse than one
+ *    that is a few percent dark in the overlap. The alpha itself now matches
+ *    (mE3), so the additive term is right and only that product differs.
+ *  - Paint order within a layer is image-major here where the canvas is
+ *    stroke-major, which can differ where two strokes of one layer overlap near
+ *    the centre.
  */
 export function exportSVG(drawing: DrawingV2, S = 500): string {
   const vb = `${-S} ${-S} ${2 * S} ${2 * S}`;
   const scale = S / REFERENCE_HALF;
   const defs: string[] = [];
   const groups: string[] = [];
+  // The same predicate `paintDrawing` uses, so the two cannot disagree about
+  // which drawings take the direct path.
+  const visibleLayers = drawing.layers.filter((l) => l.visible);
+  const bypass = visibleLayers.length === 1 && visibleLayers[0].opacity === 1;
 
   for (const layer of drawing.layers) {
     if (!layer.visible) continue;
@@ -133,8 +146,21 @@ export function exportSVG(drawing: DrawingV2, S = 500): string {
       images.push(`<g transform="${imageTransformSvg(image)}">${uses}</g>`);
     });
 
+    // ISOLATION, matching what the canvas actually does (REVIEW.md minor mE2).
+    //
+    // `paintDrawing` has one rule: a single visible layer at opacity 1 paints
+    // STRAIGHT into the destination, so its glow blends additively against the
+    // background fill; anything else goes through a per-layer offscreen buffer
+    // and is composited `source-over`, so its glow blends only against its own
+    // layer. The SVG emitted `<g opacity="1">`, which creates no stacking
+    // context at all — so in a multi-layer drawing a glow stroke reached
+    // through and blended with the layers underneath, which the canvas never
+    // lets it do. `isolation:isolate` is the group-level equivalent of that
+    // offscreen buffer, and it is applied on exactly the same condition.
+    const style = bypass ? "" : ' style="isolation:isolate"';
     groups.push(
-      `<g opacity="${layer.opacity}"><title>${xmlEscape(layer.name)}</title>${images.join("")}</g>`,
+      `<g opacity="${svgNumber(layer.opacity)}"${style}>` +
+        `<title>${xmlEscape(layer.name)}</title>${images.join("")}</g>`,
     );
   }
 
@@ -164,14 +190,34 @@ function xmlEscape(s: string): string {
  * this is the untouched `stroke.opacity`, character for character, so no stored
  * v1 piece's SVG changes.
  *
- * Known divergence, PRE-EXISTING and deliberately left alone here: canvas dims
- * glow by ×0.7 and this SVG never has. Folding it in would darken every glow
- * stroke in every existing piece's SVG download, which is outside "path
- * building only". Reported rather than fixed.
+ * Glow's ×0.7 is folded in through the shared `baseAlpha` (REVIEW.md minor mE3).
+ * It used to be omitted, so a glow stroke was painted at 0.7 on canvas and
+ * exported at 1.0 — the SVG was the brightest possible reading of the drawing,
+ * the same way it was the heaviest before S9. Yes, this darkens the glow in
+ * every existing piece's SVG download; that is the direction of the PNG it is
+ * supposed to match.
  */
 function strokeOpacity(stroke: Stroke): string {
-  if (stroke.po !== 1) return String(stroke.opacity);
-  return pressureAlpha(stroke.opacity, meanPressure(stroke.pts)).toFixed(4);
+  const base = baseAlpha(stroke);
+  // Formatted, not stringified: `0.8 * 0.7` is 0.5600000000000001 in binary
+  // floating point, and an SVG attribute is a place that noise becomes visible.
+  // A stroke with neither glow nor `po` keeps its exact stored digits, so no v1
+  // piece's SVG changes for a reason unrelated to this fix.
+  if (stroke.po !== 1) return stroke.tool === "glow" ? svgNumber(base) : String(stroke.opacity);
+  return svgNumber(pressureAlpha(base, meanPressure(stroke.pts)));
+}
+
+/**
+ * A number for an SVG attribute: at most 4 decimals, no trailing zeros, and no
+ * binary-float tail.
+ *
+ * `<g opacity="${layer.opacity}">` emitted whatever the slider's float
+ * happened to be — `0.30000000000000004` in the file for a value the UI shows
+ * as 30% (REVIEW.md minor mE2). 4dp is finer than the format stores opacity at
+ * (3dp), so this can never round away something the document distinguishes.
+ */
+function svgNumber(n: number): string {
+  return String(Number(n.toFixed(4)));
 }
 
 /**

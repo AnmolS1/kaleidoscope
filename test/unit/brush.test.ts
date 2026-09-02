@@ -214,9 +214,29 @@ describe("SVG export goes through the same builder", () => {
     expect(plain).toContain('stroke-opacity="0.6"');
 
     const po = exportSVG(oneLayer(stroke({ po: 1, opacity: 0.6 })), 500);
-    const want = pressureAlpha(0.6, meanPressure(FIXTURE_PTS)).toFixed(4);
+    const want = String(Number(pressureAlpha(0.6, meanPressure(FIXTURE_PTS)).toFixed(4)));
     expect(po).toContain(`stroke-opacity="${want}"`);
     expect(po).not.toContain('stroke-opacity="0.6"');
+  });
+
+  // REVIEW.md minor mE3 — the canvas dims glow by x0.7 and the SVG did not, so
+  // every glow stroke exported brighter than it was painted. `0.7` is written
+  // out here rather than read from the source, so changing the constant fails
+  // this test and forces the decision to be made again.
+  it("folds glow's x0.7 into stroke-opacity, and composes it with po", () => {
+    const glow = exportSVG(oneLayer(stroke({ tool: "glow", opacity: 0.6 })), 500);
+    expect(glow).toContain(`stroke-opacity="${String(Number((0.6 * 0.7).toFixed(4)))}"`);
+
+    // With `po` the two factors COMPOSE: pressure applies to the already-dimmed
+    // alpha, which is what `poAlpha` does on the canvas. Applying pressure to
+    // the stored 0.6 and dimming afterwards is a different number.
+    const both = exportSVG(oneLayer(stroke({ tool: "glow", po: 1, opacity: 0.6 })), 500);
+    const composed = String(Number(pressureAlpha(0.6 * 0.7, meanPressure(FIXTURE_PTS)).toFixed(4)));
+    expect(both).toContain(`stroke-opacity="${composed}"`);
+
+    // CONTROL: x0.7 belongs to glow alone.
+    const solid = exportSVG(oneLayer(stroke({ opacity: 0.6 })), 500);
+    expect(solid).toContain('stroke-opacity="0.6"');
   });
 
   it("means the pressure over every point", () => {
@@ -245,10 +265,22 @@ describe("SVG export goes through the same builder", () => {
 // The replacement is STRICTER, not looser: each segment is checked against the
 // exact pair of stored points it spans, so a drift is located rather than
 // merely detected, and their union is still required to trace the legacy
-// polyline. Opacity remains per stroke, on the group that owns it. Nothing
-// stored changes — the SVG is generated in the browser at download time.
-// Settled with Anmol 2026-09-01.
-describe("stored v1 drawings export to unchanged SVG", () => {
+// polyline. Nothing stored changes — the SVG is generated in the browser at
+// download time. Settled with Anmol 2026-09-01.
+//
+// 🔴 It has now moved TWICE, so here is the promise it makes, written down
+// rather than inferred from the assertions:
+//
+//   A stored v1 drawing exports to the SVG that best matches the PNG the same
+//   drawing renders to. Where SVG cannot express what the canvas does, the SVG
+//   approximates in the direction of the canvas — never away from it — and the
+//   approximation is named in `exportSVG`'s header.
+//
+// That is the promise the S9 width fix served (the SVG was uniformly too fat)
+// and the one mE3 serves (glow was uniformly too bright). It is NOT "the bytes
+// of this file never change"; that version of the promise is what kept both
+// defects alive, because every fix for them changes the bytes.
+describe("stored v1 drawings export to an SVG that matches the PNG", () => {
   /** The path data the exporter produced before the shared builder existed. */
   function legacyPathData(pts: readonly Pt[], S: number): string {
     if (pts.length === 1) {
@@ -274,7 +306,14 @@ describe("stored v1 drawings export to unchanged SVG", () => {
       expect(groups, `${fx.name}: one <g> per stroke`).toHaveLength(strokes.length);
 
       groups.forEach(([, so, inner], i) => {
-        expect(so, `${fx.name} stroke ${i}: stroke-opacity`).toBe(String(strokes[i].opacity));
+        // The alpha the CANVAS paints this stroke at, which is the stored value
+        // for every tool except glow — dimmed by x0.7 (REVIEW.md minor mE3).
+        // The factor is spelled out rather than imported, so a change to it in
+        // brush.ts fails here instead of silently propagating into the promise.
+        const painted = strokes[i].tool === "glow" ? strokes[i].opacity * 0.7 : strokes[i].opacity;
+        expect(so, `${fx.name} stroke ${i}: stroke-opacity`).toBe(
+          String(Number(painted.toFixed(4))),
+        );
 
         const pts = strokes[i].pts;
         const seg = [...inner.matchAll(/<path d="([^"]*)"/g)].map((m) => m[1]!);

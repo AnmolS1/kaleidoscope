@@ -476,6 +476,13 @@ export class DrawingDoc {
   setActiveLayer(id: string): boolean {
     if (id === this.active || layerIndex(this.hist.current, id) < 0) return false;
     this.active = id;
+    // Selecting a different layer ends any open gesture (REVIEW.md minor mE1).
+    // The coalesce key is per-layer, so without this a drag on l1, a detour to
+    // l2, and a second drag back on l1 shared one key and merged into a SINGLE
+    // undo step — one ⌘Z threw away two separate adjustments made either side of
+    // an unrelated action. Selection is not undoable itself, so this only seals
+    // the gesture; it adds no entry.
+    this.hist.endCoalesce();
     return true;
   }
 

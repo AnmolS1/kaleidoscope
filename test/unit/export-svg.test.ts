@@ -103,8 +103,54 @@ describe("exportSVG with layers", () => {
   });
 
   it("gives each visible layer a group carrying its opacity", () => {
-    expect(svg.includes('<g opacity="1">')).toBe(true);
-    expect(svg.includes('<g opacity="0.5">')).toBe(true);
+    expect(svg.includes('<g opacity="1"')).toBe(true);
+    expect(svg.includes('<g opacity="0.5"')).toBe(true);
+  });
+
+  // REVIEW.md minor mE2 — `<g opacity="1">` creates NO stacking context, so a
+  // glow stroke in a multi-layer drawing blended through to the layers beneath
+  // it. The canvas never allows that: anything but a single visible layer at
+  // opacity 1 goes through a per-layer offscreen buffer.
+  it("isolates every layer group when the canvas would use a buffer", () => {
+    const groups = svg.match(/<g opacity="[^"]*"[^>]*>/g) ?? [];
+    // Two visible layers here, so BOTH are isolated — including the one at
+    // opacity 1, which is exactly the case that had no stacking context.
+    expect(groups).toHaveLength(2);
+    expect(groups.every((g) => g.includes("isolation:isolate"))).toBe(true);
+  });
+
+  it("CONTROL: a single visible layer at opacity 1 is NOT isolated", () => {
+    // The bypass. `paintDrawing` paints this drawing straight into the
+    // destination so its glow blends against the background fill; isolating it
+    // in the SVG would make the export differ from the PNG in the one case that
+    // covers every piece in the live gallery.
+    const single = exportSVG({ ...layered, layers: [layered.layers[0]] });
+    expect(single.includes("isolation:isolate")).toBe(false);
+  });
+
+  it("CONTROL: one visible layer at opacity 0.9 IS isolated", () => {
+    // Same layer count, different opacity — so the discriminator is the
+    // predicate and not "how many layers are there".
+    const dimmed = exportSVG({
+      ...layered,
+      layers: [{ ...layered.layers[0], opacity: 0.9 }],
+    });
+    expect(dimmed.includes("isolation:isolate")).toBe(true);
+  });
+
+  // REVIEW.md minor mE3 — the canvas dims glow by x0.7 and the SVG did not.
+  it("glow carries the alpha the canvas paints it at, not the stored one", () => {
+    // The glow stroke is stored at opacity 0.8; the canvas paints 0.8 * 0.7.
+    expect(svg.includes('stroke-opacity="0.56"')).toBe(true);
+    expect(svg.includes('stroke-opacity="0.8"')).toBe(false);
+    // And formatted: 0.8 * 0.7 is 0.5600000000000001 in binary floating point.
+    expect(svg.includes("0.5600000000000001")).toBe(false);
+  });
+
+  it("CONTROL: a solid stroke keeps its stored opacity character for character", () => {
+    // x0.7 is glow's, not everyone's. The solid stroke on the base layer is
+    // stored at 1 and must still say 1.
+    expect(svg.includes('stroke-opacity="1"')).toBe(true);
   });
 
   it("uses each layer's own symmetry, not one global one", () => {

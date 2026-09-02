@@ -629,14 +629,24 @@ export class Scene {
     window.addEventListener("blur", this.onWindowBlur);
   }
 
-  /** Canvas-relative screen position of an event, in CSS px. */
-  private screenOf(e: { clientX: number; clientY: number }): { x: number; y: number } {
-    const rect = this.live.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  /**
+   * Canvas-relative screen position of an event, in CSS px.
+   *
+   * `rect` is optional so a caller processing a BATCH can read the layout once
+   * and pass it in. `getBoundingClientRect` forces a style/layout flush, and
+   * `getCoalescedEvents` routinely hands back a dozen or more points for a
+   * single move — so the per-point call meant a dozen forced layouts per frame
+   * while drawing, which is the frame budget. Within one event the element
+   * cannot have moved, so hoisting the read is exact rather than a cache with
+   * an invalidation question.
+   */
+  private screenOf(e: { clientX: number; clientY: number }, rect?: DOMRect): { x: number; y: number } {
+    const r = rect ?? this.live.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
   }
 
-  private pointFromEvent(e: PointerEvent): Pt {
-    const s = this.screenOf(e);
+  private pointFromEvent(e: PointerEvent, rect?: DOMRect): Pt {
+    const s = this.screenOf(e, rect);
     // Un-apply the view before normalizing. Everything downstream — the stored
     // point, the symmetry centre, the content hash — is in the drawing's space,
     // which is what makes a stroke drawn at 8× land in the same place it would
@@ -724,7 +734,19 @@ export class Scene {
       this.abortStroke();
       this.endPan();
       this.beginPinch();
-      this.capture(e.pointerId);
+      // EVERY finger in the gesture, not just the one that just landed
+      // (REVIEW.md minor mE4). `abortStroke()` has just RELEASED the first
+      // finger's capture, and the pan path never took one — so capturing only
+      // the new pointer left the first finger loose. Crossing the canvas edge
+      // then fired `pointerleave`, which this class treats as a lift: the touch
+      // left `this.touches`, `touchMetrics()` could no longer find two points,
+      // and the pinch froze at its last transform until every finger came up.
+      //
+      // Capture fixes both halves. Boundary events are not dispatched for a
+      // captured pointer, so the fingers can roam off the canvas; and the
+      // `pointerup` still arrives when one is released out there, which is what
+      // lets the gesture end at all.
+      for (const id of this.touches.keys()) this.capture(id);
       e.preventDefault();
       return;
     }
@@ -792,8 +814,10 @@ export class Scene {
     const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     const minDist = minPointDistance(this.half, this.viewState.scale);
     const pts = this.drawingStroke.pts;
+    // ONE layout read for the whole batch (REVIEW.md minor mE5).
+    const rect = this.live.getBoundingClientRect();
     for (const ev of events.length ? events : [e]) {
-      const p = this.pointFromEvent(ev);
+      const p = this.pointFromEvent(ev, rect);
       const prev = pts[pts.length - 1];
       if (!prev || Math.hypot(p[0] - prev[0], p[1] - prev[1]) >= minDist) pts.push(p);
     }

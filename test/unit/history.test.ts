@@ -395,3 +395,63 @@ describe("topVisibleLayerId", () => {
     expect(topVisibleLayerId(doc.drawing)).toBe(upper);
   });
 });
+
+// REVIEW.md minor mE1 — the coalesce key is per-LAYER, so it survived an
+// unrelated selection change and merged two gestures either side of it.
+describe("selecting another layer seals the gesture", () => {
+  it("two opacity drags on one layer, with a detour between, are two undo steps", () => {
+    const doc = new DrawingDoc();
+    const first = doc.activeLayerId;
+    doc.addLayer();
+    const second = doc.activeLayerId;
+    doc.setActiveLayer(first);
+
+    // Drag one: 1 -> 0.6, coalesced, and NOT sealed with endOpacityGesture —
+    // this is the case where only the key separates the steps.
+    doc.setLayerOpacity(first, 0.8, true);
+    doc.setLayerOpacity(first, 0.6, true);
+
+    // The user goes to look at the other layer and comes back.
+    doc.setActiveLayer(second);
+    doc.setActiveLayer(first);
+
+    // Drag two, same layer, same key.
+    doc.setLayerOpacity(first, 0.4, true);
+    doc.setLayerOpacity(first, 0.2, true);
+
+    const at = (id: string) => doc.layers.find((l) => l.id === id)!.opacity;
+    expect(at(first)).toBe(0.2);
+
+    // One undo takes back the SECOND drag only. Before the fix both drags
+    // shared `opacity:l1` and collapsed into one entry, so this landed on 1 and
+    // an adjustment the user made before the detour was gone with it.
+    doc.undo();
+    expect(at(first)).toBe(0.6);
+
+    doc.undo();
+    expect(at(first)).toBe(1);
+  });
+
+  it("CONTROL: with no detour, one drag is still a single step", () => {
+    const doc = new DrawingDoc();
+    const id = doc.activeLayerId;
+    doc.setLayerOpacity(id, 0.8, true);
+    doc.setLayerOpacity(id, 0.6, true);
+    doc.setLayerOpacity(id, 0.4, true);
+    doc.undo();
+    // Straight back to the start: coalescing still works where it should.
+    expect(doc.activeLayer.opacity).toBe(1);
+  });
+
+  it("CONTROL: re-selecting the layer already active changes nothing", () => {
+    const doc = new DrawingDoc();
+    const id = doc.activeLayerId;
+    doc.setLayerOpacity(id, 0.8, true);
+    // Returns false and must NOT seal — otherwise a UI that re-asserts the
+    // selection on every render would break coalescing entirely.
+    expect(doc.setActiveLayer(id)).toBe(false);
+    doc.setLayerOpacity(id, 0.6, true);
+    doc.undo();
+    expect(doc.activeLayer.opacity).toBe(1);
+  });
+});
