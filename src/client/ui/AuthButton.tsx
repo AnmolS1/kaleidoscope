@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import * as S from "../state";
 import { loginUrl, logout } from "../api";
 import { Avatar } from "./Avatar";
@@ -74,6 +74,36 @@ export function AuthButton() {
   const [open, setOpen] = useState(false);
   const user = S.me.value;
   const plus = S.plus.value;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  // The panel used to close on `mouseleave` and nothing else, which meant it
+  // could not be dismissed at all without a mouse: no Escape, no click-away, so
+  // on a touch screen or from the keyboard the only exit was picking one of the
+  // items. Mouse-leave is also the wrong trigger even with a mouse — moving the
+  // pointer aside shuts a menu you were still reading.
+  //
+  // Declared BEFORE the early returns below: a hook after a conditional return
+  // runs on some renders and not others, which is the one thing hooks cannot do.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      // Focus goes back to the trigger, or a keyboard user is dropped at the
+      // top of the document with no idea where they were.
+      btnRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
   if (!S.authLoaded.value) {
     return <div class="auth-skel" aria-hidden="true" />;
@@ -92,12 +122,12 @@ export function AuthButton() {
   const showCount = !!plus && plus.enabled && plus.publicCap !== null;
 
   return (
-    <div class="auth-menu">
-      <button class="avatar-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} aria-label="Account menu">
+    <div class="auth-menu" ref={rootRef}>
+      <button ref={btnRef} class="avatar-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} aria-label="Account menu">
         <Avatar src={user.avatar} name={user.name} size={36} />
       </button>
       {open && (
-        <div class="menu-panel auth-panel" role="menu" onMouseLeave={() => setOpen(false)}>
+        <div class="menu-panel auth-panel" role="menu">
           <div class="auth-name">
             {user.name ?? "Signed in"}
             {showCount && (

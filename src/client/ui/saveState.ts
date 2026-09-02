@@ -106,6 +106,29 @@ export function resolveSaveState(i: SaveStateInput): SaveStateKind {
   return "first";
 }
 
+/**
+ * Is this a remix of the user's OWN piece that has since been drawn on?
+ *
+ * A pure function so the "unknown" case can be table-tested, because that is
+ * the case that was wrong: a pre-flight that FAILED used to count as changed,
+ * so a dropped request relabelled the button "Save as new" and printed "Remix
+ * of <title>" — asserting a comparison that never happened.
+ *
+ * Unknown falls to FALSE, deliberately. False means the ordinary form, and the
+ * POST still refuses a real duplicate, so the worst case is a save the server
+ * dedupes. True would have the dialog state a fact about the drawing that we do
+ * not have.
+ */
+export function isRemixOfOwnChanged(
+  isOwnRemix: boolean,
+  haveSourceHash: boolean,
+  preflight: SaveStateInput["preflight"],
+): boolean {
+  if (!isOwnRemix || !haveSourceHash) return false;
+  if (preflight === "pending" || preflight === "failed") return false;
+  return preflight.mine === null;
+}
+
 /** States where the piece cannot be saved as it stands. */
 export function saveBlocked(kind: SaveStateKind, titleInvalid: boolean): boolean {
   return (

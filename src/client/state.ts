@@ -179,6 +179,19 @@ export const breakpoint = signal<Breakpoint>(computeBreakpoint());
 // --- routing ---
 export const route = signal<string>(typeof location !== "undefined" ? location.pathname : "/");
 
+/**
+ * Is this path the studio?
+ *
+ * The studio is the FALLBACK route — every other path renders something else —
+ * so it is defined by exclusion, and both the router and the keyboard handler
+ * read it from here rather than restating the list. They diverged once already:
+ * the shortcut switch ran app-wide, so `s` on someone else's piece opened the
+ * save dialog for the drawing on your own canvas.
+ */
+export function isStudioRoute(path: string): boolean {
+  return !(path.startsWith("/p/") || path === "/gallery" || path === "/me");
+}
+
 export function navigate(path: string): void {
   if (path === route.value) return;
   history.pushState({}, "", path);

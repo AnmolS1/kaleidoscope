@@ -161,7 +161,12 @@ export function Gallery({ mine }: { mine: boolean }) {
                   {it.segments !== undefined && (
                     <span class="art-sym mono">
                       {it.segments === 0
-                        ? `Layered · ${it.layers ?? 0} layers`
+                        ? // `?? 0` printed "0 layers" for an older response that
+                          // never carried the field — a specific, wrong number
+                          // where the honest answer is no number at all.
+                          it.layers
+                          ? `Layered · ${it.layers} layers`
+                          : "Layered"
                         : `${it.segments}-fold · ${it.mirror ? "mirrored" : "rotational"}`}
                     </span>
                   )}

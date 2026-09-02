@@ -337,7 +337,18 @@ export function getArtwork(id: string): Promise<ArtworkMeta> {
  */
 export async function getArtworkVector(id: string): Promise<string> {
   const res = await fetch(`/api/artworks/${id}/vector?v=2`, { credentials: "same-origin" });
-  if (!res.ok) throw new ApiError(res.status, "vector_unavailable");
+  if (!res.ok) {
+    // One code for every status made 426 ("your client is too old for this
+    // piece") indistinguishable from 404 ("there is no such piece") — the same
+    // string for a temporary condition and a permanent one, so no caller could
+    // tell the user which had happened.
+    const code =
+      res.status === 426 ? "upgrade_required"
+      : res.status === 404 ? "not_found"
+      : res.status === 403 ? "forbidden"
+      : "vector_unavailable";
+    throw new ApiError(res.status, code);
+  }
   return res.text(); // browser transparently gunzips (Content-Encoding: gzip)
 }
 

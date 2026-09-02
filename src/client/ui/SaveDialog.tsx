@@ -19,6 +19,7 @@ import { renderTurnstile, resetTurnstile } from "./turnstile";
 import { layersOpen } from "./LayersPanel";
 import { EyeOffIcon, GalleryIcon, LayersIcon } from "./Icons";
 import {
+  isRemixOfOwnChanged,
   primaryLabel,
   resolveSaveState,
   saveBlocked,
@@ -94,9 +95,15 @@ function SaveDialogInner() {
   // A remix of the user's OWN piece that has since been drawn on. The hash
   // comparison is what makes it "changed": an untouched one comes back from the
   // pre-flight as `mine` instead, which is a different state entirely.
-  const remixOfOwnChanged =
-    !!remix?.isOwner && !!remixHash && preflight !== "pending" &&
-    (preflight === "failed" || preflight.mine === null);
+  //
+  // A FAILED pre-flight is not evidence of either. It used to count as changed,
+  // so a dropped request relabelled the button "Save as new" and printed "Remix
+  // of <title>" — telling the user we had compared the drawings when we never
+  // got an answer. `resolveSaveState` already says the right thing about this
+  // case ("a pre-flight that could not run has learned nothing"); this is what
+  // makes that comment true. Unknown falls to the ordinary form, and the POST
+  // still refuses a real duplicate, so nothing is lost by not guessing.
+  const remixOfOwnChanged = isRemixOfOwnChanged(!!remix?.isOwner, !!remixHash, preflight);
 
   const kind = resolveSaveState({
     signedIn: !!user,

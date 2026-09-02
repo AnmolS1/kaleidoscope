@@ -35,6 +35,23 @@ function useGlobalKeys() {
       }
       if (mod) return; // leave other mod-combos to the browser
 
+      // `?` and Escape are about the PAGE, so they work everywhere.
+      if (e.key === "?") {
+        S.helpOpen.value = true;
+        return;
+      }
+      if (e.key === "Escape") {
+        openPopover.value = null;
+        return;
+      }
+
+      // Everything below acts on the STUDIO — the tool, the canvas, the save
+      // dialog — and ran on every route. Most of it was merely invisible (a
+      // signal set for a canvas that is not mounted), but `s` was not: pressed
+      // while reading someone else's piece it opened the save dialog for YOUR
+      // drawing, offering to publish work the page was not showing.
+      if (!S.isStudioRoute(S.route.value)) return;
+
       switch (e.key) {
         case "b":
         case "B":
@@ -81,12 +98,6 @@ function useGlobalKeys() {
           break;
         case ".":
           S.segments.value = Math.min(24, S.segments.value + 1);
-          break;
-        case "?":
-          S.helpOpen.value = true;
-          break;
-        case "Escape":
-          openPopover.value = null;
           break;
         case "d":
         case "D":
@@ -200,6 +211,9 @@ export function App() {
   } else if (path === "/me") {
     view = <Gallery mine={true} />;
   } else {
+    // `isStudioRoute` is the negation of the three branches above. Keeping the
+    // fallback here means the router stays readable; keeping the predicate in
+    // state.ts means the key handler cannot disagree with it.
     view = <Studio />;
   }
 

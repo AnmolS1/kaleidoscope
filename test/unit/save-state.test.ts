@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isRemixOfOwnChanged,
   primaryLabel,
   resolveSaveState,
   saveBlocked,
@@ -179,5 +180,44 @@ describe("titleIsInvalid — mirrors the Worker's validateTitle", () => {
   it("accepts a real name", () => {
     expect(titleIsInvalid("Dawn Bloom")).toBe(false);
     expect(titleIsInvalid("Untitled Symphony")).toBe(false);
+  });
+});
+
+// REVIEW.md minor mW6 — the pre-flight has three answers, not two, and the
+// third used to be read as one of the other two.
+describe("isRemixOfOwnChanged: which way an unknown pre-flight falls", () => {
+  const CASES: Array<[string, boolean, boolean, SaveStateInput["preflight"], boolean]> = [
+    // label                          ownRemix  haveHash  preflight                    expected
+    ["not a remix at all",            false,    true,     { mine: null, other: null },  false],
+    ["someone else's piece",          false,    true,     { mine: "a", other: null },   false],
+    ["own remix, no source hash",     true,     false,    { mine: null, other: null },  false],
+    ["own remix, drawn on since",     true,     true,     { mine: null, other: null },  true],
+    ["own remix, untouched",          true,     true,     { mine: "a", other: null },   false],
+    ["pre-flight still running",      true,     true,     "pending",                    false],
+    // THE ONE THIS EXISTS FOR. A request that never came back has learned
+    // nothing. It used to return true, which relabelled the button "Save as
+    // new" and printed "Remix of <title>" — a claim about a comparison the app
+    // never made. False means the ordinary form; the POST still refuses a real
+    // duplicate, so guessing buys nothing and can only lie.
+    ["pre-flight FAILED",             true,     true,     "failed",                     false],
+  ];
+
+  for (const [label, own, hash, preflight, expected] of CASES) {
+    it(`${label} → ${expected}`, () => {
+      expect(isRemixOfOwnChanged(own, hash, preflight)).toBe(expected);
+    });
+  }
+
+  it("and a failed pre-flight leaves the button saying 'Save piece'", () => {
+    const changed = isRemixOfOwnChanged(true, true, "failed");
+    expect(primaryLabel(resolveSaveState({ ...CLEAN, preflight: "failed", remixOfOwnChanged: changed }), false, changed))
+      .toBe("Save piece");
+  });
+
+  it("CONTROL: a genuinely changed own-remix still says 'Save as new'", () => {
+    const changed = isRemixOfOwnChanged(true, true, { mine: null, other: null });
+    expect(changed).toBe(true);
+    expect(primaryLabel(resolveSaveState({ ...CLEAN, remixOfOwnChanged: changed }), false, changed))
+      .toBe("Save as new");
   });
 });

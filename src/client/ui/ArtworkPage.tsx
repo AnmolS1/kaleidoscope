@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import * as S from "../state";
 import {
+  ApiError,
   getArtwork,
   getArtworkVector,
   likeArtwork,
@@ -27,12 +28,18 @@ export function ArtworkPage({ id }: { id: string }) {
   const [drawing, setDrawing] = useState<DrawingV2 | null>(null);
   const [hash, setHash] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  // Separate from `error`: the METADATA loading is what decides whether there is
+  // a page at all. The vector only decides whether it can be remixed or
+  // downloaded, and when it fails those three buttons go disabled with nothing
+  // on screen saying why.
+  const [vectorError, setVectorError] = useState<string | null>(null);
   const [likes, setLikes] = useState(0);
 
   useEffect(() => {
     let alive = true;
     setMetaState(null);
     setError(false);
+    setVectorError(null);
     setHash(null);
     getArtwork(id)
       .then((m) => {
@@ -62,7 +69,15 @@ export function ArtworkPage({ id }: { id: string }) {
           /* no hash available here */
         }
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        if (!alive) return;
+        const code = e instanceof ApiError ? e.code : "vector_unavailable";
+        setVectorError(
+          code === "upgrade_required"
+            ? "This piece uses features this page cannot open yet."
+            : "The drawing data could not be loaded, so this piece cannot be remixed or downloaded.",
+        );
+      });
     return () => {
       alive = false;
       document.title = "Kaleidoscope — draw mandalas";
@@ -127,7 +142,13 @@ export function ArtworkPage({ id }: { id: string }) {
                   disagree" — there is no single fold to name, so the piece is
                   described as layered instead of as "0-fold". */}
               {meta.segments === 0
-                ? "Layered symmetry"
+                ? // The gallery card prints the count; this line dropped it, so
+                  // the same piece described itself two ways depending on where
+                  // you read it. Absent (an older worker never sent the field) it
+                  // stays a bare "Layered" rather than claiming zero layers.
+                  meta.layers
+                  ? `Layered · ${meta.layers} layers`
+                  : "Layered symmetry"
                 : `${meta.segments}-fold ${meta.mirror ? "mirror" : "rotational"} symmetry`}
               {meta.remixOf && (
                 <>
@@ -137,6 +158,8 @@ export function ArtworkPage({ id }: { id: string }) {
               )}
             </p>
           )}
+
+          {vectorError && <p class="form-error">{vectorError}</p>}
 
           <div class="artwork-actions">
             <button class="btn btn-primary" onClick={onRemix} disabled={!drawing}>
