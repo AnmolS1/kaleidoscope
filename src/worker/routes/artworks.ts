@@ -30,7 +30,7 @@ import {
   getArtworkWithAuthor,
   deleteArtworkRow,
   updateArtwork,
-  incrementLikes,
+  likeOnce,
   findOwnByHash,
   findOtherByHash,
   publishArtwork,
@@ -660,6 +660,9 @@ artworks.post("/:id/like", requireAuth, requireCsrf, async (c) => {
   if (!(await checkAll(c.env, [{ key: `like:${user.id}:h`, rule: LIKE_RULE }]))) {
     return c.json({ error: "rate_limited" }, 429);
   }
-  const likes = await incrementLikes(c.env, art.id);
+  // One like per person (REVIEW.md minor). A repeat press is a no-op that still
+  // answers 200 with the current total — the button has nothing useful to say
+  // about "you already did that", and an error here would look like a failure.
+  const likes = await likeOnce(c.env, art.id, user.id);
   return c.json({ likes });
 });

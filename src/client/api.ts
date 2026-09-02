@@ -75,9 +75,25 @@ export class ApiError extends Error {
 /** Capabilities this client announces. `v2` = layers + a real title field. */
 const CLIENT_CAPS = "v2";
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  init: RequestInit & {
+    /**
+     * Send the CSRF token on a GET.
+     *
+     * Normally a GET carries none, because a GET changes nothing. The checkout
+     * URL is the exception: it spends a per-user rate-limit budget, and the
+     * session cookie is SameSite=Lax, so a cross-site navigation could burn it.
+     * The header is what proves the request came from this page.
+     */
+    csrf?: boolean;
+  } = {},
+): Promise<T> {
+  const { csrf, ...rest } = init;
+  init = rest;
   const headers = new Headers(init.headers);
   const method = (init.method ?? "GET").toUpperCase();
+  if (csrf && csrfToken) headers.set("X-CSRF-Token", csrfToken);
   if (method !== "GET" && method !== "HEAD") {
     headers.set("Content-Type", headers.get("Content-Type") ?? "application/json");
     if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
@@ -389,7 +405,7 @@ export function likeArtwork(id: string): Promise<{ likes: number }> {
  * a different sheet state, so callers must read `status`/`code`, not `ok`.
  */
 export async function fetchCheckoutUrl(): Promise<string> {
-  const body = await request<{ url?: unknown }>("/api/billing/checkout");
+  const body = await request<{ url?: unknown }>("/api/billing/checkout", { csrf: true });
   // A 2xx whose body has no URL is not a success. Without this the sheet would
   // navigate to the string "undefined" and blame the user's connection.
   if (typeof body.url !== "string" || body.url === "") {

@@ -81,6 +81,63 @@ describe("POST — title rule for v2-capable clients", () => {
     expect(res.status).toBe(400);
   });
 
+  // REVIEW.md minor mA2 — NFKC folds compatibility forms and says nothing about
+  // a script swap. These all render as "Untitled" and all sailed past.
+  it("rejects script lookalikes of untitled that NFKC does not touch", async () => {
+    const { env } = ctx();
+    for (const [why, title] of [
+      ["Turkish dotless i", "Unt\u0131tled"],
+      ["Cyrillic e", "Untitl\u0435d"],
+      ["Cyrillic i", "Unt\u0456tled"],
+      ["Greek tau", "Un\u03c4itled"],
+      ["Greek upsilon", "\u03c5ntitled"],
+      ["Cyrillic d", "Untitle\u0501"],
+      ["two at once", "Unt\u0131tl\u0435d"],
+    ] as Array<[string, string]>) {
+      const res = await saveV2(env, saveForm({ drawing: uniqueDrawing(), title }));
+      expect(res.status, why).toBe(400);
+    }
+  });
+
+  it("CONTROL: the fold is bounded to that one word, not applied to titles generally", async () => {
+    // A real title containing those characters must still save. The rule being
+    // defended is "name your piece", not "no two titles may resemble".
+    const { env } = ctx();
+    for (const title of ["\u0131\u015f\u0131k", "\u0421\u0435\u0440\u0433\u0435\u0439", "\u03c4\u03cd\u03c0\u03bf\u03c2"]) {
+      const res = await saveV2(env, saveForm({ drawing: uniqueDrawing(), title }));
+      expect(res.status, title).toBe(201);
+    }
+  });
+
+  it("rejects the rest of the invisible family, not just the four famous ones", async () => {
+    const { env } = ctx();
+    for (const [why, cp] of [
+      ["soft hyphen", "\u00ad"],
+      ["Arabic letter mark", "\u061c"],
+      ["left-to-right mark", "\u200e"],
+      ["word joiner", "\u2060"],
+      ["invisible times", "\u2062"],
+      ["variation selector", "\ufe0f"],
+      ["Hangul filler", "\u3164"],
+      ["Halfwidth Hangul filler", "\uffa0"],
+      ["braille blank", "\u2800"],
+      ["Mongolian vowel separator", "\u180e"],
+    ] as Array<[string, string]>) {
+      // Two titles that render identically are a way to publish a piece nobody
+      // can tell from someone else's.
+      const res = await saveV2(env, saveForm({ drawing: uniqueDrawing(), title: `Blue${cp}Spiral` }));
+      expect(res.status, why).toBe(400);
+    }
+  });
+
+  it("CONTROL: characters that merely LOOK exotic still save", async () => {
+    const { env } = ctx();
+    for (const title of ["Blue\u2014Spiral", "\u82b1 Spiral", "Spiral \u2728", "Caf\u00e9 Spiral"]) {
+      const res = await saveV2(env, saveForm({ drawing: uniqueDrawing(), title }));
+      expect(res.status, title).toBe(201);
+    }
+  });
+
   it("accepts a title that merely CONTAINS untitled", async () => {
     // The rule is equality, not a substring ban — "Untitled Study No. 4" is a
     // real title someone might mean.

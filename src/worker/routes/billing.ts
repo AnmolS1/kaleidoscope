@@ -427,7 +427,16 @@ billing.post("/lemonsqueezy", async (c) => {
 // Returns a URL for the client to navigate to. A redirect, not an overlay: the
 // overlay would need LS's script host in `script-src`, and §2.3 pins the CSP as
 // unchanged. Nothing in security.ts needed touching.
-billing.get("/checkout", requireAuth, async (c) => {
+// `requireCsrf` on a GET is unusual and deliberate (REVIEW.md minor mB5). This
+// route reads nothing but it SPENDS something — a 10/h per-user budget — and the
+// session cookie is SameSite=Lax, which is sent on a cross-site top-level
+// navigation. A hostile page could bounce a signed-in visitor through this URL
+// ten times and leave the real Buy button answering 429 for the next hour. The
+// CSRF token is not readable cross-origin and cannot be attached to a
+// navigation, so requiring it is what makes the budget the user's own to spend.
+// Bearer callers are exempt inside the middleware, which is correct: a token
+// sent by hand is not an ambient credential.
+billing.get("/checkout", requireAuth, requireCsrf, async (c) => {
   const user = c.get("user")!;
 
   // While Plus is dark there is nothing to sell. The grant paths above stay

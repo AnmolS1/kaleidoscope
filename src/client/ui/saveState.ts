@@ -14,6 +14,7 @@
 // the dialog renders them whenever their condition holds regardless of `kind` —
 // an at-cap dialog with an empty title has to show both.
 
+import { isReservedTitle } from "../../shared/title";
 import type { HashLookup } from "../api";
 
 export type SaveStateKind =
@@ -167,5 +168,9 @@ export function primaryLabel(kind: SaveStateKind, capReached: boolean, remixOfOw
 export function titleIsInvalid(raw: string): boolean {
   const t = raw.trim();
   if (!t) return true;
-  return t.normalize("NFKC").trim().toLowerCase() === "untitled";
+  // The SAME function the Worker validates with. These used to be two copies of
+  // one rule, agreeing by inspection; when the Worker learned about script
+  // lookalikes the copy here did not, and a title the dialog accepted came back
+  // a 400 with nothing to explain it (REVIEW.md minor mA2).
+  return isReservedTitle(t);
 }

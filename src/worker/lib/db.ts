@@ -543,8 +543,35 @@ export async function deleteArtworkRow(env: Env, id: string): Promise<void> {
 
 export async function incrementLikes(env: Env, id: string): Promise<number> {
   await env.DB.prepare("UPDATE artworks SET likes = likes + 1 WHERE id = ?").bind(id).run();
+  return currentLikes(env, id);
+}
+
+/** The stored count, without touching it. */
+export async function currentLikes(env: Env, id: string): Promise<number> {
   const row = await env.DB.prepare("SELECT likes FROM artworks WHERE id = ?").bind(id).first<{ likes: number }>();
   return row?.likes ?? 0;
+}
+
+/**
+ * Record one person's like and return the count.
+ *
+ * Idempotent: pressing again returns the current total unchanged. The counter
+ * used to move on every POST with no record of who pressed it, so one account
+ * could inflate a piece without limit — the hourly rate limit shaped that into a
+ * slower climb rather than capping it.
+ *
+ * `INSERT OR IGNORE` plus `meta.changes` rather than a read-then-write: SQLite
+ * serializes the insert, so two simultaneous presses from the same session
+ * cannot both see "not liked yet" and both increment.
+ */
+export async function likeOnce(env: Env, artworkId: string, userId: string): Promise<number> {
+  const res = await env.DB.prepare(
+    "INSERT OR IGNORE INTO artwork_likes (artwork_id, user_id, created_at) VALUES (?, ?, ?)",
+  )
+    .bind(artworkId, userId, Date.now())
+    .run();
+  if (res.meta.changes === 0) return currentLikes(env, artworkId);
+  return incrementLikes(env, artworkId);
 }
 
 export async function listPublicIds(env: Env, limit = 1000): Promise<{ id: string; created_at: number }[]> {

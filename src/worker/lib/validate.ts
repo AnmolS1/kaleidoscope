@@ -13,6 +13,7 @@ import {
   VECTOR_HARD_CAP_BYTES,
   type DrawingV2,
 } from "../../shared/vector";
+import { isReservedTitle } from "../../shared/title";
 import type { Env } from "../types";
 
 export const CAPS = {
@@ -123,7 +124,7 @@ export function cleanTitle(raw: unknown): string {
 export function validateTitle(raw: unknown): { ok: true; title: string } | { ok: false } {
   const title = typeof raw === "string" ? raw.trim().slice(0, CAPS.title) : "";
   if (!title) return { ok: false };
-  if (title.normalize("NFKC").trim().toLowerCase() === "untitled") return { ok: false };
+  if (isReservedTitle(title)) return { ok: false };
   if (!isPrintableScalars(title)) return { ok: false };
   return { ok: true, title };
 }
@@ -154,9 +155,28 @@ function isPrintableScalars(s: string): boolean {
     // Zero-width space/non-joiner/joiner and the BOM used as a zero-width
     // no-break space: invisible, so two different titles can look identical.
     if (cp === 0x200b || cp === 0x200c || cp === 0x200d || cp === 0xfeff) return false;
+    // The REST of the invisible family (REVIEW.md minor mA2). The four above
+    // are the famous ones; these render as nothing just as reliably, and in a
+    // public gallery an invisible character is a way to publish a piece whose
+    // title is indistinguishable from someone else's.
+    if (cp === 0x00ad) return false; // soft hyphen
+    if (cp === 0x061c) return false; // Arabic letter mark
+    if (cp === 0x180e) return false; // Mongolian vowel separator
+    if (cp === 0x200e || cp === 0x200f) return false; // LRM / RLM
+    if (cp >= 0x2060 && cp <= 0x2064) return false; // word joiner + invisible operators
+    if (cp >= 0xfe00 && cp <= 0xfe0f) return false; // variation selectors
+    if (cp >= 0xe0100 && cp <= 0xe01ef) return false; // variation selectors supplement
+    if (cp >= 0xe0000 && cp <= 0xe007f) return false; // tag characters
+    // Blank-rendering FILLERS. Not zero-WIDTH — they occupy space and draw
+    // nothing, which is the same spoof with extra steps, and unlike a real space
+    // `trim()` does not remove them, so a title made only of these is "not
+    // empty" and shows as empty.
+    if (cp === 0x115f || cp === 0x1160 || cp === 0x3164 || cp === 0xffa0) return false;
+    if (cp === 0x2800) return false; // braille pattern blank
   }
   return true;
 }
+
 
 /** True when the client announced it speaks v2 (and so has a title field). */
 export function hasV2Caps(header: string | undefined): boolean {

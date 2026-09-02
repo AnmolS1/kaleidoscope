@@ -221,3 +221,30 @@ describe("isRemixOfOwnChanged: which way an unknown pre-flight falls", () => {
       .toBe("Save as new");
   });
 });
+
+// REVIEW.md minor mA2 — the client and the Worker now compile ONE definition of
+// the reserved title, so a title the dialog accepts cannot come back a 400.
+describe("titleIsInvalid agrees with the Worker on lookalikes", () => {
+  for (const [why, title] of [
+    ["plain", "Untitled"],
+    ["padded and cased", "  UnTiTlEd  "],
+    ["fullwidth (NFKC)", "ｕｎｔｉｔｌｅｄ"],
+    ["Turkish dotless i", "Untıtled"],
+    ["Cyrillic e", "Untitlеd"],
+    ["Greek tau", "Unτitled"],
+  ] as Array<[string, string]>) {
+    it(`rejects ${why}`, () => {
+      expect(titleIsInvalid(title)).toBe(true);
+    });
+  }
+
+  for (const [why, title] of [
+    ["a title that contains it", "Untitled Study No. 4"],
+    ["a Turkish word", "ışık"],
+    ["a Cyrillic name", "Сергей"],
+  ] as Array<[string, string]>) {
+    it(`CONTROL: accepts ${why}`, () => {
+      expect(titleIsInvalid(title)).toBe(false);
+    });
+  }
+});

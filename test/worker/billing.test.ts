@@ -1003,6 +1003,51 @@ describe("GET /api/billing/checkout", () => {
     LS_VARIANT_ID: VARIANT,
   };
 
+  // REVIEW.md minor mB5 — this GET reads nothing but it SPENDS something.
+  it("a cookie session needs the CSRF token, so the budget cannot be burned cross-site", async () => {
+    const { env } = ctx(READY);
+
+    const cookieOnly = await app.request(
+      "/api/billing/checkout",
+      { headers: { Cookie: "__Host-kld_session=s1" } },
+      env as never,
+    );
+    // The session cookie is SameSite=Lax, so it RIDES a cross-site top-level
+    // navigation. Without this, a hostile page could bounce a signed-in visitor
+    // through the URL ten times and leave the real Buy button 429ing for an hour.
+    expect(cookieOnly.status).toBe(403);
+
+    // CONTROL: the same call with the token works, so the 403 is attributable to
+    // CSRF and not to the cookie path being broken.
+    const withToken = await app.request(
+      "/api/billing/checkout",
+      { headers: { Cookie: "__Host-kld_session=s1", "X-CSRF-Token": "csrf-s1" } },
+      env as never,
+    );
+    expect(withToken.status).toBe(200);
+  });
+
+  it("and the refused attempts do not spend the budget they were trying to burn", async () => {
+    const { env } = ctx(READY);
+    // Twenty forged attempts — twice the hourly allowance.
+    for (let i = 0; i < 20; i++) {
+      const res = await app.request(
+        "/api/billing/checkout",
+        { headers: { Cookie: "__Host-kld_session=s1" } },
+        env as never,
+      );
+      expect(res.status).toBe(403);
+    }
+    // The user's own button still works. This is the half that matters: a 403
+    // that still charged the limiter would leave the attack working.
+    expect((await get(env)).status).toBe(200);
+  });
+
+  it("CONTROL: a bearer caller needs no token, since it carries no ambient credential", async () => {
+    const { env } = ctx(READY);
+    expect((await get(env)).status).toBe(200);
+  });
+
   it("returns a hosted-checkout URL carrying checkout[custom][user_id]", async () => {
     const { env } = ctx(READY);
     const res = await get(env);
