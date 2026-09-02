@@ -124,7 +124,38 @@ export function validateTitle(raw: unknown): { ok: true; title: string } | { ok:
   const title = typeof raw === "string" ? raw.trim().slice(0, CAPS.title) : "";
   if (!title) return { ok: false };
   if (title.normalize("NFKC").trim().toLowerCase() === "untitled") return { ok: false };
+  if (!isPrintableScalars(title)) return { ok: false };
   return { ok: true, title };
+}
+
+/**
+ * The character check layer names always had and titles did not (S6).
+ *
+ * Titles flow into `<title>`, OG tags and alt text, so NUL, C0/C1 controls,
+ * bidi overrides and zero-width joiners all end up somewhere they can misrender
+ * a page or disguise one title as another. Layer names got a full
+ * printable-scalar check; titles — the ones that are actually published — got
+ * length and "Untitled" and nothing else.
+ *
+ * Deliberately the same rule as `normalizeLayerName`, plus the bidi and
+ * zero-width classes, because these are published rather than local.
+ */
+function isPrintableScalars(s: string): boolean {
+  for (const ch of s) {
+    const cp = ch.codePointAt(0)!;
+    // C0 controls and DEL, then C1 controls.
+    if (cp < 0x20 || cp === 0x7f || (cp >= 0x80 && cp <= 0x9f)) return false;
+    // Unpaired surrogates (for..of combines valid pairs).
+    if (cp >= 0xd800 && cp <= 0xdfff) return false;
+    // Bidi overrides/embeddings and the isolate family: these reorder the text
+    // AROUND them, so a title can render as something it does not say.
+    if (cp >= 0x202a && cp <= 0x202e) return false;
+    if (cp >= 0x2066 && cp <= 0x2069) return false;
+    // Zero-width space/non-joiner/joiner and the BOM used as a zero-width
+    // no-break space: invisible, so two different titles can look identical.
+    if (cp === 0x200b || cp === 0x200c || cp === 0x200d || cp === 0xfeff) return false;
+  }
+  return true;
 }
 
 /** True when the client announced it speaks v2 (and so has a title field). */

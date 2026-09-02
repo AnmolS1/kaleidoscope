@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 import app from "../../src/worker/index";
+import { validateTitle } from "../../src/worker/lib/validate";
 import {
   makeD1,
   makeKV,
@@ -200,5 +201,39 @@ describe("PATCH — title rule applies only when the body carries a title", () =
     seedArtwork(DB, { id: "a1", user_id: "u1" });
     const res = await app.request("/api/artworks/a1", { method: "PATCH", body: "{}" }, env as never);
     expect(res.status).toBe(401);
+  });
+});
+
+// REVIEW.md S6 — titles are published into <title>, OG tags and alt text, and
+// they accepted characters layer names have always refused.
+describe("titles refuse control, bidi and zero-width characters (S6)", () => {
+  // Written as escapes on purpose: a literal control character in a source file
+  // is invisible in review, which is most of why this class survives.
+  const rejected: Array<[string, string]> = [
+    ["NUL", "a\u0000b"],
+    ["a C0 control", "a\u0007b"],
+    ["a newline", "a\u000Ab"],
+    ["DEL", "a\u007Fb"],
+    ["a C1 control", "a\u0085b"],
+    ["a right-to-left override", "a\u202Eb"],
+    ["a left-to-right embedding", "a\u202Ab"],
+    ["a bidi isolate", "a\u2066b"],
+    ["a zero-width space", "a\u200Bb"],
+    ["a zero-width joiner", "a\u200Db"],
+    ["a BOM used as ZWNBSP", "a\uFEFFb"],
+  ];
+
+  for (const [name, value] of rejected) {
+    it(`rejects ${name}`, () => {
+      expect(validateTitle(value).ok, `${name} must not reach a <title>`).toBe(false);
+    });
+  }
+
+  it("CONTROL: real titles, including non-Latin and emoji, still pass", () => {
+    for (const good of ["Mandala", "\u4E07\u83EF\u93E1", "Flor de loto", "\uD83C\uDF38 bloom", "a-b_c 12"]) {
+      const r = validateTitle(good);
+      expect(r.ok, `${good} must still be allowed`).toBe(true);
+      if (r.ok) expect(r.title).toBe(good);
+    }
   });
 });

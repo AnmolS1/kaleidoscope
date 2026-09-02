@@ -185,8 +185,25 @@ export async function insertArtwork(env: Env, a: NewArtwork): Promise<void> {
     // of the same drawing in flight together both pass it and one loses here.
     // The index is the actual guarantee; this converts losing the race into the
     // same answer the checked path gives.
+    // MATCH THE DEDUPE INDEX SPECIFICALLY (S5).
+    //
+    // `/UNIQUE|constraint/i` also matched a primary-key collision and every
+    // foreign-key failure. The caller treats a DuplicateHashError as "this is
+    // the same drawing" and calls `deleteArtworkObjects(id)` — so a FK error
+    // made the save path DESTROY an existing artwork's R2 blobs.
+    //
+    // Matched on the COLUMNS, not on the index name: SQLite does not put the
+    // index name in the message. It says
+    //   UNIQUE constraint failed: artworks.user_id, artworks.content_hash
+    // for the dedupe index and
+    //   UNIQUE constraint failed: artworks.id
+    // for the primary key. Matching `idx_art_user_hash` — the obvious reading
+    // of "match the index by name" — would have matched NOTHING, turning every
+    // genuine duplicate into a 500. `content_hash` appears in no other unique
+    // index, so requiring both words is specific without being brittle about
+    // the exact phrasing.
     const msg = e instanceof Error ? e.message : String(e);
-    if (/UNIQUE|constraint/i.test(msg)) throw new DuplicateHashError(msg);
+    if (/unique/i.test(msg) && /content_hash/i.test(msg)) throw new DuplicateHashError(msg);
     throw e;
   }
 }
@@ -251,13 +268,22 @@ export async function publishArtwork(
   opts: { id: string; userId: string; cap: number; epoch: number; now: number },
 ): Promise<boolean> {
   const res = await env.DB.prepare(
+    // The `user_id` and `visibility` guards are not redundant with the route's
+    // ownership check (S4). This one statement IS the cap enforcement, and
+    // without them it would publish any row while counting whichever user's
+    // quota it was handed — two different users in one statement, which is
+    // exactly the shape that turns a routing slip into a cross-account write.
+    // `visibility != 'public'` also keeps a re-publish from consuming a second
+    // slot against the same piece.
     `UPDATE artworks
        SET visibility = 'public', published_at = COALESCE(published_at, ?), updated_at = ?
      WHERE id = ?
+       AND user_id = ?
+       AND visibility != 'public'
        AND (SELECT COUNT(*) FROM artworks
             WHERE user_id = ? AND visibility = 'public' AND published_at >= ?) < ?`,
   )
-    .bind(opts.now, opts.now, opts.id, opts.userId, opts.epoch, opts.cap)
+    .bind(opts.now, opts.now, opts.id, opts.userId, opts.userId, opts.epoch, opts.cap)
     .run();
   return (res.meta?.changes ?? 0) > 0;
 }
