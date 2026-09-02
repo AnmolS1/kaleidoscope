@@ -8,7 +8,15 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 export default defineConfig({
   plugins: [preact(), cloudflare()],
   build: {
-    sourcemap: true,
+    // `hidden` emits the map but drops the `//# sourceMappingURL=` comment, so
+    // the file is not advertised and browsers do not fetch it.
+    //
+    // It used to be `true`, which publishes the client's full original source to
+    // `/assets/*.js.map` — Workers Assets serves everything under
+    // `dist/client`, so the maps were live on the public site. Keeping them
+    // built (rather than off) means a stack trace can still be symbolicated
+    // from the build output; it just is not handed to every visitor.
+    sourcemap: "hidden",
   },
   server: {
     // Bind all interfaces (incl. the Tailscale one) so a phone on the tailnet can

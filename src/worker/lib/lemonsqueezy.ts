@@ -130,6 +130,18 @@ export function checkLsOrder(
   const attrs = body.data?.attributes;
   if (str(attrs?.status) !== "paid") return { ok: false, reason: "not_paid" };
 
+  // `refunded` is its own field, and it was typed and never read (minor).
+  //
+  // An order refunded through the LS dashboard can still carry `status: "paid"`
+  // with `refunded: true`, so status alone let a refunded order grant Plus —
+  // and, because `order_created` is retried for three days, that grant could
+  // land AFTER the refund. Checked as a boolean OR the string LS sometimes
+  // sends, since the field is typed `unknown` for exactly that reason.
+  const refunded = attrs?.refunded;
+  if (refunded === true || refunded === "true" || refunded === 1) {
+    return { ok: false, reason: "refunded" };
+  }
+
   // Fail closed on an unconfigured variant: `LS_VARIANT_ID` ships as "" in
   // wrangler.jsonc, and "" === "" would otherwise match a payload with no
   // variant at all and grant Plus on any signed webhook.

@@ -221,9 +221,18 @@ export function checkTransaction(
   if (str(tx.bundleId) !== o.bundleId) return { ok: false, reason: "wrong_bundle" };
   if (str(tx.productId) !== o.productId) return { ok: false, reason: "wrong_product" };
 
+  // The environment must be one Apple actually issues, not merely
+  // "not Production" (minor). `allowSandbox` used to accept ANY other string —
+  // including an empty one, or a value an attacker chose — so a transaction
+  // with a missing or invented environment sailed through the review-window
+  // switch. Apple emits "Production", "Sandbox", and "Xcode" for a local
+  // StoreKit test session.
   const environment = str(tx.environment) ?? "";
-  if (environment !== "Production" && !o.allowSandbox) {
-    return { ok: false, reason: "wrong_environment" };
+  const ALLOWED_NON_PRODUCTION = new Set(["Sandbox", "Xcode"]);
+  if (environment !== "Production") {
+    if (!o.allowSandbox || !ALLOWED_NON_PRODUCTION.has(environment)) {
+      return { ok: false, reason: "wrong_environment" };
+    }
   }
 
   if (str(tx.inAppOwnershipType) !== "PURCHASED") {

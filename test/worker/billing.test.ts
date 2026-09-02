@@ -1219,3 +1219,53 @@ describe("a Sandbox entitlement lasts exactly as long as we allow Sandbox", () =
     }
   });
 });
+
+// Minor list — two money-relevant checks that existed in the types and nowhere
+// in the code.
+describe("an order that is already refunded does not grant", () => {
+  it("refuses `refunded: true` even when the status still says paid", async () => {
+    const { DB, env } = lsCtx();
+    const body = JSON.stringify(lsOrder({ attributes: { refunded: true } }));
+    const res = await postLs(env, body);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, ignored: true, reason: "refunded" });
+    expect(liveRows(DB)).toHaveLength(0);
+  });
+
+  it("CONTROL: the same order without the flag still grants", async () => {
+    const { DB, env } = lsCtx();
+    expect((await postLs(env, JSON.stringify(lsOrder()))).status).toBe(200);
+    expect(liveRows(DB)).toHaveLength(1);
+  });
+});
+
+describe("a Sandbox refund cannot revoke a Production entitlement", () => {
+  // Apple delivers sandbox notifications to the same URL and
+  // originalTransactionId is not unique across environments, so an unscoped
+  // revoke let a sandbox refund cancel a paying customer's Plus.
+  it("leaves the Production row alone", async () => {
+    const { DB, env } = ctx({ PLUS_ALLOW_SANDBOX: "true" });
+    seedRow(DB, { environment: "Production" }); // the paying customer
+    expect(await hasPlus(env as never, "u1")).toBe(true);
+
+    H.stub = async (jws: string) =>
+      jws === "INNER"
+        ? validTx({ environment: "Sandbox", revocationDate: 1758000000000 })
+        : { notificationType: "REFUND", data: { signedTransactionInfo: "INNER" } };
+    const res = await postNotification(env, "OUTER");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, removed: false });
+    expect(await hasPlus(env as never, "u1"), "a paying customer must keep Plus").toBe(true);
+  });
+
+  it("CONTROL: a Production refund does revoke it", async () => {
+    const { DB, env } = ctx();
+    seedRow(DB, { environment: "Production" });
+    H.stub = async (jws: string) =>
+      jws === "INNER"
+        ? validTx({ environment: "Production", revocationDate: 1758000000000 })
+        : { notificationType: "REFUND", data: { signedTransactionInfo: "INNER" } };
+    expect((await postNotification(env, "OUTER")).status).toBe(200);
+    expect(await hasPlus(env as never, "u1")).toBe(false);
+  });
+});

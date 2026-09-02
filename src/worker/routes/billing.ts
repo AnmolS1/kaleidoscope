@@ -147,12 +147,31 @@ async function revokeEntitlement(
   env: Env,
   source: PlusSource,
   externalId: string,
+  environment?: string,
 ): Promise<boolean> {
-  const res = await env.DB.prepare(
-    "UPDATE entitlements SET revoked_at = ? WHERE source = ? AND external_id = ? AND revoked_at IS NULL",
-  )
-    .bind(Date.now(), source, externalId)
-    .run();
+  // A SANDBOX refund may only revoke a SANDBOX row (minor).
+  //
+  // Apple delivers sandbox notifications to the same URL, and
+  // originalTransactionId is not guaranteed unique across environments — so an
+  // unscoped revoke let a sandbox refund cancel a paying customer's Plus. A
+  // Production notification may still clear a legacy NULL row, because Apple
+  // rows predating the environment column carry nothing to match on and a real
+  // refund must not be ignored.
+  const scope =
+    environment === "Production"
+      ? " AND (environment = 'Production' OR environment IS NULL)"
+      : environment
+        ? " AND environment = ?"
+        : "";
+  const stmt = env.DB.prepare(
+    "UPDATE entitlements SET revoked_at = ? WHERE source = ? AND external_id = ? AND revoked_at IS NULL"
+      + scope,
+  );
+  const bound =
+    environment && environment !== "Production"
+      ? stmt.bind(Date.now(), source, externalId, environment)
+      : stmt.bind(Date.now(), source, externalId);
+  const res = await bound.run();
   return (res.meta?.changes ?? 0) > 0;
 }
 
@@ -297,7 +316,15 @@ billing.post("/apple/notifications", async (c) => {
     return c.json({ ok: true, ignored: true });
   }
 
-  const removed = await revokeEntitlement(c.env, "apple", originalTransactionId);
+  // Ignore a Sandbox notification unless Sandbox is currently accepted, and
+  // pass the environment through so the revoke cannot cross environments.
+  const noteEnv = typeof tx.environment === "string" ? tx.environment : "";
+  if (noteEnv !== "Production" && !envFlag(c.env.PLUS_ALLOW_SANDBOX)) {
+    logNoGrant("apple", "notification_wrong_environment", { environment: noteEnv });
+    return c.json({ ok: true, ignored: true });
+  }
+
+  const removed = await revokeEntitlement(c.env, "apple", originalTransactionId, noteEnv);
   return c.json({ ok: true, removed });
 });
 

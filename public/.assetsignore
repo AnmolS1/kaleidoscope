@@ -1,0 +1,7 @@
+# Kept out of the Workers Assets upload — everything under dist/client is
+# served publicly, and these are not for visitors.
+#
+# Source maps: `build.sourcemap: "hidden"` stops the bundle ADVERTISING them,
+# but a file that is uploaded is still fetchable by anyone who guesses the name.
+# They stay in the build output so a stack trace can be symbolicated locally.
+*.map
