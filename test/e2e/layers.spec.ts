@@ -211,13 +211,17 @@ test("Add locks at the cap, is unlocked below it, and says which cap it is", asy
   await addLayers(page, 2);
   await expect(page.locator(".layers-count")).toHaveText("3 of 3");
   await expect(add).toBeDisabled();
-  await expect(page.locator(".layer-note")).toHaveText(
+
+  // Without the Plus surface the footnote states the cap and offers nothing —
+  // the link would open a sheet that refuses to render (S14). The surface-on
+  // variant is its own test below, because turning it on mid-flow changes
+  // unrelated chrome.
+  await expect(page.locator(".layer-note")).toHaveText("Layers: 3 of 3");
+  await expect(page.locator(".layer-note")).not.toHaveText(
     "Layers: 3 of 3 · Kaleidoscope Plus unlocks 8",
   );
-  // The way out is a real control, not decoration. T08 builds the sheet; all
-  // that can be asserted here is that the link exists and is clickable.
-  await expect(page.locator(".layer-note .link-inline")).toBeEnabled();
-  await page.locator(".layer-note .link-inline").click();
+  // The link itself is asserted in "the cap footnote offers Plus only when the
+  // surface is on" below, where the surface is set BEFORE the panel renders.
 
   // --- THE CONTROL: the SAME three layers at cap 8 must be UNLOCKED ---
   // Without this case, "disabled at 3 of 3" and "disabled at 8 of 8" are both
@@ -1122,4 +1126,26 @@ test("typing a layer name does not fire the shortcuts inside it", async ({ page 
 
   await page.keyboard.press("Enter");
   await expect(page.locator(".layer-name").first()).toHaveText("Everest Lake");
+});
+
+// S14. The footnote's "Kaleidoscope Plus" link is gated on the Plus SURFACE,
+// because `PlusSheet` refuses to render without it — an ungated link is a
+// button that visibly does nothing, and the user at the cap is exactly who
+// clicks it. Reachable today: `/api/me` degrades to a plus block with the
+// surface off when CAP_EPOCH is malformed, and the free layer cap still applies.
+test("the cap footnote offers Plus only when the surface is on", async ({ page }) => {
+  await page.evaluate(async () => {
+    const load = (path: string): Promise<any> => import(/* @vite-ignore */ path);
+    const S = await load("/src/client/state.ts");
+    S.plus.value = { active: false, sources: [], publicCount: 0, publicCap: null,
+                     layerCap: 3, enabled: false, surface: true };
+  });
+  await openPanel(page);
+  await setLayerCap(page, 3);
+  await addLayers(page, 2);
+
+  await expect(page.locator(".layer-note")).toHaveText(
+    "Layers: 3 of 3 · Kaleidoscope Plus unlocks 8",
+  );
+  await expect(page.locator(".layer-note .link-inline")).toBeEnabled();
 });

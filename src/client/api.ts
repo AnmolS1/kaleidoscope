@@ -131,6 +131,12 @@ function parsePlus(raw: unknown): PlusInfo | null {
     publicCap: typeof p.publicCap === "number" && Number.isFinite(p.publicCap) ? p.publicCap : null,
     layerCap: num(p.layerCap, DEFAULT_LAYER_CAP),
     enabled: p.enabled === true,
+    // 🔴 This parser builds the object FIELD BY FIELD, so a field added to the
+    // contract and not added here is silently dropped — which is not a missing
+    // feature but a wrong value: `surface` read as undefined hides the entire
+    // Plus UI, in production, while every unit test on the worker's response
+    // still passes. Caught by the e2e suite, not by the types.
+    surface: p.surface === true,
   };
 }
 

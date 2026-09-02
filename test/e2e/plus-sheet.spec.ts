@@ -41,6 +41,7 @@ async function mockPlus(page: Page, patch: () => Record<string, unknown>): Promi
     // `PLUS_ENABLED` is unset, so the worker honestly reports `publicCap: null`
     // (no cap to report), and a spread in the other order would let that null
     // win and silently delete the meter this file exists to check.
+    const over = patch();
     body.plus = {
       ...plus,
       active: false,
@@ -48,7 +49,13 @@ async function mockPlus(page: Page, patch: () => Record<string, unknown>): Promi
       publicCount: 0,
       publicCap: 10,
       layerCap: 3,
-      ...patch(),
+      // `surface` governs whether the Plus UI EXISTS; `enabled` governs whether
+      // the caps are enforced (REVIEW L1 split them). Every test in this file
+      // predates the split and says `enabled: true` to mean "the sheet is
+      // available", so surface follows enabled unless a test sets it — which
+      // keeps each test's intent while letting the independence be asserted.
+      surface: over.enabled ?? false,
+      ...over,
     };
     await route.fulfill({ response: res, json: body });
   });
@@ -101,7 +108,7 @@ async function checkoutFails(
 // The kill switch. This is the assertion that keeps an unapproved IAP invisible.
 // ---------------------------------------------------------------------------
 
-test.describe("plus.enabled is the kill switch", () => {
+test.describe("the Plus SURFACE flag is the kill switch", () => {
   test("enabled:false removes every door to the sheet, not just the sheet", async ({ page }) => {
     // `PLUS_ENABLED` is unset in .dev.vars, so this is the SHIPPED state — no
     // interception needed, and none used, so nothing here can be an artefact of
@@ -140,7 +147,7 @@ test.describe("plus.enabled is the kill switch", () => {
     await expect(page.locator("[data-plus-state]")).toHaveCount(0);
   });
 
-  test("CONTROL: enabled:true puts the same doors back", async ({ page }) => {
+  test("CONTROL: surface on puts the same doors back", async ({ page }) => {
     // Without this, the two tests above pass just as well against a build where
     // the Plus row was never written.
     await signedInWithPlus(page, "plus-on", () => ({ enabled: true, publicCount: 7 }));
@@ -264,7 +271,8 @@ test.describe("Plus sheet states", () => {
       const res = await route.fetch();
       const body = (await res.json()) as Record<string, unknown>;
       if (signedOut) delete body.plus;
-      else body.plus = { ...((body.plus ?? {}) as object), enabled: true, publicCap: 10 };
+      // `surface` too: it is what makes the Plus UI exist at all (REVIEW L1).
+      else body.plus = { ...((body.plus ?? {}) as object), enabled: true, surface: true, publicCap: 10 };
       await route.fulfill({ response: res, json: body });
     });
     await page.goto("/");
