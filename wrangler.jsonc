@@ -40,7 +40,15 @@
     "PLUS_ALLOW_SANDBOX": "false",
     "PLUS_ALLOW_TEST": "false",
     "PLUS_PRODUCT_ID": "dev.ponderance.kaleidoscope.plus",
+    // Lemon Squeezy. Empty until the store leaves test mode: LS pins a new store
+    // to test mode until it approves the application, and test-mode products,
+    // webhooks and API keys are a separate dataset whose ids do NOT carry over
+    // to live. Fill these from the LIVE product, not the test one.
+    //   LS_STORE_ID    store slug / subdomain          ("kaleidoscope-plus")
+    //   LS_CHECKOUT_ID UUID from the Share modal        -> the checkout URL
+    //   LS_VARIANT_ID  numeric variant id from the API  -> the webhook check
     "LS_STORE_ID": "",
+    "LS_CHECKOUT_ID": "",
     "LS_VARIANT_ID": ""
   },
   "ai": { "binding": "AI" },

@@ -46,8 +46,9 @@ export interface Env {
   PLUS_ALLOW_SANDBOX?: string; // accept StoreKit Sandbox receipts (review window)
   PLUS_ALLOW_TEST?: string; // accept Lemon Squeezy test-mode webhooks
   PLUS_PRODUCT_ID?: string; // "dev.ponderance.kaleidoscope.plus"
-  LS_STORE_ID?: string;
-  LS_VARIANT_ID?: string;
+  LS_STORE_ID?: string; // store SLUG (subdomain), e.g. "kaleidoscope-plus"
+  LS_CHECKOUT_ID?: string; // UUID from the Share modal — used in the checkout URL
+  LS_VARIANT_ID?: string; // NUMERIC variant id — used to verify the webhook
   LS_WEBHOOK_SECRET?: string; // secret
   LS_API_KEY?: string; // secret
 }

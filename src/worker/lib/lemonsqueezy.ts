@@ -154,25 +154,43 @@ export function checkLsOrder(
 /**
  * The hosted-checkout URL for Plus.
  *
- * LS's hosted checkout lives at `https://<store>.lemonsqueezy.com/buy/<variant>`
- * and reads pass-through data from `checkout[custom][...]`, which is what comes
- * back as `meta.custom_data` on the webhook. That round trip is the ONLY thing
- * tying a payment to an account, so `user_id` is not optional decoration.
+ * LS's hosted checkout lives at
+ * `https://<store-slug>.lemonsqueezy.com/checkout/buy/<checkout id>` and reads
+ * pass-through data from `checkout[custom][...]`, which is what comes back as
+ * `meta.custom_data` on the webhook. That round trip is the ONLY thing tying a
+ * payment to an account, so `user_id` is not optional decoration.
  *
- * Returns null when either var is unset — `LS_STORE_ID`/`LS_VARIANT_ID` ship as
- * "" until the store exists, and a URL built from empty strings is a live link
- * to a 404 rather than an honest "not configured yet".
+ * TWO IDENTIFIERS, NOT ONE — verified against the real dashboard 2026-09-01:
  *
- * NOTE for T20: `LS_STORE_ID` is used here as the store SUBDOMAIN. Confirm
- * against the real store when it is created — LS's hosted URL is keyed by the
- * store's slug, which may not equal its numeric id.
+ *   LS_CHECKOUT_ID  the UUID in the Share modal's link, e.g.
+ *                   `95128e95-ea6a-421c-87c4-0334ac3d7102`. Goes in the URL.
+ *   LS_VARIANT_ID   the NUMERIC variant id, which is what the webhook sends as
+ *                   `first_order_item.variant_id`. Goes in `checkLsOrder`.
+ *
+ * They are different values and neither works in the other's place: a UUID in
+ * the variant check matches nothing, and the numeric id is not what the Share
+ * modal hands you. An earlier version overloaded one var across both jobs and
+ * built `/buy/<numeric>` — wrong path segment AND wrong identifier form.
+ *
+ * The numeric id is not exposed anywhere in the LS dashboard UI. Read it from
+ * `GET /v1/variants?filter[product_id]=N` with a key created in the SAME mode
+ * (test keys see test data only), or off the first webhook payload.
+ *
+ * `LS_STORE_ID` is the store SLUG, used as the subdomain — `kaleidoscope-plus`,
+ * not the numeric store id, and not the app's name.
+ *
+ * Returns null when either var is unset — they ship as "" until the LS store is
+ * approved and out of test mode, and a URL built from empty strings is a live
+ * link to a 404 rather than an honest "not configured yet".
  */
 export function checkoutUrl(env: Env, userId: string): string | null {
   const store = (env.LS_STORE_ID ?? "").trim();
-  const variant = (env.LS_VARIANT_ID ?? "").trim();
-  if (!store || !variant) return null;
+  const checkout = (env.LS_CHECKOUT_ID ?? "").trim();
+  if (!store || !checkout) return null;
 
-  const url = new URL(`https://${store}.lemonsqueezy.com/buy/${encodeURIComponent(variant)}`);
+  const url = new URL(
+    `https://${store}.lemonsqueezy.com/checkout/buy/${encodeURIComponent(checkout)}`,
+  );
   url.searchParams.set("checkout[custom][user_id]", userId);
   // Full-page hosted checkout, not the overlay — the overlay would need LS's
   // script in our CSP (§2.3: "redirect, not overlay — CSP unchanged").

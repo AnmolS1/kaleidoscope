@@ -374,6 +374,7 @@ describe("POST /api/billing/apple — gates", () => {
     const { DB, env } = ctx({
       PLUS_ENABLED: "true",
       LS_STORE_ID: "ponderance",
+      LS_CHECKOUT_ID: CHECKOUT_ID,
       LS_VARIANT_ID: VARIANT,
     });
     for (let i = 0; i < 10; i++) {
@@ -701,6 +702,13 @@ describe("POST /api/billing/apple/notifications", () => {
 
 const LS_SECRET = "whsec_kaleidoscope_test";
 const VARIANT = "778899";
+/**
+ * The checkout UUID is a DIFFERENT value from the numeric variant id, on
+ * purpose: LS's Share modal gives a UUID for the URL while the webhook reports
+ * `first_order_item.variant_id` as a number. Keeping them visibly unequal here
+ * is what makes a regression that overloads one var fail this suite.
+ */
+const CHECKOUT_ID = "95128e95-ea6a-421c-87c4-0334ac3d7102";
 
 async function lsSign(secret: string, raw: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -970,7 +978,12 @@ describe("GET /api/billing/checkout", () => {
       env as never,
     );
 
-  const READY = { PLUS_ENABLED: "true", LS_STORE_ID: "ponderance", LS_VARIANT_ID: VARIANT };
+  const READY = {
+    PLUS_ENABLED: "true",
+    LS_STORE_ID: "ponderance",
+    LS_CHECKOUT_ID: CHECKOUT_ID,
+    LS_VARIANT_ID: VARIANT,
+  };
 
   it("returns a hosted-checkout URL carrying checkout[custom][user_id]", async () => {
     const { env } = ctx(READY);
@@ -979,7 +992,10 @@ describe("GET /api/billing/checkout", () => {
     const { url } = (await res.json()) as { url: string };
     const u = new URL(url);
     expect(u.origin).toBe("https://ponderance.lemonsqueezy.com");
-    expect(u.pathname).toBe(`/buy/${VARIANT}`);
+    // `/checkout/buy/<UUID>` — the exact shape LS's own Share modal emits.
+    // `/buy/<numeric variant id>`, which this once built, is not a real path.
+    expect(u.pathname).toBe(`/checkout/buy/${CHECKOUT_ID}`);
+    expect(u.pathname).not.toContain(VARIANT);
     // The ONLY thing tying a payment back to an account — and exactly what the
     // webhook reads out of meta.custom_data.
     expect(u.searchParams.get("checkout[custom][user_id]")).toBe("u1");
@@ -1008,9 +1024,9 @@ describe("GET /api/billing/checkout", () => {
     expect(await res.json()).toEqual({ error: "not_enabled" });
   });
 
-  it("503s cleanly when LS_STORE_ID or LS_VARIANT_ID is unset, rather than emitting a broken URL", async () => {
-    // Both ship as "" in wrangler.jsonc today.
-    for (const over of [{ LS_STORE_ID: "" }, { LS_VARIANT_ID: "" }, { LS_STORE_ID: "  " }]) {
+  it("503s cleanly when LS_STORE_ID or LS_CHECKOUT_ID is unset, rather than emitting a broken URL", async () => {
+    // Both ship as "" in wrangler.jsonc until the LS store leaves test mode.
+    for (const over of [{ LS_STORE_ID: "" }, { LS_CHECKOUT_ID: "" }, { LS_STORE_ID: "  " }]) {
       const { env } = ctx({ ...READY, ...over });
       const res = await get(env);
       expect(res.status).toBe(503);
@@ -1022,6 +1038,31 @@ describe("GET /api/billing/checkout", () => {
     const { env } = ctx(READY);
     for (let i = 0; i < 10; i++) expect((await get(env)).status).toBe(200);
     expect((await get(env)).status).toBe(429);
+  });
+
+  it("keeps the two LS identifiers in their own jobs", async () => {
+    // The bug this guards: one var used for both the URL and the webhook check.
+    // The URL must carry the checkout UUID and never the numeric variant id;
+    // an order carrying the UUID as its variant must NOT be attributed.
+    const { DB, env } = ctx({ ...READY, LS_WEBHOOK_SECRET: LS_SECRET });
+    const { url } = (await (await get(env)).json()) as { url: string };
+    expect(url).toContain(CHECKOUT_ID);
+    expect(url).not.toContain(VARIANT);
+
+    await postLs(
+      env,
+      JSON.stringify(
+        lsOrder({ item: { variant_id: CHECKOUT_ID } }),
+      ),
+    );
+    expect(rows(DB)).toHaveLength(0);
+  });
+
+  it("still 200s when LS_VARIANT_ID is unset — the URL does not depend on it", async () => {
+    // Deliberate asymmetry: a missing variant id breaks ATTRIBUTION (covered
+    // above: every order is rejected), not the ability to send someone to pay.
+    const { env } = ctx({ ...READY, LS_VARIANT_ID: "" });
+    expect((await get(env)).status).toBe(200);
   });
 });
 
