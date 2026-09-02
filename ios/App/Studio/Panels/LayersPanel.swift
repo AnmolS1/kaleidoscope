@@ -79,16 +79,29 @@ struct LayersPanel: View {
                         Text("All \(MAX_LAYERS) layers in use")
                     case let .capped(count, cap, offersPlus):
                         if offersPlus {
-                            // The mention is the TAP TARGET (REVIEW.md minor
-                            // mI9). It read as a link on the web and as inert
-                            // prose here, so the one place a user meets the
-                            // layer cap named the way out and did not offer it.
-                            (Text("Layers: \(count) of \(cap) · ")
-                                + Text("Kaleidoscope Plus").foregroundColor(Blueprint.craneText)
-                                + Text(" unlocks \(MAX_LAYERS)"))
-                                .onTapGesture { router.openPlus() }
-                                .accessibilityAddTraits(.isButton)
-                                .accessibilityHint("Opens Kaleidoscope Plus")
+                            // A real Button, not `.onTapGesture` on a Text
+                            // (REVIEW.md minor mI9). The mention read as a link
+                            // on the web and as inert prose here, so the one
+                            // place a user meets the layer cap named the way out
+                            // and did not offer it.
+                            //
+                            // The tap gesture version was WORSE than useless:
+                            // XCUITest reported the element as existing and NOT
+                            // hittable, because a Text's bounds are the glyphs
+                            // and nothing else. `contentShape` gives the row a
+                            // rectangle to be tapped on, which is the same
+                            // reason this panel's controls are measured for a
+                            // 44pt target elsewhere.
+                            Button {
+                                router.openPlus()
+                            } label: {
+                                Text("Layers: \(count) of \(cap) · ")
+                                    + Text("Kaleidoscope Plus").foregroundColor(Blueprint.craneText)
+                                    + Text(" unlocks \(MAX_LAYERS)")
+                            }
+                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
+                            .accessibilityHint("Opens Kaleidoscope Plus")
                         } else {
                             Text("Layers: \(count) of \(cap)")
                         }

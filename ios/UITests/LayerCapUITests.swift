@@ -32,10 +32,17 @@ import XCTest
 final class LayerCapUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    private func launch(cap: Int?) -> XCUIApplication {
+    /// `surface` drives the Plus half of the footnote (REVIEW.md minor mI9).
+    ///
+    /// It has to be an input. The footnote's offer is gated on the deploy's
+    /// PLUS_SURFACE_ENABLED, so without this the test asserts whatever the
+    /// current rollout happens to be and goes red on a flag flip that has
+    /// nothing to do with the panel.
+    private func launch(cap: Int?, surface: Bool = true) -> XCUIApplication {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
         app.launchEnvironment["KALEIDO_DEMO"] = "1"
+        app.launchEnvironment["KALEIDO_PLUS_SURFACE"] = surface ? "1" : "0"
         if let cap { app.launchEnvironment["KALEIDO_LAYER_CAP"] = "\(cap)" }
         app.launch()
         XCTAssertTrue(app.otherElements["Drawing canvas"].waitForExistence(timeout: 20))
@@ -53,8 +60,28 @@ final class LayerCapUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Layers, 3 of 3"].exists,
                       "the header counts against the CAP, not against MAX_LAYERS")
-        XCTAssertTrue(app.staticTexts[footnote].exists,
-                      "at the free cap the panel names both exits")
+        // mI9 gave the footnote the BUTTON trait, so it is no longer a plain
+        // static text: it named the way out and did not offer it, in the one
+        // place a user meets the layer cap. Asserting the button is what pins
+        // the fix; asserting the text alone would pass on inert prose.
+        let offer = app.buttons[footnote]
+        XCTAssertTrue(offer.waitForExistence(timeout: 5),
+                      "at the free cap the panel names both exits, as a control")
+
+        // Reachable, not merely present. `exists` was all the old assertion
+        // asked, and on a landscape phone the footnote sits below the fold of
+        // the panel's scrollable card — so an inert Text and a working control
+        // looked identical to it. Same scroll-into-view loop the locked Add
+        // uses further down, for the same reason.
+        let card = app.scrollViews.firstMatch
+        var attempts = 0
+        while !card.frame.contains(CGPoint(x: offer.frame.midX, y: offer.frame.midY)), attempts < 5 {
+            card.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(offer.isHittable,
+                      "the footnote's Plus mention must be tappable once scrolled to; "
+                      + "card \(card.frame), offer \(offer.frame)")
 
         // The locked Add keeps a label that says WHY, not just that it is off.
         let locked = app.buttons["Add layer, locked at the layer limit"]
@@ -143,5 +170,19 @@ final class LayerCapUITests: XCTestCase {
                       "the cap is enforced by the model, not only by the label")
         XCTAssertEqual(app.otherElements["Drawing canvas"].value as? String,
                        "9-fold mirror symmetry, 3 strokes, layer Gold of 3")
+    }
+
+    /// The other side of the gate. With the surface off, PlusSheet refuses to
+    /// render — so an offer here would be a control that visibly does nothing,
+    /// which is exactly what a user at the cap would tap. The count still shows;
+    /// it is the OFFER that disappears.
+    func testWithTheSurfaceOffTheFootnoteCountsAndDoesNotOffer() {
+        let app = launch(cap: nil, surface: false)
+        XCTAssertTrue(app.staticTexts["Layers: 3 of 3"].waitForExistence(timeout: 5),
+                      "the count is not gated — only the offer is")
+        XCTAssertFalse(app.buttons[footnote].exists,
+                       "no Plus offer while the surface is dark")
+        XCTAssertFalse(app.staticTexts[footnote].exists,
+                       "and not as prose either — the offer is gone, not demoted")
     }
 }

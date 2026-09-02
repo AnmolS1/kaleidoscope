@@ -123,7 +123,22 @@ struct PlusSheetInput: Equatable {
     ///
     /// Still fails closed: nil `plus` (signed out, or `/api/me` not yet in) and
     /// a worker that sends no `surface` both read as hidden.
-    static func surfaceVisible(_ plus: PlusState?) -> Bool { plus?.surface ?? false }
+    static func surfaceVisible(_ plus: PlusState?) -> Bool {
+        #if DEBUG
+            // Test hook. The string literal is INSIDE the `#if`, which is what
+            // actually keeps it out of a Release binary — the estate has shipped
+            // a hook whose name survived the compile before.
+            //
+            // Needed because the surface is a property of the DEPLOY: a UI test
+            // driving the real app gets whatever production's flag says today,
+            // so a test for "the panel offers the way out" was really a test of
+            // the current rollout state and went red when it changed.
+            if let forced = ProcessInfo.processInfo.environment["KALEIDO_PLUS_SURFACE"] {
+                return forced == "1"
+            }
+        #endif
+        return plus?.surface ?? false
+    }
 
     /// 🔴 The one admissible source of the `owned` bit.
     ///

@@ -42,19 +42,6 @@ jobs:
       - run: npm run lint
       - run: npm test
 
-      # The Swift engine's parity test compares against
-      # ios/.../Fixtures/golden.json, which is GENERATED from src/shared/vector.ts.
-      # Change the web serializer without regenerating and the Swift test keeps
-      # comparing Swift to a snapshot of the old web behaviour — and passes while
-      # the two platforms hash the same drawing differently. That is not
-      # hypothetical: S16 and S17 shipped web-only and went a day undetected
-      # exactly this way. Regenerate here and fail on any diff.
-      - name: Golden fixtures are up to date with the web serializer
-        run: |
-          npx vite-node ios/tools/gen-engine-fixtures.ts
-          git diff --exit-code -- ios/KaleidoEngine/Tests/KaleidoEngineTests/Fixtures/golden.json \
-            || { echo "::error::golden.json is stale. Run: npx vite-node ios/tools/gen-engine-fixtures.ts"; exit 1; }
-
       - run: npm run build
 
       # Kept byte-identical to the same step in deploy.yml. Everything in it is
@@ -73,6 +60,35 @@ jobs:
           GOOGLE_REDIRECT_URI=http://localhost:5173/api/auth/callback
           ALLOW_TEST_LOGIN=true
           EOF
+
+      # The Swift engine's parity test compares against
+      # ios/.../Fixtures/golden.json, which is GENERATED from src/shared/vector.ts.
+      # Change the web serializer without regenerating and the Swift test keeps
+      # comparing Swift to a snapshot of the old web behaviour — and passes while
+      # the two platforms hash the same drawing differently. That is not
+      # hypothetical: S16 and S17 shipped web-only and went a day undetected
+      # exactly this way. Regenerate here and fail on any diff.
+      #
+      # 🔴 CARRIES THE CLOUDFLARE CREDENTIALS, and sits with the other steps that
+      # need them. Measured, not assumed: `vite-node` loads vite.config.ts, which
+      # brings up the Cloudflare plugin, which opens a REMOTE PROXY SESSION for
+      # the AI binding. Run with a bad token it exits 1 on
+      # "Failed to start the remote proxy session" — and this step would have
+      # reported that as "golden.json is stale", which is the wrong thing to go
+      # looking at. (A missing .dev.vars alone is fine; the credentials are the
+      # binding constraint. Locally it passes on a developer's cached wrangler
+      # OAuth token, which a runner does not have.)
+      #
+      # Same structural limit as the e2e step, therefore: a fork PR cannot see
+      # these secrets, so this gate belongs on the same side of that line.
+      - name: Golden fixtures are up to date with the web serializer
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx vite-node ios/tools/gen-engine-fixtures.ts
+          git diff --exit-code -- ios/KaleidoEngine/Tests/KaleidoEngineTests/Fixtures/golden.json \
+            || { echo "::error::golden.json is stale. Run: npx vite-node ios/tools/gen-engine-fixtures.ts"; exit 1; }
 
       # The e2e dev server runs the Worker against a LOCAL miniflare D1, which on
       # a fresh runner has no schema at all. Without this the failure is badly

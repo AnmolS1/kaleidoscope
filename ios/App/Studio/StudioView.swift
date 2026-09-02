@@ -20,6 +20,7 @@ struct StudioView: View {
     var onSave: () -> Void = {}
 
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var auth: AuthModel
 
     @State private var shareItem: ShareItem?
     @State private var customColor = Color(hex: "#E84A27")
@@ -214,6 +215,15 @@ struct StudioView: View {
                 LayersPanel(model: model,
                             onEditSymmetry: { panel = .symmetry($0) },
                             onNudge: { nudges.show($0, atRevision: model.revision) })
+                    // Injected explicitly. The panel reads `auth` (for the Plus
+                    // surface gate) and `router` (to ask the You tab to open the
+                    // sheet), and a missing EnvironmentObject is a CRASH at the
+                    // moment the view renders, not a compile error. RootView
+                    // already re-injects `auth` on the save sheet for the same
+                    // reason, which is this codebase recording that it has been
+                    // bitten by a presentation boundary here before.
+                    .environmentObject(auth)
+                    .environmentObject(router)
             }
             // DESIGN.md §2: top-right on a landscape regular-width screen,
             // bottom-left in portrait (frame `IPadPortrait`). Portrait has the
@@ -454,6 +464,11 @@ struct StudioView: View {
                     LayersPanel(model: model,
                                 onEditSymmetry: { showLayers = false; panel = .symmetry($0) },
                                 onNudge: { nudges.show($0, atRevision: model.revision) })
+                        // The phone path, and the one that actually needs this:
+                        // a `.sheet` is a separate presentation, so inheritance
+                        // is the thing not to rely on.
+                        .environmentObject(auth)
+                        .environmentObject(router)
                 }
             }
         }
