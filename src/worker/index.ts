@@ -129,6 +129,29 @@ app.get("/api/me", async (c) => {
       enabled,
       surface: envFlag(c.env.PLUS_SURFACE_ENABLED),
     };
+  } else {
+    // SIGNED OUT still gets a plus block (REVIEW S18).
+    //
+    // The surface flag is a property of the DEPLOY, not of a user, and sending
+    // nothing here made the whole Plus surface invisible to anyone signed out —
+    // which is how `PlusSignIn` became an unreachable state and how Restore
+    // ended up with no signed-out entry point at all. Someone who reinstalls
+    // and has not signed in could not find "Restore purchase" anywhere, and
+    // Apple expects restore to be reachable.
+    //
+    // Every USER-SPECIFIC field is the safe, empty answer, so nothing here can
+    // grant anything: `active: false` means `owned()` stays false, `enabled:
+    // false` means no cap is claimed, and both clients already resolve
+    // "surface on, not signed in" to their sign-in state.
+    plus = {
+      active: false,
+      sources: [],
+      publicCount: 0,
+      publicCap: null,
+      layerCap: plusLayerCap(c.env),
+      enabled: false,
+      surface: envFlag(c.env.PLUS_SURFACE_ENABLED),
+    };
   }
 
   return c.json({

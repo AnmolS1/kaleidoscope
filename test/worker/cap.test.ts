@@ -578,12 +578,32 @@ describe("/api/me plus block", () => {
     });
   });
 
-  it("is null for a signed-out visitor, and the rest of the body is unchanged", async () => {
-    const { env } = ctx(CAP_ON);
+  // CHANGED for REVIEW S18. A signed-out visitor used to get `plus: null`,
+  // which made the whole Plus surface invisible to them — so `PlusSignIn` was
+  // an unreachable state and Restore had no signed-out entry point, which
+  // Apple expects to exist. The surface flag describes the DEPLOY, not a user,
+  // so it is sent either way; every user-specific field is the empty answer.
+  it("carries the surface flag but nothing user-specific for a signed-out visitor", async () => {
+    const { env } = ctx({ ...CAP_ON, PLUS_SURFACE_ENABLED: "true" });
     const res = await app.request("/api/me", {}, env as never);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { user: unknown; csrf: unknown; plus: unknown };
+    const body = (await res.json()) as {
+      user: unknown;
+      plus: { surface: boolean; active: boolean; enabled: boolean; publicCap: number | null };
+    };
     expect(body.user).toBeNull();
-    expect(body.plus).toBeNull();
+    // Findable…
+    expect(body.plus.surface).toBe(true);
+    // …but it grants and claims nothing.
+    expect(body.plus.active, "an anonymous visitor must never read as owning Plus").toBe(false);
+    expect(body.plus.enabled, "and no cap is claimed against nobody").toBe(false);
+    expect(body.plus.publicCap).toBe(null);
+  });
+
+  it("and the surface stays hidden for a signed-out visitor when the flag is off", async () => {
+    const { env } = ctx({ ...CAP_ON, PLUS_SURFACE_ENABLED: "false" });
+    const res = await app.request("/api/me", {}, env as never);
+    const body = (await res.json()) as { plus: { surface: boolean } };
+    expect(body.plus.surface).toBe(false);
   });
 });
