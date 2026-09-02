@@ -263,14 +263,21 @@ test.describe("Plus sheet states", () => {
   test("4b. restore against an EXPIRED session says sign in, and the sheet survives", async ({
     page,
   }) => {
-    // /api/me omits the plus block entirely when there is no session. Publishing
-    // that null would trip the sheet's own enabled gate and make it disappear
-    // mid-click — a paid feature vanishing with no message.
+    // An expired session is `user: null` — and the plus block is STILL THERE,
+    // because REVIEW S18 made it unconditional (the surface flag is a property
+    // of the deploy, not of a user). Publishing that block would tell someone
+    // whose session lapsed that they do not own Plus, and would drop their
+    // layer cap to the signed-out value on the way.
+    //
+    // This test used to simulate the lapse with `delete body.plus`, which was
+    // the shape BEFORE S18. That mock kept passing while the real thing broke:
+    // it was asserting against a contract the worker had stopped honouring.
+    // Deleting `user` is what an expired session actually looks like.
     let signedOut = false;
     await page.route("**/api/me", async (route) => {
       const res = await route.fetch();
       const body = (await res.json()) as Record<string, unknown>;
-      if (signedOut) delete body.plus;
+      if (signedOut) body.user = null;
       // `surface` too: it is what makes the Plus UI exist at all (REVIEW L1).
       else body.plus = { ...((body.plus ?? {}) as object), enabled: true, surface: true, publicCap: 10 };
       await route.fulfill({ response: res, json: body });

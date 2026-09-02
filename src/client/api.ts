@@ -426,10 +426,25 @@ export async function fetchCheckoutUrl(): Promise<string> {
  * Returns the fresh block and deliberately does NOT touch the `me` signal: a
  * transient failure here must not sign anybody out of the UI.
  */
+/**
+ * Re-read the Plus block. **Null means NO SESSION**, not "no entitlement".
+ *
+ * That contract is what `PlusSheet`'s Restore depends on, and REVIEW S18 broke
+ * it without touching this function: `/api/me` used to omit `plus` entirely for
+ * a signed-out caller, so a null fell out naturally. It now always sends a
+ * block — the surface flag is a property of the deploy, not of a user — so an
+ * expired session started coming back as a perfectly valid `active: false`
+ * block. Restore then told a signed-in-yesterday user they did not own Plus,
+ * and published a signed-out `layerCap` over theirs.
+ *
+ * So the null is derived from `user` now, which is what actually carries the
+ * answer, rather than from a field that happened to be absent.
+ */
 export async function refreshPlus(): Promise<PlusInfo | null> {
   const data = await request<MeResponse>("/api/me");
   if (data.csrf) csrfToken = data.csrf;
   if (data.turnstileSiteKey) turnstileSiteKey = data.turnstileSiteKey;
+  if (!data.user) return null;
   return parsePlus(data.plus);
 }
 

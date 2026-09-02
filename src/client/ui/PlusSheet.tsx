@@ -169,9 +169,11 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
     setBusy(true);
     try {
       const fresh = await refreshPlus();
-      // 🔴 /api/me omits the block ENTIRELY when there is no session (index.ts
-      // guards it on `user`), so a null here means the session expired — not
-      // "no entitlement". Publishing that null would trip this sheet's own
+      // 🔴 A null means THE SESSION IS GONE, not "no entitlement". It used to
+      // fall out of `/api/me` omitting the block for a signed-out caller;
+      // REVIEW S18 made the block unconditional (the surface flag belongs to
+      // the deploy, not to a user), so `refreshPlus` derives the null from
+      // `user` instead. The consequence if it did not: Publishing that null would trip this sheet's own
       // enabled gate and make it VANISH mid-click, leaving `me` still claiming
       // a session and the layer cap silently back at 3. Say what is true
       // instead, and leave the stale block for the next load to correct.
