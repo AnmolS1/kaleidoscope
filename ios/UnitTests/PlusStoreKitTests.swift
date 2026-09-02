@@ -63,6 +63,27 @@ final class PlusStoreKitTests: XCTestCase {
         try skipIfStoreKitTestingIsInoperative()
     }
 
+    /// Drain anything a PREVIOUS RUN left in StoreKit's queue.
+    ///
+    /// `session.clearTransactions()` in `setUpWithError` clears the TEST
+    /// SESSION, not StoreKit's own `Transaction.unfinished`, and an unfinished
+    /// transaction outlives the run that created it. So
+    /// `testAPurchaseBoundToAnotherAccountGetsItsOwnStateAndIsFinished` — which
+    /// asserts the count is 0 — passed on a freshly created simulator and
+    /// failed on its SECOND run, with a message ("left to re-deliver forever")
+    /// that points at the product code rather than at the fixture.
+    ///
+    /// Draining here makes every unfinished-count assertion mean "this test
+    /// left one behind", which is the thing worth knowing.
+    override func setUp() async throws {
+        try await super.setUp()
+        guard session != nil else { return } // skipped: nothing to drain
+        for await result in Transaction.unfinished
+        where productID(of: result) == PlusStore.productID {
+            if case .verified(let t) = result { await t.finish() }
+        }
+    }
+
     /// ⚠️ **StoreKit Testing is inoperative on the iOS 26.5 simulator runtime**
     /// (Xcode 26.6, Apple silicon). Every `SKTestSession` call fails
     /// `SKInternalErrorDomain Code=3`, `Product.products(for:)` returns an empty

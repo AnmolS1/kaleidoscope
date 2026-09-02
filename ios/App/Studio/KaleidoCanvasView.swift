@@ -472,9 +472,12 @@ final class KaleidoCanvasView: UIView {
 
         if let hover = hoverPoint {
             let radius = CGFloat(model.size) * (half / CGFloat(REFERENCE_HALF)) / 2
+            // The crane accent, matching the web, and the view scale so the ring
+            // stays 1pt on screen instead of thickening with the zoom (S19).
             KaleidoRenderer.drawHoverRing(at: hover, radius: radius, sym: model.activeLayer.sym,
                                           in: ctx, size: bounds.size, half: half,
-                                          color: Self.accent(model.background))
+                                          color: UIColor(Blueprint.crane),
+                                          viewScale: model.viewScale)
         }
         ctx.restoreGState()
     }

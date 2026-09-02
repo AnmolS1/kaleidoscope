@@ -218,17 +218,30 @@ enum KaleidoRenderer {
 
     /// The Pencil hover ring, stamped at every image of `sym` so the user can see
     /// where the brush will land in each wedge, not just under the tip.
+    ///
+    /// Three things here were wrong against the web and DESIGN.md (S19):
+    ///
+    /// 1. The PRIMARY image — the one actually under the pen — is opaque, and
+    ///    only its reflections are at 55%. Every ring used to be 55%, which
+    ///    removed the single thing the ring exists to tell you: which of the N
+    ///    marks is the one you are making.
+    /// 2. The colour is the crane accent, as on the web, not black/white.
+    /// 3. `viewScale` divides the line width. This is drawn INSIDE the view
+    ///    transform, so a 1pt line rendered 8pt thick at 8x zoom — the ring got
+    ///    heavier the further you zoomed in, which is exactly backwards.
     static func drawHoverRing(at point: CGPoint, radius: CGFloat, sym: Symmetry,
                               in ctx: CGContext, size: CGSize, half: CGFloat,
-                              color: UIColor) {
+                              color: UIColor, viewScale: CGFloat = 1) {
         let cx = size.width / 2
         let cy = size.height / 2
         let r = max(2, radius)
         ctx.saveGState()
-        ctx.setStrokeColor(color.cgColor)
-        ctx.setLineWidth(1)
+        // 1pt ON SCREEN whatever the zoom.
+        ctx.setLineWidth(1 / max(0.0001, viewScale))
         for image in symmetryImages(segments: sym.segments, mirror: sym.mirror) {
             ctx.saveGState()
+            // `index == 0` is the image under the pen; the rest are reflections.
+            ctx.setStrokeColor(color.withAlphaComponent(image.index == 0 ? 1 : 0.55).cgColor)
             ctx.translateBy(x: cx, y: cy)
             ctx.rotate(by: CGFloat(image.angle))
             if image.mirror { ctx.scaleBy(x: 1, y: -1) }
