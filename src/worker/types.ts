@@ -43,6 +43,7 @@ export interface Env {
   /** Master switch. While false there is NO cap anywhere — shipping a cap with
    *  no way to pay to lift it would just be a broken product. */
   PLUS_ENABLED?: string;
+  PLUS_SURFACE_ENABLED?: string; // show the Plus UI (paywall/Restore) — NOT the caps
   PLUS_ALLOW_SANDBOX?: string; // accept StoreKit Sandbox receipts (review window)
   PLUS_ALLOW_TEST?: string; // accept Lemon Squeezy test-mode webhooks
   PLUS_PRODUCT_ID?: string; // "dev.ponderance.kaleidoscope.plus"

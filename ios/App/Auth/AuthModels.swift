@@ -35,7 +35,15 @@ struct PlusState: Codable, Equatable {
     let publicCount: Int
     let publicCap: Int?
     let layerCap: Int
+    /// Caps are ENFORCED. Governs the layer cap and the public-wall cap.
     let enabled: Bool
+    /// The Plus UI is VISIBLE — paywall, Restore, upsell.
+    ///
+    /// Optional on purpose: a worker that predates the split sends no `surface`,
+    /// and a non-optional field would make the WHOLE `PlusState` fail to decode,
+    /// taking the cap numbers down with it. Absent decodes to nil and
+    /// `surfaceVisible` reads that as hidden, which is the safe direction.
+    let surface: Bool?
 
     /// The public wall is full. Three conditions, all required.
     ///

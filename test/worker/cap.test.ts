@@ -522,6 +522,11 @@ describe("free public cap — PATCH publish path", () => {
   });
 });
 
+// `surface` is asserted explicitly in each whole-block comparison below.
+// These use `toEqual`, so adding a field to the contract SHOULD break them —
+// that is what makes them contract tests rather than spot checks. It reads
+// false here because these fixtures do not set PLUS_SURFACE_ENABLED; the flag's
+// own behaviour lives in plus-flags.test.ts.
 describe("/api/me plus block", () => {
   it("reports the live count and cap while enforced", async () => {
     const { DB, env } = ctx(CAP_ON);
@@ -535,6 +540,7 @@ describe("/api/me plus block", () => {
       publicCount: 4,
       publicCap: 10,
       layerCap: 3,
+      surface: false,
       enabled: true,
     });
   });
@@ -550,6 +556,7 @@ describe("/api/me plus block", () => {
       publicCount: 0,
       publicCap: null,
       layerCap: 8,
+      surface: false,
       enabled: false,
     });
   });
@@ -566,6 +573,7 @@ describe("/api/me plus block", () => {
       publicCount: 0,
       publicCap: null,
       layerCap: 8,
+      surface: false,
       enabled: true,
     });
   });

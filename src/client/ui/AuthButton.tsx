@@ -27,7 +27,9 @@ async function doLogout() {
  */
 function PlusMenuItem({ onNavigate }: { onNavigate?: () => void }) {
   const plus = S.plus.value;
-  if (!plus?.enabled) return null;
+  // The SURFACE flag, not the enforcement flag: the Plus row has to exist
+  // for App Review before the caps are switched on.
+  if (!plus?.surface) return null;
   return (
     <button
       role="menuitem"

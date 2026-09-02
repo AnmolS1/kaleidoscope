@@ -32,11 +32,37 @@
     // that flips the flag; the placeholder below is already a valid integer
     // because the parse fails CLOSED (NaN → 500), so a non-integer placeholder
     // would take saves down the moment the flag flipped.
-    "CAP_EPOCH": "0",
+    //
+    // 🔴 The placeholder is FAR FUTURE (2100-01-01), not 0.
+    //
+    // `0` parses fine, so it is the one value that defeats the fail-closed
+    // reasoning above: `capPolicy` returns {enforced:true, cap:10, epoch:0} and
+    // migration 0004 backfilled `published_at = created_at` for every existing
+    // public row — so the instant the flag flips, every user with ten public
+    // pieces is retroactively over cap, new public saves land unlisted, and
+    // PATCH → public 402s. A far-future epoch fails the other way: nothing
+    // counts yet, which is recoverable and invisible instead of a support
+    // incident. `capEpochShipsWithFlag` in test/worker/config.test.ts refuses a
+    // deploy where PLUS_ENABLED is true and this is still the placeholder.
+    "CAP_EPOCH": "4102444800000",
     "FREE_PUBLIC_CAP": "10",
     "FREE_LAYER_CAP": "3",
     "PLUS_LAYER_CAP": "8",
+    // TWO FLAGS, deliberately. PLUS_ENABLED governs ENFORCEMENT (the layer cap
+    // and the public-wall cap). PLUS_SURFACE_ENABLED governs whether the Plus
+    // UI — paywall, Restore, upsell — is VISIBLE at all.
+    //
+    // They were one flag, and that made the app unreviewable: with it false,
+    // App Review opens the app and finds no Plus row, no paywall, no Restore
+    // and no product, which is a Guideline 2.1 rejection of the binary as well
+    // as the IAP. Turning the single flag on instead would have imposed the web
+    // cap while Lemon Squeezy still had nothing to sell.
+    //
+    // So the review deploy runs SURFACE=true, ENABLED=false: the purchase is
+    // findable and buyable, and nobody loses a layer or a public slot until the
+    // caps are deliberately switched on with a real CAP_EPOCH.
     "PLUS_ENABLED": "false",
+    "PLUS_SURFACE_ENABLED": "false",
     "PLUS_ALLOW_SANDBOX": "false",
     "PLUS_ALLOW_TEST": "false",
     "PLUS_PRODUCT_ID": "dev.ponderance.kaleidoscope.plus",

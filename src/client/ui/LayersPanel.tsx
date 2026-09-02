@@ -267,6 +267,7 @@ export function LayersPanel({ onOpenSym }: { onOpenSym?: () => void }) {
 
   const atCap = stack.length >= cap;
   const free = cap < MAX_LAYERS;
+  const plusSurface = !!S.plus.value?.surface;
 
   const commitRename = (id: string, value: string) => {
     const name = value.trim().slice(0, MAX_LAYER_NAME);
@@ -525,17 +526,31 @@ export function LayersPanel({ onOpenSym }: { onOpenSym?: () => void }) {
         </div>
 
         {/* The footnote only appears AT the cap, and the free variant carries the
-            way out — the cap is a current count, not a lifetime quota. */}
+            way out — the cap is a current count, not a lifetime quota.
+
+            The way out is only offered when the Plus SURFACE is actually
+            available. `PlusSheet` refuses to render without it, so an
+            ungated link is a button that visibly does nothing — which is
+            exactly what a user at the cap would click. That state is
+            reachable: `/api/me` degrades to a plus block with the surface
+            off when CAP_EPOCH is malformed, and the free layer cap still
+            applies. Offer the count without the link instead. */}
         {atCap ? (
           <p class="layer-note mono">
             {free ? (
-              <>
-                Layers: {stack.length} of {cap} ·{" "}
-                <button class="link-inline" onClick={() => (S.plusOpen.value = true)}>
-                  Kaleidoscope Plus
-                </button>{" "}
-                unlocks {MAX_LAYERS}
-              </>
+              plusSurface ? (
+                <>
+                  Layers: {stack.length} of {cap} ·{" "}
+                  <button class="link-inline" onClick={() => (S.plusOpen.value = true)}>
+                    Kaleidoscope Plus
+                  </button>{" "}
+                  unlocks {MAX_LAYERS}
+                </>
+              ) : (
+                <>
+                  Layers: {stack.length} of {cap}
+                </>
+              )
             ) : (
               <>All {cap} layers in use</>
             )}

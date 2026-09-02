@@ -86,9 +86,11 @@ struct YouView: View {
         }
     }
 
-    /// Hidden entirely while `plus.enabled` is false — a nil `plus` block (no
-    /// `/api/me` yet, a failed call, an older Worker) counts as false, so the
-    /// gate fails CLOSED and an unapproved IAP is invisible.
+    /// Gated on the SURFACE flag (`PLUS_SURFACE_ENABLED`), not on cap
+    /// enforcement: App Review has to be able to FIND the purchase before the
+    /// caps that motivate it are switched on. A nil `plus` block (no `/api/me`
+    /// yet, a failed call, an older Worker) still counts as false, so the gate
+    /// fails CLOSED and an unapproved IAP stays invisible.
     @ViewBuilder
     private var plusSection: some View {
         if PlusSheetInput.surfaceVisible(auth.plus) {

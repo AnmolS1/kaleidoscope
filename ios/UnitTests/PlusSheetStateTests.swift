@@ -84,9 +84,39 @@ final class PlusSheetStateTests: XCTestCase {
         // `YouView` with nothing behind it: deleting that line turned an
         // unapproved IAP on and nothing went red.
         XCTAssertFalse(PlusSheetInput.surfaceVisible(nil))
-        XCTAssertFalse(PlusSheetInput.surfaceVisible(plusState(active: true, enabled: false)))
-        XCTAssertTrue(PlusSheetInput.surfaceVisible(plusState(active: false, enabled: true)))
-        XCTAssertTrue(PlusSheetInput.surfaceVisible(plusState(active: true, enabled: true)))
+        XCTAssertFalse(PlusSheetInput.surfaceVisible(plusState(active: true, surface: false)))
+        XCTAssertTrue(PlusSheetInput.surfaceVisible(plusState(active: false, surface: true)))
+        XCTAssertTrue(PlusSheetInput.surfaceVisible(plusState(active: true, surface: true)))
+    }
+
+    /// REVIEW.md L1: the surface and the caps are SEPARATE flags now.
+    ///
+    /// The reviewable state is exactly the one this asserts — surface on, caps
+    /// off. When they were one field, shipping the caps off (which is mandatory
+    /// until the IAP is approved) also hid the paywall, the Restore button and
+    /// the product, which rejects the binary under Guideline 2.1 rather than
+    /// just the purchase.
+    func testTheSurfaceIsVisibleWhileTheCapsAreStillOff() {
+        let reviewWindow = plusState(active: false, enabled: false, surface: true)
+        XCTAssertTrue(PlusSheetInput.surfaceVisible(reviewWindow),
+                      "App Review must be able to find the purchase before caps are enforced")
+        XCTAssertFalse(PlusSheetInput.owned(from: reviewWindow))
+
+        // The reverse is expressible too, so neither flag implies the other.
+        let capsOnlyNoUI = plusState(active: false, enabled: true, surface: false)
+        XCTAssertFalse(PlusSheetInput.surfaceVisible(capsOnlyNoUI))
+    }
+
+    /// A Worker that predates the split sends no `surface` at all. That must
+    /// read as hidden — and must not stop the REST of the block decoding, or
+    /// the cap numbers vanish with it.
+    func testAnOlderWorkerWithNoSurfaceFieldFailsClosed() throws {
+        let json = Data("{\"active\":true,\"sources\":[\"apple\"],\"publicCount\":3,\"publicCap\":10,\"layerCap\":8,\"enabled\":true}".utf8)
+        let decoded = try JSONDecoder().decode(PlusState.self, from: json)
+        XCTAssertNil(decoded.surface)
+        XCTAssertFalse(PlusSheetInput.surfaceVisible(decoded), "absent surface must not open a paywall")
+        XCTAssertEqual(decoded.layerCap, 8, "the rest of the block must still decode")
+        XCTAssertTrue(PlusSheetInput.owned(from: decoded), "and ownership is unaffected")
     }
 
     func testTheTwoFlagFunctionsPointOppositeWays() {
@@ -236,8 +266,9 @@ final class PlusSheetStateTests: XCTestCase {
 
     // MARK: helper
 
-    private func plusState(active: Bool, enabled: Bool = true) -> PlusState {
+    private func plusState(active: Bool, enabled: Bool = true, surface: Bool? = nil) -> PlusState {
         PlusState(active: active, sources: active ? ["apple"] : [],
-                  publicCount: 3, publicCap: 10, layerCap: active ? 8 : 3, enabled: enabled)
+                  publicCount: 3, publicCap: 10, layerCap: active ? 8 : 3,
+                  enabled: enabled, surface: surface ?? enabled)
     }
 }

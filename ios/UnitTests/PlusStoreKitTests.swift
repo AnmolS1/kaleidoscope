@@ -482,7 +482,8 @@ final class PlusStoreKitTests: XCTestCase {
 
     private func plusState(active: Bool) -> PlusState {
         PlusState(active: active, sources: active ? ["apple"] : [],
-                  publicCount: 3, publicCap: 10, layerCap: active ? 8 : 3, enabled: true)
+                  publicCount: 3, publicCap: 10, layerCap: active ? 8 : 3,
+                  enabled: true, surface: true)
     }
 
     /// A `BillingClient` whose `URLSession` answers from a stub, so the whole

@@ -200,7 +200,8 @@ final class AuthErrorWiringTests: XCTestCase {
 
     func testCapReachedNeedsAllThreeConditions() {
         func plus(enabled: Bool, count: Int, cap: Int?) -> PlusState {
-            PlusState(active: false, sources: [], publicCount: count, publicCap: cap, layerCap: 3, enabled: enabled)
+            PlusState(active: false, sources: [], publicCount: count, publicCap: cap, layerCap: 3,
+                      enabled: enabled, surface: enabled)
         }
         XCTAssertTrue(plus(enabled: true, count: 10, cap: 10).capReached)
         XCTAssertTrue(plus(enabled: true, count: 11, cap: 10).capReached)

@@ -112,7 +112,18 @@ struct PlusSheetInput: Equatable {
     /// one-line functions on the same field pointing different ways is exactly
     /// the pair that gets conflated, so they live next to each other and both are
     /// table-tested.
-    static func surfaceVisible(_ plus: PlusState?) -> Bool { plus?.enabled ?? false }
+    /// Reads the SURFACE flag, not the enforcement flag.
+    ///
+    /// These were the same flag, and that made the app unreviewable: with caps
+    /// off — which is how it must ship until the IAP is approved — App Review
+    /// opened the app and found no Plus row, no paywall, no Restore and no
+    /// product. That is a Guideline 2.1 rejection of the BINARY, not just of the
+    /// IAP, and `PLUS_ALLOW_SANDBOX` cannot help because it relaxes checking for
+    /// a receipt the app can never produce.
+    ///
+    /// Still fails closed: nil `plus` (signed out, or `/api/me` not yet in) and
+    /// a worker that sends no `surface` both read as hidden.
+    static func surfaceVisible(_ plus: PlusState?) -> Bool { plus?.surface ?? false }
 
     /// 🔴 The one admissible source of the `owned` bit.
     ///

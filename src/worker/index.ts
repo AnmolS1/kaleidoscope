@@ -22,7 +22,17 @@ interface PlusState {
   publicCount: number;
   publicCap: number | null;
   layerCap: number;
+  /** Caps are ENFORCED (`PLUS_ENABLED`). Governs the layer cap and public cap. */
   enabled: boolean;
+  /**
+   * The Plus UI is VISIBLE (`PLUS_SURFACE_ENABLED`) — paywall, Restore, upsell.
+   *
+   * Separate from `enabled` because App Review has to be able to FIND the
+   * purchase before the caps that motivate it are switched on. One flag meant
+   * the reviewer saw no Plus row, no paywall, no Restore and no product, which
+   * rejects the binary under Guideline 2.1, not just the IAP.
+   */
+  surface: boolean;
 }
 
 const freeLayerCap = (env: Env) => envInt(env.FREE_LAYER_CAP, 3);
@@ -89,6 +99,11 @@ app.get("/api/me", async (c) => {
         sources,
         publicCount: 0,
         publicCap: null,
+        // The surface survives a cap misconfiguration: it is governed by its own
+        // flag and does not depend on CAP_EPOCH parsing. Hiding the paywall
+        // because the cap is broken would take Restore down with it — and a user
+        // who has already paid still needs to restore.
+        surface: envFlag(c.env.PLUS_SURFACE_ENABLED),
         // PLUS_LAYER_CAP may be the malformed var; envInt hands back NaN for a
         // set-but-unparseable value, and NaN would serialize as null and break
         // the client's layer gate.
@@ -112,6 +127,7 @@ app.get("/api/me", async (c) => {
       publicCap: policy.enforced ? policy.cap : null,
       layerCap: !enabled || active ? plusLayerCap(c.env) : freeLayerCap(c.env),
       enabled,
+      surface: envFlag(c.env.PLUS_SURFACE_ENABLED),
     };
   }
 

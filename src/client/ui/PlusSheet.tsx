@@ -70,7 +70,9 @@ export function PlusSheet() {
   // Read both signals BEFORE the early return so this component subscribes to
   // them either way — and then fail closed on anything that is not an explicit
   // `enabled: true`.
-  if (!open || !plus || !plus.enabled) return null;
+  // Gated on the SURFACE flag so the paywall (and Restore) can be found
+  // while caps are still off. See the two-flag note in wrangler.jsonc.
+  if (!open || !plus || !plus.surface) return null;
   return <PlusSheetInner plus={plus} />;
 }
 

@@ -21,7 +21,15 @@ export interface PlusInfo {
   publicCount: number;
   publicCap: number | null;
   layerCap: number;
+  /** Caps are ENFORCED. Governs the layer cap and the public-wall cap. */
   enabled: boolean;
+  /**
+   * The Plus UI is VISIBLE — paywall, Restore, upsell.
+   *
+   * Optional so an older worker (which sends no `surface`) fails CLOSED to
+   * hidden rather than throwing or defaulting a paywall into existence.
+   */
+  surface?: boolean;
 }
 
 export interface MeResponse {
