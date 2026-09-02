@@ -49,6 +49,7 @@ const BILLING_RULE = { limit: 10, windowSec: 3600 };
 
 interface EntitlementRow {
   user_id: string | null;
+  revoked_at: number | null;
 }
 
 function findEntitlement(
@@ -56,13 +57,22 @@ function findEntitlement(
   source: PlusSource,
   externalId: string,
 ): Promise<EntitlementRow | null> {
-  return env.DB.prepare("SELECT user_id FROM entitlements WHERE source = ? AND external_id = ?")
+  return env.DB.prepare(
+    "SELECT user_id, revoked_at FROM entitlements WHERE source = ? AND external_id = ?",
+  )
     .bind(source, externalId)
     .first<EntitlementRow>();
 }
 
 /** Insert-or-update by the (source, external_id) primary key. Idempotent: a
- *  replayed purchase re-writes the same row rather than adding a second. */
+ *  replayed purchase re-writes the same row rather than adding a second.
+ *
+ *  🔴 `revoked_at` is deliberately NOT in the DO UPDATE list. A refunded row
+ *  must stay refunded even if the same purchase is reported again — which both
+ *  providers make easy: Apple's device still holds a JWS signed before the
+ *  refund, and Lemon Squeezy retries `order_created` for three days and offers
+ *  a manual resend. Clearing the tombstone here would re-grant on a replay and
+ *  undo the whole point of having one. */
 async function upsertEntitlement(
   env: Env,
   e: { source: PlusSource; externalId: string; userId: string; environment: string | null },
@@ -78,16 +88,31 @@ async function upsertEntitlement(
     .run();
 }
 
-/** Remove an entitlement (refund/revoke). Returns whether a row went away. */
-async function deleteEntitlement(
+/** Whether this purchase has already been refunded/revoked. */
+async function isRevoked(env: Env, source: PlusSource, externalId: string): Promise<boolean> {
+  const row = await env.DB.prepare(
+    "SELECT revoked_at FROM entitlements WHERE source = ? AND external_id = ?",
+  )
+    .bind(source, externalId)
+    .first<{ revoked_at: number | null }>();
+  return !!row && row.revoked_at !== null;
+}
+
+/** Tombstone an entitlement (refund/revoke). Returns whether a row changed.
+ *
+ *  This used to DELETE. Deleting left no memory that the purchase had been
+ *  revoked, so replaying the credential the client still holds re-granted it —
+ *  a repeatable "refund and keep it" for both providers. Keeping the row is
+ *  also what lets support see what happened. */
+async function revokeEntitlement(
   env: Env,
   source: PlusSource,
   externalId: string,
 ): Promise<boolean> {
   const res = await env.DB.prepare(
-    "DELETE FROM entitlements WHERE source = ? AND external_id = ?",
+    "UPDATE entitlements SET revoked_at = ? WHERE source = ? AND external_id = ? AND revoked_at IS NULL",
   )
-    .bind(source, externalId)
+    .bind(Date.now(), source, externalId)
     .run();
   return (res.meta?.changes ?? 0) > 0;
 }
@@ -149,6 +174,15 @@ billing.post("/apple", requireAuth, requireCsrf, async (c) => {
   const existing = await findEntitlement(c.env, "apple", check.originalTransactionId);
   if (existing && existing.user_id && existing.user_id !== user.id) {
     return c.json({ error: "bound_elsewhere" }, 409);
+  }
+
+  // A refunded purchase stays refunded (REVIEW M1).
+  //
+  // The device holds a JWS that was signed BEFORE the refund, so it carries no
+  // `revocationDate` and passes verification perfectly — buy, keep the JWS,
+  // refund, re-post it. Verification cannot catch this; only the tombstone can.
+  if (existing && existing.revoked_at !== null) {
+    return c.json({ error: "revoked" }, 409);
   }
 
   await upsertEntitlement(c.env, {
@@ -218,7 +252,7 @@ billing.post("/apple/notifications", async (c) => {
     return c.json({ ok: true, ignored: true });
   }
 
-  const removed = await deleteEntitlement(c.env, "apple", originalTransactionId);
+  const removed = await revokeEntitlement(c.env, "apple", originalTransactionId);
   return c.json({ ok: true, removed });
 });
 
@@ -259,7 +293,7 @@ billing.post("/lemonsqueezy", async (c) => {
 
   if (event === "order_refunded") {
     if (!orderId) return c.json({ ok: true, ignored: true, reason: "missing_order_id" });
-    const removed = await deleteEntitlement(c.env, "lemonsqueezy", orderId);
+    const removed = await revokeEntitlement(c.env, "lemonsqueezy", orderId);
     return c.json({ ok: true, removed });
   }
 
@@ -276,6 +310,15 @@ billing.post("/lemonsqueezy", async (c) => {
   // LS would then retry forever; check first and answer cleanly instead.
   if (!(await getUserById(c.env, check.userId))) {
     return c.json({ ok: true, ignored: true, reason: "unknown_user" });
+  }
+
+  // A refunded order stays refunded (REVIEW M2). LS retries `order_created` for
+  // up to three days and the dashboard offers a manual resend; the retry is
+  // byte-identical and correctly signed, so nothing upstream distinguishes it
+  // from the original. 200 rather than an error code, because a non-2xx here
+  // makes LS retry the thing we are declining.
+  if (await isRevoked(c.env, "lemonsqueezy", check.orderId)) {
+    return c.json({ ok: true, ignored: true, reason: "revoked" });
   }
 
   await upsertEntitlement(c.env, {

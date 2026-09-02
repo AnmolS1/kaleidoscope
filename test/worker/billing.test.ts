@@ -23,6 +23,7 @@ import * as x509 from "@peculiar/x509";
 import { CompactSign } from "jose";
 import app from "../../src/worker/index";
 import { makeD1, makeKV, makeEnv, seedUser, seedSession, bearer } from "./helpers";
+import { hasPlus, plusSources } from "../../src/worker/lib/db";
 
 x509.cryptoProvider.set(crypto as Crypto);
 
@@ -198,6 +199,13 @@ function ctx(over: Record<string, unknown> = {}) {
 /** Every entitlement row, for "did anything get written?" assertions. */
 function rows(DB: ReturnType<typeof makeD1>) {
   return DB._db.prepare("SELECT * FROM entitlements").all() as Record<string, unknown>[];
+}
+
+/** Rows that still grant Plus: present AND not tombstoned. A refund now marks
+ *  the row instead of deleting it, so `rows(DB)` alone no longer distinguishes
+ *  "refunded" from "still valid" — which is the whole point of the tombstone. */
+function liveRows(DB: ReturnType<typeof makeD1>): Record<string, unknown>[] {
+  return rows(DB).filter((r) => r.revoked_at === null || r.revoked_at === undefined);
 }
 
 const postApple = (env: unknown, jws: unknown, sid = "s1") =>
@@ -603,7 +611,10 @@ describe("POST /api/billing/apple/notifications", () => {
     const res = await postNotification(env, "OUTER");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, removed: true });
-    expect(rows(DB)).toHaveLength(0);
+    // Tombstoned, not deleted: the row survives so the refund cannot be undone
+    // by replaying the JWS the device still holds, and support can still see it.
+    expect(rows(DB)).toHaveLength(1);
+    expect(liveRows(DB)).toHaveLength(0);
   });
 
   it("REVOKE removes the row", async () => {
@@ -611,7 +622,7 @@ describe("POST /api/billing/apple/notifications", () => {
     seedEnt(DB);
     stubNested(envelope("REVOKE"), validTx({ revocationDate: 1758000000000 }));
     expect((await postNotification(env, "OUTER")).status).toBe(200);
-    expect(rows(DB)).toHaveLength(0);
+    expect(liveRows(DB)).toHaveLength(0);
   });
 
   it("CONTROL: an unrelated notification type leaves the row alone", async () => {
@@ -687,7 +698,7 @@ describe("POST /api/billing/apple/notifications", () => {
     stubNested(envelope("REFUND"), validTx({ revocationDate: 1 }));
     // No Authorization, no Cookie, no X-CSRF-Token anywhere in postNotification.
     expect((await postNotification(env, "OUTER")).status).toBe(200);
-    expect(rows(DB)).toHaveLength(0);
+    expect(liveRows(DB)).toHaveLength(0);
   });
 
   it("400s a body with no signedPayload", async () => {
@@ -933,7 +944,10 @@ describe("POST /api/billing/lemonsqueezy — order checks", () => {
     const res = await postLs(env, JSON.stringify(lsOrder({ meta: { event_name: "order_refunded" } })));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, removed: true });
-    expect(rows(DB)).toHaveLength(0);
+    // Tombstoned, not deleted: the row survives so the refund cannot be undone
+    // by replaying the JWS the device still holds, and support can still see it.
+    expect(rows(DB)).toHaveLength(1);
+    expect(liveRows(DB)).toHaveLength(0);
   });
 
   it("an UNSIGNED refund cannot remove a row", async () => {
@@ -950,7 +964,9 @@ describe("POST /api/billing/lemonsqueezy — order checks", () => {
     await postLs(env, JSON.stringify(lsOrder({ id: "ord_2002", meta: { custom_data: { user_id: "u2" } } })));
     expect(rows(DB)).toHaveLength(2);
     await postLs(env, JSON.stringify(lsOrder({ meta: { event_name: "order_refunded" } })));
-    const r = rows(DB);
+    // Both rows remain; only the refunded one is tombstoned.
+    expect(rows(DB)).toHaveLength(2);
+    const r = liveRows(DB);
     expect(r).toHaveLength(1);
     expect(r[0]!.external_id).toBe("ord_2002");
   });
@@ -1087,5 +1103,96 @@ describe("route mounting", () => {
     }
     // …and a genuinely unknown billing path still 404s.
     expect((await app.request("/api/billing/nope", {}, env as never)).status).toBe(404);
+  });
+});
+
+// ==========================================================================
+// REVIEW.md M1, M2, M3 — refund/replay, and the Sandbox entitlement that never
+// expired. Each test performs the ATTACK, not just the fix's happy path.
+// ==========================================================================
+
+function seedRow(
+  DB: ReturnType<typeof makeD1>,
+  o: { source?: string; externalId?: string; environment?: string | null } = {},
+) {
+  DB._db
+    .prepare(
+      "INSERT INTO entitlements (source, external_id, user_id, product, environment, granted_at)"
+        + " VALUES (?, ?, 'u1', 'plus', ?, 1)",
+    )
+    .run(o.source ?? "apple", o.externalId ?? "2000000900000001", o.environment ?? "Production");
+}
+
+describe("a refunded purchase cannot be replayed back into existence", () => {
+  // M1. The device holds a JWS signed BEFORE the refund. It carries no
+  // `revocationDate`, so verification passes on its own terms — nothing about
+  // the credential is wrong. Only a server-side memory of the refund can stop
+  // it, and deleting the row destroyed exactly that.
+  it("Apple: buy → refund → re-POST the saved JWS is refused, and Plus stays gone", async () => {
+    const { DB, env } = ctx();
+    seedRow(DB);
+    expect(await hasPlus(env as never, "u1")).toBe(true);
+
+    H.stub = async (jws: string) =>
+      jws === "INNER"
+        ? validTx({ revocationDate: 1758000000000 })
+        : { notificationType: "REFUND", data: { signedTransactionInfo: "INNER" } };
+    expect((await postNotification(env, "OUTER")).status).toBe(200);
+    expect(await hasPlus(env as never, "u1")).toBe(false);
+
+    // The replay: the JWS the device kept, unchanged and still perfectly valid.
+    H.stub = async () => validTx();
+    const replay = await postApple(env, "SAVED-BEFORE-THE-REFUND");
+    expect(replay.status).toBe(409);
+    expect(await replay.json()).toEqual({ error: "revoked" });
+    expect(await hasPlus(env as never, "u1")).toBe(false);
+  });
+
+  // M2. LS retries `order_created` for up to three days and the dashboard has a
+  // manual resend. The retry is byte-identical with a valid signature, so the
+  // tombstone is the only thing that can tell it from the original.
+  it("Lemon Squeezy: order_created → order_refunded → the retried order_created", async () => {
+    const { DB, env } = lsCtx();
+    const created = JSON.stringify(lsOrder());
+
+    expect((await postLs(env, created)).status).toBe(200);
+    expect(await hasPlus(env as never, "u1")).toBe(true);
+
+    const refunded = JSON.stringify(lsOrder({ meta: { event_name: "order_refunded" } }));
+    expect((await postLs(env, refunded)).status).toBe(200);
+    expect(await hasPlus(env as never, "u1")).toBe(false);
+
+    const retry = await postLs(env, created); // byte-identical replay
+    expect(retry.status).toBe(200); // 200 on purpose: a non-2xx makes LS retry
+    expect(await retry.json()).toEqual({ ok: true, ignored: true, reason: "revoked" });
+    expect(await hasPlus(env as never, "u1")).toBe(false);
+    expect(liveRows(DB)).toHaveLength(0);
+  });
+});
+
+describe("a Sandbox entitlement lasts exactly as long as we allow Sandbox", () => {
+  // M3. `environment` was written to the row and never read again, so a free
+  // Sandbox purchase made during the review window was worth real money
+  // forever, invisible to every query in the codebase.
+  it("counts while PLUS_ALLOW_SANDBOX is on — the reviewer must actually get Plus", async () => {
+    const { DB, env } = ctx({ PLUS_ALLOW_SANDBOX: "true" });
+    seedRow(DB, { externalId: "sandbox-1", environment: "Sandbox" });
+    expect(await hasPlus(env as never, "u1")).toBe(true);
+    expect(await plusSources(env as never, "u1")).toEqual(["apple"]);
+  });
+
+  it("stops counting the moment the flag goes off — no cleanup deploy needed", async () => {
+    const { DB, env } = ctx({ PLUS_ALLOW_SANDBOX: "false" });
+    seedRow(DB, { externalId: "sandbox-1", environment: "Sandbox" });
+    expect(await hasPlus(env as never, "u1")).toBe(false);
+    expect(await plusSources(env as never, "u1")).toEqual([]);
+  });
+
+  it("CONTROL: a Production row is unaffected by the flag either way", async () => {
+    for (const allow of ["true", "false"]) {
+      const { DB, env } = ctx({ PLUS_ALLOW_SANDBOX: allow });
+      seedRow(DB);
+      expect(await hasPlus(env as never, "u1")).toBe(true);
+    }
   });
 });

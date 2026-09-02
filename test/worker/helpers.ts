@@ -2,7 +2,7 @@
 // in-memory SQLite (node:sqlite) with the actual migrations applied, so queries,
 // constraints, and FK cascades behave exactly as in production.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -10,13 +10,24 @@ import { DatabaseSync } from "node:sqlite";
 const MIG_DIR = join(process.cwd(), "migrations");
 const migration = (f: string) => readFileSync(join(MIG_DIR, f), "utf8");
 
+/**
+ * Every migration on disk, in order.
+ *
+ * READ FROM THE DIRECTORY, not written out by hand. The list used to be four
+ * hardcoded `db.exec` lines, which meant a new migration was absent from every
+ * worker test until someone remembered — the tests would keep passing against
+ * the OLD schema and prove nothing about the new one. That is a silent gap by
+ * construction: adding a column and forgetting the line looks identical to
+ * adding a column that works.
+ */
+const MIGRATIONS = readdirSync(MIG_DIR)
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
+
 /** A D1Database-compatible shim over node:sqlite. */
 export function makeD1(opts: { foreignKeys?: boolean } = {}) {
   const db = new DatabaseSync(":memory:");
-  db.exec(migration("0001_init.sql"));
-  db.exec(migration("0002_apple_auth.sql"));
-  db.exec(migration("0003_alt_text.sql"));
-  db.exec(migration("0004_v12.sql"));
+  for (const f of MIGRATIONS) db.exec(migration(f));
   if (opts.foreignKeys) db.exec("PRAGMA foreign_keys = ON;");
 
   function prepare(sql: string) {

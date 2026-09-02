@@ -1,5 +1,6 @@
 // D1 data access for users + artworks. Keyset pagination on (created_at, id).
 
+import { envFlag } from "./validate";
 import type { Env, User, Artwork, Visibility, PlusSource } from "../types";
 import { newUserId } from "./ids";
 
@@ -313,9 +314,40 @@ export async function setArtworkHash(
 // ---- entitlements --------------------------------------------------------
 
 /** Every Plus source this user holds. Empty means no entitlement. */
+/**
+ * The predicate that decides whether an entitlement row still counts.
+ *
+ * Two conditions, both of which were missing and each of which was a way to
+ * hold Plus you should not have:
+ *
+ *   `revoked_at IS NULL` — refunds tombstone rather than delete (REVIEW M1/M2),
+ *   so a refunded purchase stops counting and cannot be resurrected by
+ *   replaying the credential the client still holds.
+ *
+ *   the environment clause — a Sandbox purchase made during the review window
+ *   used to be indistinguishable from a real one FOREVER: `environment` was
+ *   written to the row and never read again (REVIEW M3).
+ *
+ * The Sandbox half is deliberately tied to `PLUS_ALLOW_SANDBOX` rather than
+ * rejected outright. The review's suggested fix — accept only Production —
+ * would break the review window it exists for: the reviewer buys in Sandbox, so
+ * an unconditional filter means their purchase unlocks nothing and the app is
+ * rejected for a purchase that "does not work". Tying it to the flag means
+ * Sandbox counts exactly while we have said it may, and every Sandbox row stops
+ * counting the moment the flag goes off — no cleanup deploy required, and no
+ * window where a free Sandbox purchase is worth real money.
+ */
+function liveEntitlement(env: Env): string {
+  return envFlag(env.PLUS_ALLOW_SANDBOX)
+    ? "revoked_at IS NULL"
+    : "revoked_at IS NULL AND (environment IS NULL OR environment = 'Production')";
+}
+
 export async function plusSources(env: Env, userId: string): Promise<PlusSource[]> {
   const { results } = await env.DB.prepare(
-    "SELECT DISTINCT source FROM entitlements WHERE user_id = ? AND product = 'plus' ORDER BY source",
+    `SELECT DISTINCT source FROM entitlements
+      WHERE user_id = ? AND product = 'plus' AND ${liveEntitlement(env)}
+      ORDER BY source`,
   )
     .bind(userId)
     .all<{ source: PlusSource }>();
@@ -325,7 +357,8 @@ export async function plusSources(env: Env, userId: string): Promise<PlusSource[
 /** Whether this user has Plus from any source. */
 export async function hasPlus(env: Env, userId: string): Promise<boolean> {
   const row = await env.DB.prepare(
-    "SELECT 1 AS one FROM entitlements WHERE user_id = ? AND product = 'plus' LIMIT 1",
+    `SELECT 1 AS one FROM entitlements
+      WHERE user_id = ? AND product = 'plus' AND ${liveEntitlement(env)} LIMIT 1`,
   )
     .bind(userId)
     .first<{ one: number }>();
