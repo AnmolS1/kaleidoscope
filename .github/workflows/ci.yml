@@ -34,6 +34,20 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+
+      # The Swift engine's parity test compares against
+      # ios/.../Fixtures/golden.json, which is GENERATED from src/shared/vector.ts.
+      # Change the web serializer without regenerating and the Swift test keeps
+      # comparing Swift to a snapshot of the old web behaviour — and passes while
+      # the two platforms hash the same drawing differently. That is not
+      # hypothetical: S16 and S17 shipped web-only and went a day undetected
+      # exactly this way. Regenerate here and fail on any diff.
+      - name: Golden fixtures are up to date with the web serializer
+        run: |
+          npx vite-node ios/tools/gen-engine-fixtures.ts
+          git diff --exit-code -- ios/KaleidoEngine/Tests/KaleidoEngineTests/Fixtures/golden.json \
+            || { echo "::error::golden.json is stale. Run: npx vite-node ios/tools/gen-engine-fixtures.ts"; exit 1; }
+
       - run: npm run build
 
       # Kept byte-identical to the same step in deploy.yml. Everything in it is

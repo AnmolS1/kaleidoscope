@@ -509,3 +509,8 @@ for (const f of v1Fixtures) console.log(`  v1 ${f.name}: ${f.hash.slice(0, 12)}â
 for (const f of v2Fixtures) {
   console.log(`  v2 ${f.name}: ${f.hash.slice(0, 12)}â€¦ flattened=${f.flattened === null ? "null" : "yes"}`);
 }
+
+// vite-node keeps its module runner alive, so without this the process writes
+// the file and then simply never exits. Harmless when a human runs it and
+// ctrl-Cs; a hung job that burns its whole timeout in CI.
+process.exit(0);
