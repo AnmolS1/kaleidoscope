@@ -204,9 +204,21 @@ const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? 
  * this"; everything here says "…and it is OUR app, OUR product, and THIS user".
  *
  * `allowSandbox` is the review-window switch (§2.3): App Review purchases run in
- * Sandbox, so during review either `PLUS_ALLOW_SANDBOX=true` or an admin account
- * is how a Sandbox receipt is accepted. It defaults to false, so the production
- * gate is what happens when nobody configures anything.
+ * Sandbox. It defaults to false, so the production gate is what happens when
+ * nobody configures anything.
+ *
+ * 🔴 THE ADMIN HALF OF `sandboxAllowed` ONLY GETS YOU A ROW. It is a gate on
+ * WRITING the entitlement; the read side (`liveEntitlement` in db.ts) is
+ * role-blind and, with `PLUS_ALLOW_SANDBOX=false`, excludes every non-Production
+ * row from `hasPlus`. Measured: an admin's Sandbox entitlement reads `hasPlus`
+ * false with the flag off and true with it on. So an admin testing a Sandbox
+ * purchase without the flag sees a 200, a row in `entitlements`, and Plus that
+ * never activates — which looks exactly like a broken purchase.
+ *
+ * Deliberately NOT resolved here: making the read role-aware widens who counts
+ * as entitled, which is a pricing decision and not a comment's to make. For a
+ * Sandbox test, turn `PLUS_ALLOW_SANDBOX` on — it has to be on for review
+ * anyway.
  */
 export function checkTransaction(
   tx: AppleTransactionInfo,
