@@ -1149,3 +1149,32 @@ test("the cap footnote offers Plus only when the surface is on", async ({ page }
   );
   await expect(page.locator(".layer-note .link-inline")).toBeEnabled();
 });
+
+// REVIEW.md S13 — WCAG 2.1.1. The grip was a focusable role="button" with no
+// key handler at all, so layer order could only be changed with a mouse.
+// PLAN T06c required keyboard reordering explicitly.
+test("layer rows reorder from the keyboard", async ({ page }) => {
+  await openPanel(page);
+  await addLayers(page, 2); // three layers: display order is top-first
+
+  const names = () => page.locator(".layer-row .layer-name").allTextContents();
+  const before = await names();
+  expect(before).toHaveLength(3);
+
+  // Focus the TOP row's grip and send it down one.
+  await page.locator(".layer-row").first().locator(".layer-grip").focus();
+  await page.keyboard.press("ArrowDown");
+
+  const after = await names();
+  expect(after, "the top layer should have swapped with the one below it").toEqual([
+    before[1], before[0], before[2],
+  ]);
+
+  // Focus follows the row, so a second press continues rather than dropping.
+  await page.keyboard.press("ArrowDown");
+  expect(await names()).toEqual([before[1], before[2], before[0]]);
+
+  // And it stops at the end instead of wrapping or throwing.
+  await page.keyboard.press("ArrowDown");
+  expect(await names()).toEqual([before[1], before[2], before[0]]);
+});

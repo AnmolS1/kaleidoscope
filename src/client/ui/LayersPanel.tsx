@@ -318,6 +318,11 @@ export function LayersPanel({ onOpenSym }: { onOpenSym?: () => void }) {
       <div class="layers-panel" role="region" aria-label="Layers">
         <div class="layers-head">
           <span class="pop-title">Layers</span>
+          {/* Named by every grip's aria-describedby, so a screen-reader user is
+              told the keys exist rather than having to discover them. */}
+          <span id="layer-grip-help" class="visually-hidden">
+            Use the up and down arrow keys to reorder a layer.
+          </span>
           <span class="mono layers-count">
             {stack.length} of {cap}
           </span>
@@ -347,10 +352,34 @@ export function LayersPanel({ onOpenSym }: { onOpenSym?: () => void }) {
                   role="button"
                   tabIndex={0}
                   aria-label={`Reorder ${l.name}`}
+                  aria-describedby="layer-grip-help"
                   onPointerDown={(e) => onGripDown(e, l.id, i)}
                   onPointerMove={onGripMove}
                   onPointerUp={onGripUp}
                   onPointerCancel={() => endDrag(false)}
+                  // WCAG 2.1.1 (S13). The grip was a focusable role="button"
+                  // with NO key handler at all, so the layer order — a core
+                  // part of the feature — could only be changed with a mouse.
+                  // Arrow keys move the row one step; the display list is
+                  // top-first and the model is bottom-first, so Up is +1 in
+                  // display space and `toModelIndex` does the flip.
+                  onKeyDown={(e: KeyboardEvent) => {
+                    const dir = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
+                    if (!dir) return;
+                    const to = i + dir;
+                    if (to < 0 || to >= stack.length) return;
+                    e.preventDefault();
+                    scene?.moveLayer(l.id, toModelIndex(to));
+                    S.announce(`${l.name} moved to position ${to + 1} of ${stack.length}`);
+                    // Keep focus on the grip that moved, so a second press
+                    // continues the journey instead of dropping focus to body.
+                    queueMicrotask(() => {
+                      const next = document.querySelector<HTMLElement>(
+                        `[data-layer-id="${l.id}"] .layer-grip`,
+                      );
+                      next?.focus();
+                    });
+                  }}
                 >
                   <GripIcon width="16" height="16" />
                 </span>
