@@ -189,21 +189,54 @@ public func serialize(_ drawing: DrawingV2) -> String {
 ///
 /// Layer ORDER, per-layer opacity and per-layer symmetry are all kept, because
 /// all three change the render.
+///
+/// Two more things the renderer cannot tell apart are merged here, mirroring the
+/// web (REVIEW.md S16 and S17):
+///
+///  1. **Hex colour case is folded.** `#ABCDEF` and `#abcdef` are one colour.
+///  2. **A stack that FLATTENS is hashed flat.** `flattenToV1` already owns the
+///     question of when N layers are render-equivalent to one, so this CALLS it
+///     rather than restating the conditions — the two cannot drift apart.
+///
+/// Both were added to `src/shared/vector.ts` and not here, and the golden
+/// fixtures were not regenerated, so the parity test could not see it. A drawing
+/// that flattens hashed one way on the server and another on the device.
 public func serializeForHash(_ drawing: DrawingV2) -> String {
-    var s = "{\"v\":2,\"bg\":\(jsonString(drawing.bg.rawValue)),\"layers\":["
+    // `lowercased()` with no locale is the root locale, which agrees with JS
+    // `toLowerCase()` on the ASCII hex these colours are. "spectrum" is a
+    // sentinel, not a colour, and is left alone on both sides.
+    func fold(_ stroke: Stroke) -> Stroke {
+        guard stroke.color != "spectrum" else { return stroke }
+        var out = stroke
+        out.color = stroke.color.lowercased()
+        return out
+    }
+
+    func layerJSON(opacity: Double, sym: Symmetry, strokes: [Stroke]) -> String {
+        var s = "{\"opacity\":\(VectorFormat.format(opacity, VectorFormat.opacityDecimals))"
+        s += ",\"sym\":"
+        appendSym(sym, to: &s)
+        s += ",\"strokes\":["
+        for (j, stroke) in strokes.enumerated() {
+            if j > 0 { s += "," }
+            appendStroke(fold(stroke), to: &s)
+        }
+        s += "]}"
+        return s
+    }
+
+    let bg = "{\"v\":2,\"bg\":\(jsonString(drawing.bg.rawValue)),\"layers\":["
+
+    if let flat = flattenToV1(drawing) {
+        return bg + layerJSON(opacity: 1, sym: flat.sym, strokes: flat.strokes) + "]}"
+    }
+
+    var s = bg
     var first = true
     for layer in drawing.layers where layer.visible {
         if !first { s += "," }
         first = false
-        s += "{\"opacity\":\(VectorFormat.format(layer.opacity, VectorFormat.opacityDecimals))"
-        s += ",\"sym\":"
-        appendSym(layer.sym, to: &s)
-        s += ",\"strokes\":["
-        for (j, stroke) in layer.strokes.enumerated() {
-            if j > 0 { s += "," }
-            appendStroke(stroke, to: &s)
-        }
-        s += "]}"
+        s += layerJSON(opacity: layer.opacity, sym: layer.sym, strokes: layer.strokes)
     }
     s += "]}"
     return s
@@ -478,15 +511,30 @@ private func isLayerId(_ s: String) -> Bool {
 ///    would render the stroke as an unsmoothed, uniform-alpha polyline.
 ///
 /// Hidden layers are dropped rather than blocking the flatten — they contribute
-/// nothing to the picture, the same reason the hash ignores them.
+/// nothing to the picture, the same reason the hash ignores them. But a drawing
+/// where NOTHING is visible is refused: the picture is blank either way, and a
+/// caller handed the blank has no way back to the work inside it.
+///
+/// The v1 promise after this change, stated once so it stops eroding by
+/// increments: the v1 body renders identically to the v2 drawing, to within the
+/// 3dp the format already rounds layer opacity to.
 public func flattenToV1(_ drawing: DrawingV2) -> Drawing? {
     let visible = drawing.layers.filter(\.visible)
-    guard let first = visible.first?.sym else {
-        return Drawing(bg: drawing.bg, sym: drawing.layers[0].sym, strokes: [])
-    }
+    // Nothing visible has NO faithful v1 form, even though it renders blank.
+    // Returning an empty `Drawing` was the one lossy branch here: a v1 client
+    // shown that body cannot see the hidden work, and saving it back destroys
+    // it. Refusing is the honest answer, and the web twin refuses identically.
+    guard let first = visible.first?.sym else { return nil }
     for layer in visible {
         if layer.sym != first { return nil }
-        if layer.opacity != 1 { return nil }
+        // ROUNDED, not exact — and rounded through the same `scaledRound` the
+        // serializer uses, not a fresh `rounded()`. The stored form carries
+        // opacity at 3dp, so comparing exactly meant the pre-round body and the
+        // stored body disagreed about whether the drawing flattens, and so
+        // hashed differently. Cross-platform, that divergence only ever shows up
+        // as a hash mismatch in production.
+        if VectorFormat.scaledRound(layer.opacity, VectorFormat.opacityDecimals)
+            != VectorFormat.scaledRound(1, VectorFormat.opacityDecimals) { return nil }
         for s in layer.strokes where s.po || s.sm { return nil }
     }
     return Drawing(bg: drawing.bg, sym: first, strokes: visible.flatMap(\.strokes))

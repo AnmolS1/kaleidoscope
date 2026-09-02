@@ -292,8 +292,10 @@ const v2Cases: V2Case[] = [
   },
   {
     // Every layer hidden: the projection's `layers` array is empty (but still
-    // present), and the v1 flatten yields an empty drawing carrying layer 0's sym
-    // rather than null — hidden layers never block a flatten.
+    // present), and the v1 flatten is NULL. A hidden layer alongside a visible
+    // one never blocks a flatten; a drawing with nothing visible has no v1 form
+    // at all, because the empty body it used to return is one a v1 client can
+    // save back over the hidden work (REVIEW.md minor mA4).
     name: "all-layers-hidden",
     drawing: {
       v: 2,
@@ -301,6 +303,70 @@ const v2Cases: V2Case[] = [
       layers: [
         { id: "l1", name: "A", visible: false, opacity: 1, sym: SYM12, strokes: inkA },
         { id: "l2", name: "B", visible: false, opacity: 1, sym: SYM6, strokes: inkB },
+      ],
+    },
+  },
+  {
+    // UPPERCASE hex. Its hash must come out identical to the lowercase twin's,
+    // because case is folded in the projection (REVIEW.md S17) — and no other
+    // fixture uses an uppercase colour, so without this one the fold is pinned
+    // on neither platform. It was in fact missing from Swift entirely.
+    name: "uppercase-hex-colour",
+    drawing: {
+      v: 2,
+      bg: "light",
+      layers: [
+        {
+          id: "l1",
+          name: "A",
+          visible: true,
+          opacity: 1,
+          sym: SYM6,
+          strokes: inkA.map((s) => ({ ...s, color: s.color.toUpperCase() })),
+        },
+      ],
+    },
+  },
+  {
+    // The lowercase twin, so the equality is checkable by reading the file:
+    // these two fixtures must carry the SAME hash and different bytes.
+    name: "uppercase-hex-colour-twin",
+    drawing: {
+      v: 2,
+      bg: "light",
+      layers: [
+        { id: "l1", name: "A", visible: true, opacity: 1, sym: SYM6, strokes: inkA },
+      ],
+    },
+  },
+  {
+    // Layer opacity just inside the 3dp the format rounds to. The serializer
+    // writes it as 1, so flatten must AGREE that it is 1 — comparing exactly
+    // meant the caller's bytes and the bytes we store disagreed about whether
+    // the drawing flattens, and therefore hashed apart (REVIEW.md minor mA5).
+    // Pinned across platforms because a divergence here is invisible until it
+    // is a duplicate row in production.
+    name: "layer-opacity-just-under-one",
+    drawing: {
+      v: 2,
+      bg: "light",
+      layers: [
+        { id: "l1", name: "A", visible: true, opacity: 1, sym: SYM6, strokes: inkA },
+        { id: "l2", name: "B", visible: true, opacity: 0.9999, sym: SYM6, strokes: inkB },
+      ],
+    },
+  },
+  {
+    // The control for the fixture above: 0.9994 rounds to 0.999, so it must NOT
+    // flatten. Without it, a port that simply stopped checking opacity would
+    // pass the pair.
+    name: "layer-opacity-below-the-rounding-boundary",
+    drawing: {
+      v: 2,
+      bg: "light",
+      layers: [
+        { id: "l1", name: "A", visible: true, opacity: 1, sym: SYM6, strokes: inkA },
+        { id: "l2", name: "B", visible: true, opacity: 0.9994, sym: SYM6, strokes: inkB },
       ],
     },
   },

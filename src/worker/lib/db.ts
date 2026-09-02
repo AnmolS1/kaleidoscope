@@ -158,7 +158,10 @@ export interface NewArtwork {
   remix_of: string | null;
   created_at: number;
   alt_text: string;
-  content_hash: string;
+  /** NULL when the drawing has nothing visible: every such piece renders the
+   *  same blank picture, so a shared hash would dedupe unrelated work. The
+   *  unique index is partial (`WHERE content_hash IS NOT NULL`) and exempts it. */
+  content_hash: string | null;
   layers: number;
 }
 

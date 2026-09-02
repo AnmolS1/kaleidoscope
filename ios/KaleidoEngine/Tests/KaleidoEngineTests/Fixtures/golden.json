@@ -823,8 +823,8 @@
         ]
       },
       "expected": "{\"v\":2,\"bg\":\"dark\",\"layers\":[{\"id\":\"l1\",\"name\":\"He said \\\"hi\\\" \\\\ then left\",\"visible\":true,\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[]},{\"id\":\"l2\",\"name\":\"🎨 palette · café · Ω\",\"visible\":true,\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]},{\"id\":\"l3\",\"name\":\"line sep\",\"visible\":true,\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[]},{\"id\":\"l4\",\"name\":\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\",\"visible\":true,\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[]}]}",
-      "forHash": "{\"v\":2,\"bg\":\"dark\",\"layers\":[{\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[]},{\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]},{\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[]},{\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[]}]}",
-      "hash": "1362089a97ec2ea4d2a8bf222437d25cc22e84a5d97353cf97e31b3854830cd6",
+      "forHash": "{\"v\":2,\"bg\":\"dark\",\"layers\":[{\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]}]}",
+      "hash": "b82860e03027d51b3754c6aacd8f8229b072fbfc93c407598e906f884484aba2",
       "parseable": true,
       "flattened": "{\"v\":1,\"bg\":\"dark\",\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]}",
       "palette": [
@@ -1175,9 +1175,283 @@
       "forHash": "{\"v\":2,\"bg\":\"light\",\"layers\":[]}",
       "hash": "7c819463264d014b747fb1bc10c4745fb47f86f865a6557fade7de7e260b2d26",
       "parseable": true,
-      "flattened": "{\"v\":1,\"bg\":\"light\",\"sym\":{\"segments\":12,\"mirror\":true},\"strokes\":[]}",
+      "flattened": null,
       "palette": [],
       "topSym": null
+    },
+    {
+      "name": "uppercase-hex-colour",
+      "drawing": {
+        "v": 2,
+        "bg": "light",
+        "layers": [
+          {
+            "id": "l1",
+            "name": "A",
+            "visible": true,
+            "opacity": 1,
+            "sym": {
+              "segments": 6,
+              "mirror": false
+            },
+            "strokes": [
+              {
+                "tool": "solid",
+                "color": "#E84A27",
+                "size": 6.5,
+                "opacity": 0.8,
+                "pts": [
+                  [
+                    -0.2,
+                    0.1,
+                    0.4
+                  ],
+                  [
+                    0.15,
+                    -0.05,
+                    0.9
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "{\"v\":2,\"bg\":\"light\",\"layers\":[{\"id\":\"l1\",\"name\":\"A\",\"visible\":true,\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#E84A27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]}]}",
+      "forHash": "{\"v\":2,\"bg\":\"light\",\"layers\":[{\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]}]}",
+      "hash": "20b6fb4047aecba6bd62bfc8d93368873ed743fe40a8fa742f586c0cb5771c30",
+      "parseable": true,
+      "flattened": "{\"v\":1,\"bg\":\"light\",\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#E84A27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]}",
+      "palette": [
+        "#E84A27"
+      ],
+      "topSym": {
+        "segments": 6,
+        "mirror": false
+      }
+    },
+    {
+      "name": "uppercase-hex-colour-twin",
+      "drawing": {
+        "v": 2,
+        "bg": "light",
+        "layers": [
+          {
+            "id": "l1",
+            "name": "A",
+            "visible": true,
+            "opacity": 1,
+            "sym": {
+              "segments": 6,
+              "mirror": false
+            },
+            "strokes": [
+              {
+                "tool": "solid",
+                "color": "#e84a27",
+                "size": 6.5,
+                "opacity": 0.8,
+                "pts": [
+                  [
+                    -0.2,
+                    0.1,
+                    0.4
+                  ],
+                  [
+                    0.15,
+                    -0.05,
+                    0.9
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "{\"v\":2,\"bg\":\"light\",\"layers\":[{\"id\":\"l1\",\"name\":\"A\",\"visible\":true,\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]}]}",
+      "forHash": "{\"v\":2,\"bg\":\"light\",\"layers\":[{\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]}]}",
+      "hash": "20b6fb4047aecba6bd62bfc8d93368873ed743fe40a8fa742f586c0cb5771c30",
+      "parseable": true,
+      "flattened": "{\"v\":1,\"bg\":\"light\",\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]}",
+      "palette": [
+        "#e84a27"
+      ],
+      "topSym": {
+        "segments": 6,
+        "mirror": false
+      }
+    },
+    {
+      "name": "layer-opacity-just-under-one",
+      "drawing": {
+        "v": 2,
+        "bg": "light",
+        "layers": [
+          {
+            "id": "l1",
+            "name": "A",
+            "visible": true,
+            "opacity": 1,
+            "sym": {
+              "segments": 6,
+              "mirror": false
+            },
+            "strokes": [
+              {
+                "tool": "solid",
+                "color": "#e84a27",
+                "size": 6.5,
+                "opacity": 0.8,
+                "pts": [
+                  [
+                    -0.2,
+                    0.1,
+                    0.4
+                  ],
+                  [
+                    0.15,
+                    -0.05,
+                    0.9
+                  ]
+                ]
+              }
+            ]
+          },
+          {
+            "id": "l2",
+            "name": "B",
+            "visible": true,
+            "opacity": 0.9999,
+            "sym": {
+              "segments": 6,
+              "mirror": false
+            },
+            "strokes": [
+              {
+                "tool": "glow",
+                "color": "spectrum",
+                "size": 21,
+                "opacity": 0.7,
+                "pts": [
+                  [
+                    0.3,
+                    0.3,
+                    1
+                  ],
+                  [
+                    0.31,
+                    0.29,
+                    0.5
+                  ],
+                  [
+                    0.4,
+                    0.2,
+                    0.25
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "{\"v\":2,\"bg\":\"light\",\"layers\":[{\"id\":\"l1\",\"name\":\"A\",\"visible\":true,\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]},{\"id\":\"l2\",\"name\":\"B\",\"visible\":true,\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"glow\",\"color\":\"spectrum\",\"size\":21,\"opacity\":0.7,\"pts\":[[0.3,0.3,1],[0.31,0.29,0.5],[0.4,0.2,0.25]]}]}]}",
+      "forHash": "{\"v\":2,\"bg\":\"light\",\"layers\":[{\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]},{\"tool\":\"glow\",\"color\":\"spectrum\",\"size\":21,\"opacity\":0.7,\"pts\":[[0.3,0.3,1],[0.31,0.29,0.5],[0.4,0.2,0.25]]}]}]}",
+      "hash": "4791ba9dce57616c73fcbf55afd7ad10d94d42eb504b22c455f2b5d30cb30c6d",
+      "parseable": true,
+      "flattened": "{\"v\":1,\"bg\":\"light\",\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]},{\"tool\":\"glow\",\"color\":\"spectrum\",\"size\":21,\"opacity\":0.7,\"pts\":[[0.3,0.3,1],[0.31,0.29,0.5],[0.4,0.2,0.25]]}]}",
+      "palette": [
+        "#e84a27"
+      ],
+      "topSym": {
+        "segments": 6,
+        "mirror": false
+      }
+    },
+    {
+      "name": "layer-opacity-below-the-rounding-boundary",
+      "drawing": {
+        "v": 2,
+        "bg": "light",
+        "layers": [
+          {
+            "id": "l1",
+            "name": "A",
+            "visible": true,
+            "opacity": 1,
+            "sym": {
+              "segments": 6,
+              "mirror": false
+            },
+            "strokes": [
+              {
+                "tool": "solid",
+                "color": "#e84a27",
+                "size": 6.5,
+                "opacity": 0.8,
+                "pts": [
+                  [
+                    -0.2,
+                    0.1,
+                    0.4
+                  ],
+                  [
+                    0.15,
+                    -0.05,
+                    0.9
+                  ]
+                ]
+              }
+            ]
+          },
+          {
+            "id": "l2",
+            "name": "B",
+            "visible": true,
+            "opacity": 0.9994,
+            "sym": {
+              "segments": 6,
+              "mirror": false
+            },
+            "strokes": [
+              {
+                "tool": "glow",
+                "color": "spectrum",
+                "size": 21,
+                "opacity": 0.7,
+                "pts": [
+                  [
+                    0.3,
+                    0.3,
+                    1
+                  ],
+                  [
+                    0.31,
+                    0.29,
+                    0.5
+                  ],
+                  [
+                    0.4,
+                    0.2,
+                    0.25
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "{\"v\":2,\"bg\":\"light\",\"layers\":[{\"id\":\"l1\",\"name\":\"A\",\"visible\":true,\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]},{\"id\":\"l2\",\"name\":\"B\",\"visible\":true,\"opacity\":0.999,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"glow\",\"color\":\"spectrum\",\"size\":21,\"opacity\":0.7,\"pts\":[[0.3,0.3,1],[0.31,0.29,0.5],[0.4,0.2,0.25]]}]}]}",
+      "forHash": "{\"v\":2,\"bg\":\"light\",\"layers\":[{\"opacity\":1,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"solid\",\"color\":\"#e84a27\",\"size\":6.5,\"opacity\":0.8,\"pts\":[[-0.2,0.1,0.4],[0.15,-0.05,0.9]]}]},{\"opacity\":0.999,\"sym\":{\"segments\":6,\"mirror\":false},\"strokes\":[{\"tool\":\"glow\",\"color\":\"spectrum\",\"size\":21,\"opacity\":0.7,\"pts\":[[0.3,0.3,1],[0.31,0.29,0.5],[0.4,0.2,0.25]]}]}]}",
+      "hash": "cec7e1ec87aae8ed8cedfc07faab244596f74cb8fcfb548e8b582515e744529b",
+      "parseable": true,
+      "flattened": null,
+      "palette": [
+        "#e84a27"
+      ],
+      "topSym": {
+        "segments": 6,
+        "mirror": false
+      }
     },
     {
       "name": "control-chars-in-name",

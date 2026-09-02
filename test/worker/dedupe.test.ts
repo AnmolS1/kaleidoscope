@@ -312,3 +312,64 @@ describe("POST /api/artworks — the unique index is the real guarantee", () => 
     expect((DB._db.prepare("SELECT COUNT(*) AS n FROM artworks").get() as { n: number }).n).toBe(3);
   });
 });
+
+// REVIEW.md minor mA3 — everything blank looks alike, so nothing blank may own
+// the dedupe key.
+describe("a drawing with nothing visible is never deduped", () => {
+  const allHidden = (color: string) =>
+    JSON.stringify({
+      v: 2,
+      bg: "light",
+      layers: [
+        {
+          id: "l1",
+          name: "Layer 1",
+          visible: false,
+          opacity: 1,
+          sym: { segments: 6, mirror: true },
+          strokes: [
+            { tool: "solid", color, size: 6, opacity: 1, pts: [[0, 0, 1], [0.1, 0.1, 1]] },
+          ],
+        },
+      ],
+    });
+
+  it("two blanks holding DIFFERENT hidden work are two pieces, not one", async () => {
+    const { DB, env } = ctx();
+
+    const a = await save(env, saveForm({ drawing: allHidden("#E84A27"), title: "Hidden red" }));
+    expect(a.status).toBe(201);
+    const b = await save(env, saveForm({ drawing: allHidden("#1D9E75"), title: "Hidden green" }));
+    // The whole point: 201 with a NEW id, not 200 deduped onto the first.
+    expect(b.status).toBe(201);
+
+    const idA = ((await a.json()) as { id: string }).id;
+    const idB = ((await b.json()) as { id: string }).id;
+    expect(idB).not.toBe(idA);
+
+    const rows = DB._db.prepare("SELECT id, content_hash FROM artworks ORDER BY id").all() as Array<{
+      id: string;
+      content_hash: string | null;
+    }>;
+    expect(rows).toHaveLength(2);
+    // NULL is the mechanism — the unique index is partial and exempts it.
+    expect(rows.every((r) => r.content_hash === null)).toBe(true);
+  });
+
+  it("another user's blank is not refused as a duplicate either", async () => {
+    const { env } = ctx();
+    expect((await save(env, saveForm({ drawing: allHidden("#E84A27"), title: "Mine" }))).status).toBe(201);
+    const theirs = await save(env, saveForm({ drawing: allHidden("#E84A27"), title: "Theirs" }), "s2");
+    // Byte-identical, and still not a 409: nobody owns "blank".
+    expect(theirs.status).toBe(201);
+  });
+
+  it("CONTROL: an identical VISIBLE drawing still dedupes", async () => {
+    const { env } = ctx();
+    const visible = allHidden("#E84A27").replace('"visible":false', '"visible":true');
+    expect((await save(env, saveForm({ drawing: visible, title: "One" }))).status).toBe(201);
+    const again = await save(env, saveForm({ drawing: visible, title: "Two" }));
+    expect(again.status).toBe(200);
+    expect(((await again.json()) as { deduped: boolean }).deduped).toBe(true);
+  });
+});

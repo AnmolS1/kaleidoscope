@@ -11,7 +11,7 @@ import {
 import { templateAlt } from "../lib/alttext";
 import { generateAlt } from "../lib/genalt";
 import { validateDrawingJson } from "../lib/validate";
-import { contentHash } from "../../shared/vector";
+import { contentHash, hasVisibleLayers } from "../../shared/vector";
 
 export const admin = new Hono<AppEnv>();
 
@@ -141,6 +141,15 @@ admin.post("/backfill-hash", requireAuth, requireCsrf, async (c) => {
     const meta = validateDrawingJson(json);
     if (!meta.ok) {
       skipped.push({ id: row.id, reason: meta.error });
+      continue;
+    }
+
+    // A row with nothing visible must STAY NULL — same rule the save path
+    // applies. Backfilling it would give every blank piece the same hash and
+    // hand the unique index a collision it would resolve by leaving all but one
+    // of them NULL anyway, only after burning a write on each.
+    if (!hasVisibleLayers(meta.drawing)) {
+      skipped.push({ id: row.id, reason: "nothing_visible" });
       continue;
     }
 

@@ -33,4 +33,18 @@
 -- 3. The partial unique index is `WHERE content_hash IS NOT NULL`, so setting
 --    the column to NULL removes those entries cleanly; nothing to drop or
 --    rebuild.
+--
+-- 4. ORDER MATTERS: the backfill must run AFTER the Worker carrying the new
+--    hash semantics is live, never before and never against an older Worker.
+--    It repopulates the column by calling `contentHash`, so an older build
+--    would refill every row with the semantics this migration exists to erase,
+--    and the only remedy would be a third re-null. The deploy workflow applies
+--    migrations and then deploys, so the safe sequence is: let the workflow
+--    finish, confirm the new build is serving, THEN start the backfill.
+--
+-- 5. Rows with NOTHING VISIBLE now keep a NULL hash on purpose (REVIEW.md minor
+--    mA3). Every blank renders alike, so a shared hash would let the first one
+--    a user saved reject all the rest. The backfill reports them as
+--    `nothing_visible` and the save path never writes a hash for them, so they
+--    are a permanent, expected part of the NULL count in note 2.
 UPDATE artworks SET content_hash = NULL;

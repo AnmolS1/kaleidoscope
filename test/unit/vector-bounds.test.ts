@@ -2,7 +2,15 @@
 // platform could not survive, and one that destroyed the drawing on re-save.
 
 import { describe, it, expect } from "vitest";
-import { deserialize, serialize, contentHash, MIN_SIZE, MAX_COORD } from "../../src/shared/vector";
+import {
+  deserialize,
+  serialize,
+  contentHash,
+  flattenToV1,
+  hasVisibleLayers,
+  MIN_SIZE,
+  MAX_COORD,
+} from "../../src/shared/vector";
 
 const stroke = (over: Record<string, unknown> = {}) => ({
   tool: "solid",
@@ -140,5 +148,95 @@ describe("the hash projection merges what the renderer cannot tell apart", () =>
 
   it("CONTROL: the WIRE format is untouched — stored bytes keep their case", () => {
     expect(serialize(deserialize(flat))).toContain("#E84A27");
+  });
+});
+
+// REVIEW.md minor — mA3, mA4, mA5. Three clauses that turn out to be one
+// decision: what "the same picture" means when the picture is blank, and when
+// two opacities are the same opacity.
+describe("a drawing with nothing visible (mA3, mA4)", () => {
+  const hidden = (color: string) =>
+    JSON.stringify({
+      v: 2,
+      bg: "light",
+      layers: [
+        { id: "l1", name: "a", visible: false, opacity: 1, sym: { segments: 6, mirror: true },
+          strokes: [{ tool: "solid", color, size: 6, opacity: 1, pts: [[0, 0, 1], [0.1, 0.1, 1]] }] },
+      ],
+    });
+
+  it("mA4: has no v1 form, so ?v=1 answers 426 instead of a blank drawing", () => {
+    // It used to return `{ strokes: [] }`. A v1 client cannot see the hidden
+    // work, and the moment it saved that body back the work was gone.
+    expect(flattenToV1(deserialize(hidden("#E84A27")))).toBeNull();
+  });
+
+  it("mA3: two unrelated hidden drawings DO project to the same hash", async () => {
+    // Not the bug — this is what render-equivalence means, and both render
+    // blank. The bug was using it as a uniqueness key.
+    expect(await contentHash(hidden("#E84A27"))).toBe(await contentHash(hidden("#1D9E75")));
+  });
+
+  it("mA3: which is why the save path is told not to store that hash", () => {
+    expect(hasVisibleLayers(deserialize(hidden("#E84A27")))).toBe(false);
+  });
+
+  it("CONTROL: one visible layer among hidden ones is unaffected", () => {
+    const mixed = JSON.stringify({
+      v: 2,
+      bg: "light",
+      layers: [
+        { id: "l1", name: "a", visible: false, opacity: 1, sym: { segments: 6, mirror: true }, strokes: [] },
+        { id: "l2", name: "b", visible: true, opacity: 1, sym: { segments: 6, mirror: true },
+          strokes: [{ tool: "solid", color: "#E84A27", size: 6, opacity: 1, pts: [[0, 0, 1], [0.1, 0.1, 1]] }] },
+      ],
+    });
+    expect(hasVisibleLayers(deserialize(mixed))).toBe(true);
+    expect(flattenToV1(deserialize(mixed))).not.toBeNull();
+  });
+});
+
+describe("flatten and the hash agree on what opacity 1 means (mA5)", () => {
+  /** Two visible layers, the second at `op`. Flattens only if `op` is 1. */
+  const twoLayer = (op: number) =>
+    JSON.stringify({
+      v: 2,
+      bg: "light",
+      layers: [
+        { id: "l1", name: "a", visible: true, opacity: 1, sym: { segments: 6, mirror: true },
+          strokes: [{ tool: "solid", color: "#E84A27", size: 6, opacity: 1, pts: [[0, 0, 1], [0.1, 0.1, 1]] }] },
+        { id: "l2", name: "b", visible: true, opacity: op, sym: { segments: 6, mirror: true },
+          strokes: [{ tool: "solid", color: "#1D9E75", size: 4, opacity: 1, pts: [[0.2, 0.2, 1], [0.3, 0.3, 1]] }] },
+      ],
+    });
+
+  it("the raw body and the canonical body it is STORED as hash alike", async () => {
+    // This is the reachable failure. The row keeps `serialize(meta.drawing)`,
+    // which rounds layer opacity to 3dp — so 0.9999 is stored as 1 — while the
+    // hash was computed over the caller's bytes. Comparing opacity exactly meant
+    // the raw form took the layered branch and the stored form took the flat
+    // one: fetch your own piece, save it back, get a SECOND row instead of
+    // `deduped`. Exactly the S16 bug, re-entering through rounding.
+    const raw = twoLayer(0.9999);
+    const stored = serialize(deserialize(raw));
+    expect(await contentHash(raw)).toBe(await contentHash(stored));
+  });
+
+  it("and both give the same answer to ?v=1", () => {
+    expect(flattenToV1(deserialize(twoLayer(0.9999)))).not.toBeNull();
+    expect(flattenToV1(deserialize(twoLayer(1)))).not.toBeNull();
+  });
+
+  it("CONTROL: below the rounding boundary nothing merges", async () => {
+    // round(0.9994, 3) is 0.999, not 1 — so this must still refuse to flatten
+    // and must still hash apart from the opacity-1 drawing. Without it the test
+    // above would pass on a fix that simply stopped checking opacity at all.
+    expect(flattenToV1(deserialize(twoLayer(0.9994)))).toBeNull();
+    expect(await contentHash(twoLayer(0.9994))).not.toBe(await contentHash(twoLayer(1)));
+  });
+
+  it("CONTROL: a genuinely translucent layer is still its own picture", async () => {
+    expect(flattenToV1(deserialize(twoLayer(0.5)))).toBeNull();
+    expect(await contentHash(twoLayer(0.5))).not.toBe(await contentHash(twoLayer(1)));
   });
 });

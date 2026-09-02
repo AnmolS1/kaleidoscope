@@ -14,7 +14,14 @@ import {
   capPolicy,
   parseVisibility,
 } from "../lib/validate";
-import { contentHash, deserialize, flattenToV1, serialize, serializeV1 } from "../../shared/vector";
+import {
+  contentHash,
+  deserialize,
+  flattenToV1,
+  hasVisibleLayers,
+  serialize,
+  serializeV1,
+} from "../../shared/vector";
 import type { DrawingV1 } from "../../shared/vector";
 import { newArtworkId } from "../lib/ids";
 import {
@@ -165,29 +172,39 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
     return c.json({ error: "bad_render_type" }, 400);
   }
 
-  // 3. Hash the render-equivalent projection.
-  const hash = await contentHash(drawing);
+  // 3. Hash the render-equivalent projection — unless there is no picture to be
+  // equivalent to. A drawing with every layer hidden renders blank, so all of
+  // them hash alike; storing that hash would let the first blank a user saves
+  // reject every later one, no matter what is hidden inside it. NULL is the
+  // established "not deduped" value here (the unique index is partial, and every
+  // pre-1.2 row carries it), so this needs no new mechanism.
+  const hash = hasVisibleLayers(meta.drawing) ? await contentHash(drawing) : null;
 
   // 4. Same user, same picture → return the piece they already have. Nothing is
   // written and nothing is mutated: re-saving is not an edit, and in particular
   // it never flips the existing piece's visibility.
-  const own = await findOwnByHash(c.env, user.id, hash);
-  if (own) {
-    return c.json({ id: own.id, url: `${c.env.PUBLIC_BASE_URL}/p/${own.id}`, deduped: true });
-  }
+  //
+  // Skipped entirely when there is no hash: `content_hash = NULL` matches no row
+  // in SQL, so running these would be two round trips guaranteed to find nothing.
+  if (hash !== null) {
+    const own = await findOwnByHash(c.env, user.id, hash);
+    if (own) {
+      return c.json({ id: own.id, url: `${c.env.PUBLIC_BASE_URL}/p/${own.id}`, deduped: true });
+    }
 
-  // 5. Someone else's picture → refuse. A courtesy against posting an untouched
-  // remix, not a policy: one extra dot defeats it, which is fine. `of` is only
-  // named when the match is viewable, so a private piece is blocked without
-  // being disclosed.
-  const other = await findOtherByHash(c.env, user.id, hash);
-  if (other) {
-    return c.json(
-      other.visibility === "private"
-        ? { error: "duplicate_of_other" }
-        : { error: "duplicate_of_other", of: other.id },
-      409,
-    );
+    // 5. Someone else's picture → refuse. A courtesy against posting an untouched
+    // remix, not a policy: one extra dot defeats it, which is fine. `of` is only
+    // named when the match is viewable, so a private piece is blocked without
+    // being disclosed.
+    const other = await findOtherByHash(c.env, user.id, hash);
+    if (other) {
+      return c.json(
+        other.visibility === "private"
+          ? { error: "duplicate_of_other" }
+          : { error: "duplicate_of_other", of: other.id },
+        409,
+      );
+    }
   }
 
   // 6. Evaluate the cap BEFORE charging the rate limit (minor).
@@ -272,7 +289,10 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
       // the blobs we just wrote — the row that would have owned them does not
       // exist, so nothing would ever reference or delete them.
       await deleteArtworkObjects(c.env, id);
-      const existing = await findOwnByHash(c.env, user.id, hash);
+      // Only a non-null hash can trip the unique index, so this is reachable
+      // only with one — but the compiler cannot see that, and asserting it away
+      // would be a lie the day someone adds a second unique constraint.
+      const existing = hash === null ? null : await findOwnByHash(c.env, user.id, hash);
       if (existing) {
         return c.json({
           id: existing.id,

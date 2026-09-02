@@ -555,7 +555,26 @@ export function deserialize(json: string): DrawingV2 {
 // ---- v1 interop ----------------------------------------------------------
 
 /**
+ * Does this drawing have anything the renderer will draw a layer for?
+ *
+ * The save path uses this to decide whether the piece can be DEDUPED, not
+ * whether it can be saved. Every drawing with nothing visible projects to the
+ * same empty picture, so they all hash alike — which is correct for a
+ * render-equivalence hash and wrong as a uniqueness key: the first blank a user
+ * saves would block every later one, regardless of the hidden work inside it.
+ * Such a row stores a NULL hash instead, and the partial unique index (`WHERE
+ * content_hash IS NOT NULL`) already means NULL is exempt.
+ */
+export function hasVisibleLayers(d: DrawingV2): boolean {
+  return d.layers.some((l) => l.visible);
+}
+
+/**
  * Project a v2 drawing back to v1, or null when that would change the picture.
+ *
+ * The promise, stated once so it stops eroding by increments: the v1 body
+ * renders identically to the v2 drawing, to within the 3dp the format already
+ * rounds layer opacity to. Everything else returns null.
  *
  * Only faithful when every VISIBLE layer shares one symmetry, sits at opacity 1,
  * and carries no `po` or `sm` stroke. Anything else has no v1 representation:
@@ -573,14 +592,25 @@ export function deserialize(json: string): DrawingV2 {
  */
 export function flattenToV1(d: DrawingV2): DrawingV1 | null {
   const visible = d.layers.filter((l) => l.visible);
-  if (visible.length === 0) {
-    return { v: 1, bg: d.bg, sym: { ...d.layers[0].sym }, strokes: [] };
-  }
+
+  // Nothing visible has NO faithful v1 form, even though it renders blank.
+  // Handing back `{ strokes: [] }` was the one lossy branch in this function:
+  // every other path either preserves the picture exactly or returns null. A v1
+  // client given that body sees an empty drawing, and the moment it saves the
+  // drawing back the hidden layers are gone for good. 426 is the honest answer —
+  // "this is not something you can edit" — and it costs nothing, since a v1
+  // client could not have shown the content anyway.
+  if (visible.length === 0) return null;
 
   const first = visible[0].sym;
   for (const l of visible) {
     if (l.sym.segments !== first.segments || l.sym.mirror !== first.mirror) return null;
-    if (l.opacity !== 1) return null;
+    // Rounded, NOT exact — the same rounding the hash applies. Compared exactly,
+    // a layer at 0.9999 refuses to flatten while the hash rounds it to 1 and
+    // hashes it as though it had flattened. Two definitions of "the same
+    // opacity" that disagree mean two drawings can share a hash and yet get
+    // different answers from `?v=1`. One definition, used by both.
+    if (round(l.opacity, OPACITY_DECIMALS) !== 1) return null;
     for (const s of l.strokes) if (s.po === 1 || s.sm === 1) return null;
   }
 

@@ -291,6 +291,51 @@ final class VectorV2Tests: XCTestCase {
         XCTAssertEqual(flattenToV1(hidden).map(serialize), flattenToV1(base).map(serialize))
     }
 
+    /// REVIEW.md minor mA4 — the one place `flattenToV1` used to LIE.
+    ///
+    /// Every other refusal preserves the picture by declining; the all-hidden
+    /// branch instead handed back an empty drawing. A v1 client shown that
+    /// cannot see the hidden work, and the moment it saves the body back the
+    /// work is gone. The web twin refuses identically.
+    func testFlattenToV1RefusesADrawingWithNothingVisible() {
+        let sym = Symmetry(segments: 6, mirror: false)
+        let ink = [Stroke(tool: .solid, color: "#123456", size: 1, opacity: 1,
+                          pts: [StrokePoint(x: 0, y: 0, pressure: 1)])]
+        let allHidden = DrawingV2(bg: .light, layers: [
+            Layer(id: "l1", name: "A", visible: false, opacity: 1, sym: sym, strokes: ink),
+        ])
+        XCTAssertNil(flattenToV1(allHidden))
+        XCTAssertThrowsError(try deserialize(serialize(allHidden)))
+
+        // CONTROL: one visible layer among hidden ones still flattens, so this
+        // is not "any hidden layer refuses".
+        var oneVisible = allHidden
+        oneVisible.layers.append(Layer(id: "l2", name: "B", sym: sym, strokes: ink))
+        XCTAssertNotNil(flattenToV1(oneVisible))
+    }
+
+    /// REVIEW.md minor mA5 — flatten and the hash must mean the same thing by
+    /// "opacity 1", and must round it with the same primitive on both platforms.
+    func testFlattenRoundsLayerOpacityTheWayTheFormatDoes() {
+        let sym = Symmetry(segments: 6, mirror: false)
+        let ink = [Stroke(tool: .solid, color: "#123456", size: 1, opacity: 1,
+                          pts: [StrokePoint(x: 0, y: 0, pressure: 1)])]
+        var d = DrawingV2(bg: .light, layers: [Layer(id: "l1", name: "A", sym: sym, strokes: ink)])
+
+        // The stored form carries 3dp, so 0.9999 IS 1 as far as the format is
+        // concerned. Refusing it meant the pre-round body and the stored body
+        // disagreed about whether the drawing flattens — and hashed apart.
+        d.layers[0].opacity = 0.9999
+        XCTAssertNotNil(flattenToV1(d), "0.9999 rounds to 1 at 3dp")
+
+        // CONTROL: below the boundary it must still refuse, or the fix is just
+        // "stopped checking opacity".
+        d.layers[0].opacity = 0.9994
+        XCTAssertNil(flattenToV1(d), "0.9994 rounds to 0.999")
+        d.layers[0].opacity = 0.5
+        XCTAssertNil(flattenToV1(d), "a genuinely translucent layer")
+    }
+
     // ---- derived metadata --------------------------------------------------
 
     func testTopSymAndPaletteIgnoreHiddenLayers() {
