@@ -28,6 +28,10 @@ export default defineConfig({
   timeout: 30_000,
   fullyParallel: false,
   retries: 0,
+  // A stray `test.only` shrinks the suite to one test and still reports success
+  // — CI goes green having run almost nothing. Locally it stays allowed, since
+  // focusing a test is exactly what you do while writing one.
+  forbidOnly: !!process.env.CI,
   use: {
     baseURL: ORIGIN,
     trace: "on-first-retry",

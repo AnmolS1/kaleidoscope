@@ -108,6 +108,10 @@ jobs:
         # cloudflare/wrangler-action v3.15.0 (pinned to commit SHA)
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
         with:
+          # PINNED. Without it the action falls back to wrangler 3.90, which
+          # cannot read a v4 config — so the failure arrives as a parse error
+          # on a file that is perfectly valid, on a day nothing here changed.
+          wranglerVersion: "4.105.0"
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: d1 migrations apply kaleidoscope --remote
@@ -116,6 +120,10 @@ jobs:
         # cloudflare/wrangler-action v3.15.0 (pinned to commit SHA)
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd
         with:
+          # PINNED. Without it the action falls back to wrangler 3.90, which
+          # cannot read a v4 config — so the failure arrives as a parse error
+          # on a file that is perfectly valid, on a day nothing here changed.
+          wranglerVersion: "4.105.0"
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy -c dist/kaleidoscope/wrangler.json

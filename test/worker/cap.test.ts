@@ -607,3 +607,31 @@ describe("/api/me plus block", () => {
     expect(body.plus.surface).toBe(false);
   });
 });
+
+// Minor list — a deploy-side typo must not also cost the user their save budget.
+describe("a misconfigured cap does not burn the save rate limit", () => {
+  it("still 500s after many attempts, rather than turning into a 429", async () => {
+    const { env } = ctx({ PLUS_ENABLED: "true", CAP_EPOCH: "not-a-number" });
+    // The hourly budget is 60. Charging it first would mean these 70 attempts
+    // exhausted it, so the user is locked out of saving over someone else's
+    // configuration mistake — and stays locked out after it is fixed.
+    for (let i = 0; i < 70; i++) {
+      const res = await save(env, saveForm({ drawing: drawingV1() }));
+      expect(res.status, `attempt ${i + 1}`).toBe(500);
+      expect(await res.json()).toEqual({ error: "server_misconfigured" });
+    }
+  });
+
+  it("CONTROL: with a valid config the same requests do save and then rate-limit", async () => {
+    const { env } = ctx({ PLUS_ENABLED: "false" });
+    let sawSuccess = false;
+    let sawLimit = false;
+    for (let i = 0; i < 70; i++) {  // past the hourly limit of 60
+      const res = await save(env, saveForm({ drawing: drawingV1(i) }));
+      if (res.status === 201) sawSuccess = true;
+      if (res.status === 429) { sawLimit = true; break; }
+    }
+    expect(sawSuccess, "saves must work at all").toBe(true);
+    expect(sawLimit, "and the limiter must still bite — or the test above proves nothing").toBe(true);
+  });
+});

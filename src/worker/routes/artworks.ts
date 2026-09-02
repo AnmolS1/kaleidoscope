@@ -190,18 +190,26 @@ artworks.post("/", requireAuth, requireCsrf, async (c) => {
     );
   }
 
-  // 6. Only now charge the rate limit — this request is going to write.
-  const allowed = await checkAll(c.env, [
-    { key: `save:${user.id}:h`, rule: PER_HOUR },
-    { key: `save:${user.id}:d`, rule: PER_DAY },
-  ]);
-  if (!allowed) return c.json({ error: "rate_limited", message: "Whoa — slow down a little." }, 429);
-
+  // 6. Evaluate the cap BEFORE charging the rate limit (minor).
+  //
+  // A malformed CAP_EPOCH makes every save 500, and charging the budget first
+  // meant a user hit by a deploy-side typo also burned their hourly and daily
+  // save slots on requests that could never write. They then had to wait out a
+  // limit for someone else's configuration mistake — and once it was fixed,
+  // still could not save. Reading config costs nothing and is not attacker-
+  // controlled, so there is no abuse budget to protect here.
   const requested = cleanVisibility(form.get("visibility"));
   const plus = await hasPlus(c.env, user.id);
   const policy = capPolicy(c.env, plus);
   // A cap we cannot evaluate is a cap we must not guess at. Fails closed.
   if (!policy.ok) return c.json({ error: "server_misconfigured" }, 500);
+
+  // 7. Only now charge the rate limit — this request is going to write.
+  const allowed = await checkAll(c.env, [
+    { key: `save:${user.id}:h`, rule: PER_HOUR },
+    { key: `save:${user.id}:d`, rule: PER_DAY },
+  ]);
+  if (!allowed) return c.json({ error: "rate_limited", message: "Whoa — slow down a little." }, 429);
 
   const remixRaw = form.get("remixOf");
   let remixOf: string | null = null;
