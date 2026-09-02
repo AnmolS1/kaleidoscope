@@ -74,6 +74,29 @@ session id as a Bearer token and skip the CSRF check deliberately: CSRF exists
 because browsers attach cookies to requests you didn't make, and there's no
 ambient credential to forge here.
 
+### Plus, caps and billing (1.2)
+
+**Two flags, and they mean different things.** `PLUS_SURFACE_ENABLED` decides
+whether the Plus UI exists at all — paywall, Restore, the upsell. `PLUS_ENABLED`
+decides whether the CAPS are enforced. They were one flag, which made the app
+unreviewable: with it off, App Review finds no purchase to test and rejects the
+binary, not just the IAP. The review deploy runs surface on, caps off.
+
+The caps are 3 layers free / 8 with Plus, and 10 public gallery posts free.
+Public posts count only from `CAP_EPOCH`, which ships as a far-future
+placeholder so a forgotten epoch counts nothing rather than retroactively
+capping every existing user; a test refuses a tree where `PLUS_ENABLED` is true
+and the epoch is still the placeholder.
+
+One entitlement in D1 is honoured by both platforms — StoreKit on iOS
+(`POST /api/billing/apple`, plus Apple's server notifications) and Lemon Squeezy
+on the web (`POST /api/billing/lemonsqueezy`, HMAC over the raw body). Refunds
+**tombstone** rather than delete, because both providers hand the client a
+credential it keeps: Apple's device still holds a JWS signed before the refund,
+and LS retries `order_created` for three days. A Sandbox entitlement counts only
+while `PLUS_ALLOW_SANDBOX` says it may, so it expires with the flag instead of
+lasting forever.
+
 ### Storage
 
 D1 holds users and artwork metadata. R2 holds `vec/{id}.json.gz` as the source of
@@ -190,9 +213,27 @@ mock sign-in, save, permalink with OG tags, gallery, remix, delete. Swift side,
 `swift test` runs the engine tests including the golden-file check against the web
 serializer.
 
-CI (`.github/workflows/deploy.yml`) runs on pushes to `prod`: typecheck, test,
-build, D1 migrations, deploy. It doesn't run lint or e2e, and there's no iOS CI.
-App Store screenshots in `ios/app-store-screenshots/` are produced by hand.
+There are three workflows, and between them they run everything:
+
+- **`ci.yml`** — on pushes to `dev`: typecheck, lint, unit + worker tests, build,
+  local D1 migrations, and the full Playwright suite.
+- **`deploy.yml`** — on pushes to `prod`: the same gates, then the remote D1
+  migration and the deploy.
+- **`ios.yml`** — on pushes to `dev` that touch `ios/**` or `src/shared/**`:
+  `swift test`, `build-for-testing`, and the logic-test bundle. The UI bundle is
+  deliberately excluded (~10 minutes, and macOS bills at 10x on a private repo);
+  its suites are device-class split, so no single destination is green anyway.
+
+Two things about the e2e gate that are easy to lose:
+
+- It **needs live Cloudflare credentials**. The `ai` binding reaches real
+  infrastructure even under `vite dev`, so the dev server will not start without
+  them — which means a pull request from a **fork can never pass this gate**.
+- A new migration must be applied locally first (`npm run db:migrate:local`), or
+  the dev worker answers `no such column` and it reads like a code bug.
+
+App Store screenshots are captured by `MarketingShotsUITests` and exported from
+the `.xcresult`; `ios/app-store-screenshots/` is gitignored.
 
 ## Capacity
 

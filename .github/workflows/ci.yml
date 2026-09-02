@@ -69,10 +69,18 @@ jobs:
       - run: npx playwright install --with-deps chromium
 
       - name: End-to-end tests
-        # Passed through for the AI binding, which reaches real infrastructure
-        # even under `vite dev`. Nothing asserts on AI output — alt text and name
-        # suggestions both degrade to empty rather than failing — so a run
-        # without working credentials degrades rather than breaks.
+        # 🔴 REQUIRED, not optional (REVIEW S24).
+        #
+        # This comment used to claim a run without credentials "degrades rather
+        # than breaks". It does not. The `ai` binding reaches real
+        # infrastructure even under `vite dev`, so wrangler opens a remote
+        # session and the dev server REFUSES TO START without them — the e2e
+        # step then fails before a single test runs, and it is not obvious from
+        # the output that credentials are the reason.
+        #
+        # The consequence worth knowing: a pull request from a FORK cannot see
+        # these secrets, so this gate can never pass there. It is not a flake to
+        # re-run; it is a structural limit of the binding.
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
