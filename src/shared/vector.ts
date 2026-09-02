@@ -329,17 +329,24 @@ export function serializeForHash(d: DrawingV2): string {
       .map((l) => ({
         opacity: round(l.opacity, OPACITY_DECIMALS),
         sym: { segments: l.sym.segments, mirror: l.sym.mirror },
-        // Hex case folded HERE and not in `compactStroke` (S17).
+        // 🔴 Hex case is deliberately NOT folded here (REVIEW S17, reverted
+        // 2026-09-01 after measuring the cost).
         //
-        // `#ABCDEF` and `#abcdef` are the same colour and render identically,
-        // so two drawings differing only in case are the same picture — but
-        // they hashed differently, which defeats dedupe. Folding it in the wire
-        // serializer instead would change the stored bytes of every existing
-        // artwork and therefore its hash, and break the frozen golden fixtures.
-        // The projection is exactly the place for "same picture" rules.
-        strokes: l.strokes.map((st) =>
-          compactStroke(st.color === "spectrum" ? st : { ...st, color: st.color.toLowerCase() }),
-        ),
+        // `#ABCDEF` and `#abcdef` are the same picture and hash differently,
+        // which is a real defect. But this projection defines every
+        // `content_hash` already stored, and the app's own palette is
+        // UPPERCASE (#E84A27 and friends) — so folding case changes the hash of
+        // essentially every existing piece. Dedupe compares a freshly computed
+        // hash against the stored one, so a user re-saving their own drawing
+        // would get a duplicate row instead of `deduped`, and the "you already
+        // saved this" pre-flight would stop recognising their work.
+        //
+        // Fixing it therefore needs a coordinated re-backfill (null every
+        // content_hash, re-run POST /api/admin/backfill-hash, accept a window
+        // where dedupe is blind), not a one-line change. Flagged for Anmol
+        // rather than shipped quietly: the cure is worse than the disease until
+        // that migration is planned.
+        strokes: l.strokes.map(compactStroke),
       })),
   });
 }
