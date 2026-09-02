@@ -23,8 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # actions/checkout v4.4.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      # actions/setup-node v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
@@ -97,7 +99,8 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        # actions/upload-artifact v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: playwright-report
           path: playwright-report/
@@ -115,6 +118,15 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: d1 migrations apply kaleidoscope --remote
+
+      # The vite plugin copies `.dev.vars` into the build output so `vite preview`
+      # can read it. It is NOT uploaded — the generated rules take only
+      # **/*.js and **/*.mjs, and the assets directory is dist/client — so this
+      # is not closing a live leak. It is making sure one cannot open: a secrets
+      # file sitting in a directory somebody may one day tar, publish, or point
+      # `assets.directory` at is a hazard waiting for an unrelated change.
+      - name: Remove .dev.vars from the build output
+        run: rm -f dist/kaleidoscope/.dev.vars
 
       - name: Deploy Worker
         # cloudflare/wrangler-action v3.15.0 (pinned to commit SHA)

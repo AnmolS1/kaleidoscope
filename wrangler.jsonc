@@ -12,6 +12,20 @@
   },
   "observability": { "enabled": true },
   "routes": [{ "pattern": "kaleidoscope.ponderance.dev", "custom_domain": true }],
+
+  // OFF, stated rather than inherited. A preview URL is
+  // `<version>-kaleidoscope.<subdomain>.workers.dev`, and it runs THIS Worker
+  // against the REAL D1 and R2 — there is no preview environment here, the
+  // bindings are the production ones. So every deployed version would answer on
+  // a second hostname that nothing about `routes` protects, which is the same
+  // shape as the estate note that Cloudflare Access binds a hostname and not a
+  // Worker. Left to the platform default it is a security property nobody
+  // decided and no diff would ever show changing.
+  //
+  // `workers_dev` is separately off as a CONSEQUENCE of declaring `routes`,
+  // which is implicit in the same way; it is left alone here because turning it
+  // off explicitly on a release deploy is a change with no test behind it.
+  "preview_urls": false,
   "vars": {
     "PUBLIC_BASE_URL": "https://kaleidoscope.ponderance.dev",
     "GOOGLE_REDIRECT_URI": "https://kaleidoscope.ponderance.dev/api/auth/callback",
