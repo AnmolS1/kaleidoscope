@@ -130,3 +130,40 @@ describe("exportSVG with layers", () => {
     expect(svg.includes('id="l2s0"')).toBe(true);
   });
 });
+
+// REVIEW.md S9 — the SVG ignored pressure entirely, so every export was the
+// heaviest possible version of the drawing (~48% fatter than the PNG at the
+// default pressure of 0.5). The PNG is unchanged; only the SVG moves.
+describe("SVG stroke width follows pressure, like the canvas (S9)", () => {
+  const pressured = (pts: Array<[number, number, number]>): DrawingV2 => ({
+    v: 2,
+    bg: "light",
+    layers: [
+      {
+        id: "l1", name: "L", visible: true, opacity: 1,
+        sym: { segments: 4, mirror: false },
+        strokes: [{ tool: "solid", color: "#111111", size: 10, opacity: 1, pts }],
+      },
+    ],
+  });
+  const widths = (svg: string) =>
+    [...svg.matchAll(/stroke-width="([\d.]+)"/g)].map((m) => Number(m[1]));
+
+  it("a light stroke is thinner than a firm one of the same size", () => {
+    const light = widths(exportSVG(pressured([[0, 0, 0.1], [0.2, 0, 0.1]])))[0]!;
+    const firm = widths(exportSVG(pressured([[0, 0, 1], [0.2, 0, 1]])))[0]!;
+    expect(light).toBeLessThan(firm);
+  });
+
+  it("width varies ALONG a stroke whose pressure changes", () => {
+    const w = widths(exportSVG(pressured([[0, 0, 0.1], [0.1, 0, 0.5], [0.2, 0, 1]])));
+    expect(w, "one width per segment").toHaveLength(2);
+    expect(w[0]!).toBeLessThan(w[1]!);
+  });
+
+  it("matches the canvas formula 0.35 + 0.65p, which is what makes them agree", () => {
+    const full = widths(exportSVG(pressured([[0, 0, 1], [0.2, 0, 1]])))[0]!;
+    const none = widths(exportSVG(pressured([[0, 0, 0], [0.2, 0, 0]])))[0]!;
+    expect(none / full).toBeCloseTo(0.35, 2);
+  });
+});

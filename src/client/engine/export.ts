@@ -107,13 +107,22 @@ export function exportSVG(drawing: DrawingV2, S = 500): string {
       if (stroke.pts.length === 0) return;
       const id = `${layer.id}s${i}`;
       ids.push(id);
-      const d = pathData(stroke, S);
       const color = representativeColor(stroke);
-      const width = (stroke.size * scale).toFixed(2);
       const blend = stroke.tool === "glow" ? ' style="mix-blend-mode:screen"' : "";
+      // WIDTH FOLLOWS PRESSURE, one <path> per segment (S9).
+      //
+      // A single <path> carries one stroke-width, so the SVG used the stroke's
+      // nominal size while the canvas multiplies it by `widthFactor` of each
+      // segment's mean pressure. Every SVG therefore came out as the HEAVIEST
+      // possible version of the drawing — ~48% fatter than the PNG at the
+      // default pressure. Splitting per segment is the only way SVG can express
+      // a varying width; the segments live in one <g> so each symmetry image
+      // still <use>s the stroke exactly once, and the per-stroke attributes
+      // (colour, opacity, blend) stay on that group where they belong.
       defs.push(
-        `<path id="${id}" d="${d}" fill="none" stroke="${color}" stroke-width="${width}" ` +
-          `stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${strokeOpacity(stroke)}"${blend}/>`,
+        `<g id="${id}" fill="none" stroke="${color}" stroke-linecap="round" ` +
+          `stroke-linejoin="round" stroke-opacity="${strokeOpacity(stroke)}"${blend}>` +
+          `${segmentPaths(stroke, S, scale)}</g>`,
       );
     });
     if (ids.length === 0) continue;
@@ -170,6 +179,47 @@ function strokeOpacity(stroke: Stroke): string {
  * (`strokeSegments`). A straight segment becomes `L`, a smoothed one `C`, so an
  * exported SVG has the curve that was on screen.
  */
+
+/**
+ * A stroke as one `<path>` per segment, each carrying its own pressure-derived
+ * width — the SVG counterpart of the segment loop in `brush.ts`.
+ *
+ * Each path's geometry is exactly the segment it represents, so the union
+ * traces the same curve the single-path form did.
+ */
+function segmentPaths(stroke: Stroke, S: number, scale: number): string {
+  const pts = stroke.pts;
+  const f = (n: number): string => (n * S).toFixed(2);
+  const w = (p: number): string => (stroke.size * scale * widthFactor(p)).toFixed(2);
+
+  if (pts.length === 1) {
+    // A dot, drawn as a 1-unit line so round caps render it.
+    const x = f(pts[0][0]);
+    const y = f(pts[0][1]);
+    return `<path d="M${x} ${y} L${x} ${y}" stroke-width="${w(pts[0][2])}"/>`;
+  }
+
+  const out: string[] = [];
+  for (const seg of strokeSegments(stroke)) {
+    const a = pts[seg.i];
+    const b = pts[seg.i + 1];
+    const d =
+      `M${f(a[0])} ${f(a[1])}` +
+      (seg.c1x === undefined
+        ? `L${f(seg.x)} ${f(seg.y)}`
+        : `C${f(seg.c1x)} ${f(seg.c1y!)} ${f(seg.c2x!)} ${f(seg.c2y!)} ${f(seg.x)} ${f(seg.y)}`);
+    out.push(`<path d="${d}" stroke-width="${w((a[2] + b[2]) / 2)}"/>`);
+  }
+  return out.join("");
+}
+
+/** Pressure 0..1 → width multiplier. MUST match `widthFactor` in brush.ts, or
+ *  the SVG and the PNG of the same drawing disagree — which is the bug this
+ *  whole function exists to close. */
+function widthFactor(pressure: number): number {
+  return 0.35 + 0.65 * Math.max(0, Math.min(1, pressure));
+}
+
 function pathData(stroke: Stroke, S: number): string {
   const pts = stroke.pts;
   if (pts.length === 1) {

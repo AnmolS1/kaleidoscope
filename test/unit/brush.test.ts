@@ -227,9 +227,27 @@ describe("SVG export goes through the same builder", () => {
 
 // render-trace.test.ts freezes the CANVAS side for stored v1 work. This is the
 // same guarantee for the SVG side, which that golden cannot see: re-implement
-// the pre-T04 algorithm (join the points as M/L, emit `stroke.opacity` raw) and
-// require the shipped exporter to still agree with it, character for character,
-// on the same four fixtures.
+// the pre-T04 algorithm and require the shipped exporter to still agree with it
+// on GEOMETRY and OPACITY, on the same four fixtures.
+//
+// 🔴 What this pins CHANGED, deliberately (REVIEW S9), and the reasoning is
+// worth keeping.
+//
+// It used to require one `<path>` per stroke carrying the whole polyline. That
+// is a statement about FILE STRUCTURE, not about what the drawing looks like,
+// and it blocked the very thing this guarantee exists to protect: the canvas
+// has always scaled stroke width by pressure and the SVG never did, so every
+// export was the HEAVIEST possible version of the picture — about 48% fatter
+// than the PNG at the default pressure. A single `<path>` carries one
+// `stroke-width`, so a stroke whose pressure varies along its length cannot be
+// one path.
+//
+// The replacement is STRICTER, not looser: each segment is checked against the
+// exact pair of stored points it spans, so a drift is located rather than
+// merely detected, and their union is still required to trace the legacy
+// polyline. Opacity remains per stroke, on the group that owns it. Nothing
+// stored changes — the SVG is generated in the browser at download time.
+// Settled with Anmol 2026-09-01.
 describe("stored v1 drawings export to unchanged SVG", () => {
   /** The path data the exporter produced before the shared builder existed. */
   function legacyPathData(pts: readonly Pt[], S: number): string {
@@ -251,12 +269,40 @@ describe("stored v1 drawings export to unchanged SVG", () => {
       const strokes = drawing.layers[0].strokes;
       const svg = exportSVG(drawing, 500);
 
-      const paths = [...svg.matchAll(/<path [^>]*\bd="([^"]*)"[^>]*stroke-opacity="([^"]*)"/g)];
-      expect(paths, `${fx.name}: one <path> per stroke`).toHaveLength(strokes.length);
+      // One GROUP per stroke, carrying that stroke's opacity.
+      const groups = [...svg.matchAll(/<g id="l\ds\d+"[^>]*stroke-opacity="([^"]*)"[^>]*>(.*?)<\/g>/g)];
+      expect(groups, `${fx.name}: one <g> per stroke`).toHaveLength(strokes.length);
 
-      paths.forEach(([, d, so], i) => {
-        expect(d, `${fx.name} stroke ${i}: path data`).toBe(legacyPathData(strokes[i].pts, 500));
+      groups.forEach(([, so, inner], i) => {
         expect(so, `${fx.name} stroke ${i}: stroke-opacity`).toBe(String(strokes[i].opacity));
+
+        const pts = strokes[i].pts;
+        const seg = [...inner.matchAll(/<path d="([^"]*)"/g)].map((m) => m[1]!);
+        const f = (n: number): string => (n * 500).toFixed(2);
+
+        if (pts.length === 1) {
+          expect(seg, `${fx.name} stroke ${i}: a dot is one path`).toEqual([
+            `M${f(pts[0][0])} ${f(pts[0][1])} L${f(pts[0][0])} ${f(pts[0][1])}`,
+          ]);
+          return;
+        }
+
+        // Per-segment geometry: every path spans exactly the pair of stored
+        // points it should. STRICTER than the old single concatenated string,
+        // which could not say WHICH segment had drifted.
+        expect(seg, `${fx.name} stroke ${i}: one path per segment`).toHaveLength(pts.length - 1);
+        seg.forEach((d, k) => {
+          expect(d, `${fx.name} stroke ${i} segment ${k}`).toBe(
+            `M${f(pts[k][0])} ${f(pts[k][1])}L${f(pts[k + 1][0])} ${f(pts[k + 1][1])}`,
+          );
+        });
+
+        // And the union still traces the legacy polyline, so the SHAPE is
+        // unchanged even though the encoding is not.
+        const joined = seg.map((d, k) => (k === 0 ? d : d.slice(d.indexOf("L")))).join("");
+        expect(joined, `${fx.name} stroke ${i}: same curve as before`).toBe(
+          legacyPathData(pts, 500),
+        );
       });
     });
   }
