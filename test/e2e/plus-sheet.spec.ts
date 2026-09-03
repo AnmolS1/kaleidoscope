@@ -109,10 +109,19 @@ async function checkoutFails(
 // ---------------------------------------------------------------------------
 
 test.describe("the Plus SURFACE flag is the kill switch", () => {
-  test("enabled:false removes every door to the sheet, not just the sheet", async ({ page }) => {
-    // `PLUS_ENABLED` is unset in .dev.vars, so this is the SHIPPED state — no
+  test("surface:false removes every door to the sheet, not just the sheet", async ({ page }) => {
+    // 🔴 THE SURFACE IS SET HERE, not inherited from the deploy.
+    //
+    // This used to lean on `wrangler.jsonc` shipping the flag false — "no
     // interception needed, and none used, so nothing here can be an artefact of
-    // the mock.
+    // the mock". Reasonable, and it made the test a hostage: the day the flag
+    // was turned on for the App Review window this went red, in the deploy
+    // pipeline, on a change that had nothing to do with the kill switch.
+    //
+    // A test of "what does OFF look like" has to say off. Reading it from the
+    // configuration means the test asserts today's rollout state and calls it a
+    // behaviour.
+    await mockPlus(page, () => ({ enabled: false, surface: false, publicCap: null }));
     await page.goto("/");
     await testLogin(page, uniqueSub("plus-off"));
     await openAccountMenu(page);

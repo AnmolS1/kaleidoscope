@@ -109,6 +109,25 @@ async function setLayerCap(page: Page, cap: number): Promise<void> {
   }, cap);
 }
 
+/**
+ * Drive the Plus SURFACE, rather than inheriting whatever the deploy ships.
+ *
+ * The footnote's offer is gated on it, so a test that reads it from
+ * `wrangler.jsonc` is asserting today's rollout state. That is not theoretical:
+ * turning the flag on for the App Review window turned this file red inside the
+ * deploy pipeline, on a change with nothing to do with layers.
+ */
+async function setPlusSurface(page: Page, surface: boolean): Promise<void> {
+  await page.evaluate(async (on) => {
+    const load = (path: string): Promise<any> => import(/* @vite-ignore */ path);
+    const S = await load("/src/client/state.ts");
+    const cur = S.plus.value ?? {
+      active: false, sources: [], publicCount: 0, publicCap: null, layerCap: 3, enabled: false,
+    };
+    S.plus.value = { ...cur, surface: on };
+  }, surface);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await page.waitForSelector(".canvas-host canvas");
@@ -216,6 +235,11 @@ test("Add locks at the cap, is unlocked below it, and says which cap it is", asy
   // the link would open a sheet that refuses to render (S14). The surface-on
   // variant is its own test below, because turning it on mid-flow changes
   // unrelated chrome.
+  //
+  // Set explicitly: "no offer" is the behaviour under test, so the test has to
+  // say the surface is off rather than depend on the deploy still shipping it
+  // that way.
+  await setPlusSurface(page, false);
   await expect(page.locator(".layer-note")).toHaveText("Layers: 3 of 3");
   await expect(page.locator(".layer-note")).not.toHaveText(
     "Layers: 3 of 3 · Kaleidoscope Plus unlocks 8",
