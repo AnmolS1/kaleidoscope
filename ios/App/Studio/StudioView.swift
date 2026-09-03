@@ -225,15 +225,24 @@ struct StudioView: View {
                     .environmentObject(auth)
                     .environmentObject(router)
             }
-            // DESIGN.md §2: top-right on a landscape regular-width screen,
-            // bottom-left in portrait (frame `IPadPortrait`). Portrait has the
-            // height to spare down there and none to spare beside the edge
-            // sliders, which are vertically centred.
+            // Portrait: BESIDE THE RAIL, level with the button that opened it.
+            //
+            // DESIGN.md §2 said bottom-left here, reasoning that portrait "has
+            // the height to spare down there and none to spare beside the edge
+            // sliders". The sliders are on the TRAILING edge, so they were never
+            // the constraint on this side — and the layers button lives on the
+            // rail at the TOP, so the panel opened at the opposite end of the
+            // screen from the control that summoned it. Reported as "the layers
+            // panel shows up at the bottom instead of next to the layers icon".
+            //
+            // Leading inset is unchanged (`popoverAnchor` clears the rail); only
+            // the vertical anchor moves, and the existing `maxLayersHeight` cap
+            // already keeps a full eight-row stack from running past the midline.
             if geo.size.height > geo.size.width {
                 card
                     .padding(.leading, metrics.popoverAnchor)
-                    .padding(.bottom, 20)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .padding(.top, 64)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .transition(cardTransition)
             } else {
                 card
@@ -452,6 +461,21 @@ struct StudioView: View {
         )
     }
 
+    /// Resting height for the phone sheet, by which card is in it.
+    ///
+    /// Measured against the tallest phone content rather than guessed: the
+    /// symmetry dial alone is ~260pt before its title, readout and button, which
+    /// does not fit in a third of any phone. `.large` remains the second detent
+    /// everywhere, so nothing is ever unreachable.
+    private var restingDetent: CGFloat {
+        switch panel {
+        case .symmetry: return 0.56
+        case .brush: return 0.42
+        case .color: return 0.34
+        case nil: return showLayers ? 0.5 : 0.34
+        }
+    }
+
     @ViewBuilder
     private var panelSheet: some View {
         Group {
@@ -482,7 +506,14 @@ struct StudioView: View {
         // DESIGN.md §2: a phone sheet never exceeds a third of the height at
         // rest. `.large` stays available because the brush card is taller than
         // a third of a phone and its last row must still be reachable.
-        .presentationDetents([.fraction(0.34), .large])
+        //
+        // 🔴 PER CARD, not one number for all three. A single 0.34 was sized for
+        // the brush; the symmetry card is a 260pt dial plus a title row, a
+        // readout and a full-width button, so at a third of an iPhone it opened
+        // with its own header jammed under the drag indicator — reported as "the
+        // symmetry popup is a little too short, it should nicely show the title".
+        // The layers card is taller again once the stack grows.
+        .presentationDetents([.fraction(restingDetent), .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Blueprint.graphCard)
     }

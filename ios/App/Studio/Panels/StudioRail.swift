@@ -246,6 +246,25 @@ struct PhoneDock: View {
                     model.removeStrokeMode.toggle()
                     model.pendingHit = nil
                 }
+                // 🔴 SYMMETRY IS A DOCK CONTROL, not something to scroll to.
+                //
+                // Its only always-visible phone entry point was a chip at the
+                // END of the strip's horizontal scroll — behind every colour
+                // swatch — so reaching the segment count meant scrolling past
+                // the palette to find it. Reported as "the location of the
+                // section count slider isn't obvious". The iPad rail has always
+                // had a first-class Symmetry button next to Colour and Layers;
+                // the dock is the phone's rail and now matches it.
+                //
+                // Seven 44pt targets still fit: the dock divides its width
+                // evenly and a 390pt phone gives each ~55pt.
+                IconButton(systemImage: "asterisk", label: "Symmetry",
+                           hint: "Opens the symmetry dial for the active layer",
+                           isActive: panel == .symmetry(model.activeLayerId)) {
+                    panel = panel == .symmetry(model.activeLayerId)
+                        ? nil
+                        : .symmetry(model.activeLayerId)
+                }
                 IconButton(systemImage: "square.3.layers.3d", label: "Layers",
                            isActive: showLayers, badge: "\(model.layers.count)") {
                     showLayers.toggle()
