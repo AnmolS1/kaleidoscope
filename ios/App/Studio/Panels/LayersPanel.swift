@@ -16,8 +16,8 @@ struct LayersPanel: View {
     /// Fired when a nudge should be shown (e.g. a new layer inheriting symmetry).
     var onNudge: (StudioNudge) -> Void
 
-    @State private var renaming: String?
-    @State private var draftName = ""
+    // `renaming` / `draftName` now live on the model — see StudioModel. A card
+    // rebuild on iPad was discarding them.
     /// Which row has its opacity slider disclosed, if any. One at a time: the
     /// slider is a second line inside the row, and eight open at once would push
     /// the footer and the cap footnote off the panel.
@@ -35,9 +35,9 @@ struct LayersPanel: View {
                     LayerRow(
                         layer: row,
                         isActive: row.id == model.activeLayerId,
-                        isRenaming: renaming == row.id,
+                        isRenaming: model.renamingLayerId == row.id,
                         isOpacityOpen: opacityFor == row.id,
-                        draftName: $draftName,
+                        draftName: $model.renameDraft,
                         nameFieldFocused: $nameFieldFocused,
                         onSelect: { model.setActiveLayer(row.id) },
                         onToggleVisible: { model.setLayerVisible(row.id, !row.visible) },
@@ -59,11 +59,20 @@ struct LayersPanel: View {
                             model.setLayerOpacity(row.id, value, coalesce: coalesce)
                         },
                         onEndOpacityGesture: { model.endLayerOpacityGesture() },
-                        onBeginRename: { renaming = row.id; draftName = row.name; nameFieldFocused = true },
-                        onCommitRename: {
-                            model.setLayerName(row.id, draftName)
-                            renaming = nil
+                        onBeginRename: {
+                            model.beginRename(row.id, current: row.name)
+                            // 🔴 FOCUS LANDS ON IPHONE, NOT ON IPAD. `@FocusState`
+                            // lives on this view, and the iPad card rebuild that
+                            // was discarding the rename state discards this too
+                            // — tried in the same tick and on the next runloop,
+                            // neither takes. The field is present and tappable
+                            // there, so renaming works with one extra tap; the
+                            // alternative is hoisting focus onto the model,
+                            // which SwiftUI does not support for `@FocusState`.
+                            // Left honest rather than papered over.
+                            nameFieldFocused = true
                         },
+                        onCommitRename: { model.commitRename() },
                         onMove: { delta in move(row, by: delta) },
                         canMoveUp: model.layers.last?.id != row.id,
                         canMoveDown: model.layers.first?.id != row.id
@@ -256,6 +265,23 @@ private struct LayerRow: View {
                 .onTapGesture(count: 2, perform: onBeginRename)
                 .onTapGesture(perform: onSelect)
         )
+        // 🔴 RENAME NEEDED AN AFFORDANCE. It was a double-tap on a background
+        // layer and nothing else — no glyph, no menu, nothing on screen saying
+        // the name could be changed. Reported as "there's no way to rename
+        // layers on iPad", which was true of any user who had not been told.
+        //
+        // A context menu is the standard iOS place to look for row actions and
+        // costs no pixels; the pencil beside the ACTIVE row's name (see
+        // `firstLine`) is the visible half, shown on one row rather than eight
+        // so the panel does not turn into a wall of icons. The double-tap stays
+        // for anyone who already knew it.
+        .contextMenu {
+            Button { onBeginRename() } label: { Label("Rename", systemImage: "pencil") }
+            Button { onToggleVisible() } label: {
+                Label(layer.visible ? "Hide" : "Show",
+                      systemImage: layer.visible ? "eye.slash" : "eye")
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(rowLabel)
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
@@ -265,10 +291,49 @@ private struct LayerRow: View {
 
     private var firstLine: some View {
         HStack(spacing: 8) {
-            Image(systemName: "line.3.horizontal")
-                .font(.caption)
-                .foregroundStyle(Blueprint.graphite.opacity(0.7))
-                .accessibilityHidden(true)
+            // 🔴 TWO REAL BUTTONS, not a drag handle.
+            //
+            // This was a `line.3.horizontal` glyph with no gesture at all —
+            // `accessibilityHidden`, decorative — so reordering existed only as
+            // a VoiceOver custom action and a sighted user saw a handle that did
+            // nothing ("reordering layers doesn't work on either platform").
+            //
+            // A drag was tried first and abandoned on evidence. On iPad the
+            // panel lives inside a `scrollableCard`, and the ScrollView's UIKit
+            // pan recogniser claims the vertical drag before SwiftUI sees it:
+            // instrumented, the panel reported `drag=nil` before and after a
+            // full slow drag, with the touch provably over the grip
+            // (grip x 106–134, touch at 121.5, `hit=true`). Neither
+            // `.highPriorityGesture` — which orders SwiftUI gestures against
+            // each other, not against UIKit — nor sequencing behind a
+            // `LongPressGesture` changed it.
+            //
+            // Chevrons work identically on both platforms, are reachable by
+            // touch, pointer and keyboard, and finally MATCH the "Move up" /
+            // "Move down" actions VoiceOver has always had. The affordance now
+            // tells the truth, which is what the report was really about.
+            VStack(spacing: 0) {
+                Button { onMove(1) } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 28, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canMoveUp)
+                .accessibilityLabel("Move \(layer.name) up")
+
+                Button { onMove(-1) } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 28, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canMoveDown)
+                .accessibilityLabel("Move \(layer.name) down")
+            }
+            .foregroundStyle(Blueprint.graphite.opacity(0.7))
 
             LayerThumbnail(layer: layer)
 
@@ -281,10 +346,29 @@ private struct LayerRow: View {
                         .submitLabel(.done)
                         .onSubmit(onCommitRename)
                 } else {
-                    Text(layer.name)
-                        .font(.footnote.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    HStack(spacing: 4) {
+                        Text(layer.name)
+                            .font(.footnote.weight(.medium))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        // The VISIBLE half of the rename affordance, on the
+                        // active row only — eight of these would be a wall of
+                        // icons, and the active row is the one a rename is
+                        // almost always aimed at. It is a real button, so it
+                        // works with one tap where the row's hidden double-tap
+                        // needed to be known about first.
+                        if isActive {
+                            Button(action: onBeginRename) {
+                                Image(systemName: "pencil")
+                                    .font(.caption2)
+                                    .foregroundStyle(Blueprint.craneText)
+                                    .frame(width: 28, height: 28)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Rename \(layer.name)")
+                        }
+                    }
                 }
                 // `12 · D · 70%` is still one line, but it is now TWO controls
                 // with the separator between them: the sym half opens the dial

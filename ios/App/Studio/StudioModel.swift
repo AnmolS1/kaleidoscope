@@ -470,6 +470,28 @@ final class StudioModel: ObservableObject {
     // Canvas chrome
     @Published var showGuides: Bool = true
 
+    /// Which layer is being renamed, and the draft text.
+    ///
+    /// 🔴 ON THE MODEL, not `@State` on the panel. On iPad the layers panel is
+    /// wrapped in a `scrollableCard` whose measured-height binding writes back
+    /// during layout, which rebuilds the panel and threw away any `@State` it
+    /// held — so tapping Rename set `renaming`, the row re-rendered without it,
+    /// and no text field ever appeared. From the outside that is exactly "there
+    /// is no way to rename layers on iPad", and it worked on the phone because
+    /// the sheet has no such binding.
+    @Published var renamingLayerId: String?
+    @Published var renameDraft: String = ""
+
+    func beginRename(_ id: String, current: String) {
+        renamingLayerId = id
+        renameDraft = current
+    }
+
+    func commitRename() {
+        if let id = renamingLayerId { setLayerName(id, renameDraft) }
+        renamingLayerId = nil
+    }
+
     /// Remove-stroke: a two-phase eraser. The first tap highlights every image of
     /// the stroke it hit; the second (or Delete) removes it. Two-phase is why the
     /// Pencil double-tap can safely default to toggling it — an accidental
