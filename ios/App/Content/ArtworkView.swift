@@ -39,7 +39,10 @@ struct ArtworkView: View {
     @ViewBuilder
     private func content(_ d: ArtworkDetail) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            AsyncImage(url: client.mediaURL(d.urls.image)) { image in
+            // Carries the session: a PRIVATE piece 404s without it and renders
+            // as an empty rectangle, which is what "the gallery shows blank"
+            // was. See ArtworkImage.
+            ArtworkImage(url: client.mediaURL(d.urls.image), token: auth.session?.token) { image in
                 image.resizable().scaledToFit()
             } placeholder: {
                 Rectangle().fill(Blueprint.crease.opacity(0.12)).aspectRatio(1, contentMode: .fit)

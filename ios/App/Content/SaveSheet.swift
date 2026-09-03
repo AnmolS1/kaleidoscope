@@ -539,7 +539,7 @@ struct SaveSheet: View {
 
     private func pieceCard(_ d: ArtworkDetail, byLine: String) -> some View {
         HStack(spacing: 12) {
-            AsyncImage(url: client.mediaURL(d.urls.thumb)) { image in
+            ArtworkImage(url: client.mediaURL(d.urls.thumb), token: auth.session?.token) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Rectangle().fill(Blueprint.crease.opacity(0.12))

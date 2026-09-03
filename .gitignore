@@ -58,3 +58,8 @@ google-oauth.json
 # dirtied 17 committed binaries — `git rm --cached` untracked them without
 # touching the files on disk.
 /ios/app-store-screenshots/
+
+# Bug-report screenshots dropped here while testing on device. Same reasoning as
+# the App Store captures above: they are evidence for a conversation, not
+# something this repo publishes.
+/screenshots/

@@ -186,3 +186,59 @@ describe("the stored vector is the canonical form, not the caller's bytes", () =
     expect(text).not.toMatch(/\n/); // the input had newlines; the canonical form has none
   });
 });
+
+// The contract that made a real client bug possible, pinned so the client's fix
+// cannot drift from it.
+//
+// iOS handed these URLs to SwiftUI's `AsyncImage`, which issues a bare request
+// with no Authorization header. For a private piece that is a 404, so the app
+// rendered an empty rectangle — reported as "the gallery shows blank" and
+// looking for all the world like a broken render. The drawing was stored
+// perfectly: Remix, which fetches the VECTOR with the token, showed it fine.
+//
+// The web never saw it because a browser attaches the session cookie to an
+// `<img>` on its own, so no e2e could have caught it.
+describe("artwork media needs the session exactly when the piece is private", () => {
+  function serving(visibility: string, id: string) {
+    const DB = makeD1();
+    const SESSIONS = makeKV();
+    const ART = makeR2({
+      [`img/${id}.webp`]: new Uint8Array([1, 2, 3]),
+      [`thumb/${id}.webp`]: new Uint8Array([1, 2, 3]),
+    });
+    seedUser(DB, "u1");
+    seedUser(DB, "u2", { name: "Someone Else" });
+    seedSession(SESSIONS, "s1", "u1");
+    seedSession(SESSIONS, "s2", "u2");
+    seedArtwork(DB, { id, user_id: "u1", visibility });
+    return makeEnv({ DB, SESSIONS, ART, RATELIMIT: makeKV() });
+  }
+
+  const get = (env: unknown, id: string, kind: string, sid?: string) =>
+    app.request(
+      `/api/artworks/${id}/${kind}`,
+      sid ? { headers: bearer(sid) } : {},
+      env as never,
+    );
+
+  it("a PRIVATE piece's image and thumb 404 without a session and 200 with the owner's", async () => {
+    const env = serving("private", "p1");
+    for (const kind of ["image", "thumb"]) {
+      expect((await get(env, "p1", kind)).status, `${kind} anonymous`).toBe(404);
+      expect((await get(env, "p1", kind, "s1")).status, `${kind} owner`).toBe(200);
+      // And it is genuinely per-user, not merely "any session will do".
+      expect((await get(env, "p1", kind, "s2")).status, `${kind} other user`).toBe(404);
+    }
+  });
+
+  it("CONTROL: public and unlisted load with no session at all", async () => {
+    // The gallery is browsable signed out, so this is the case that kept the
+    // defect hidden — most pieces a tester looks at are public.
+    for (const visibility of ["public", "unlisted"]) {
+      const env = serving(visibility, `x-${visibility}`);
+      for (const kind of ["image", "thumb"]) {
+        expect((await get(env, `x-${visibility}`, kind)).status, `${visibility} ${kind}`).toBe(200);
+      }
+    }
+  });
+});

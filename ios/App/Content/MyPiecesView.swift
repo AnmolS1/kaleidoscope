@@ -36,7 +36,9 @@ struct MyPiecesView: View {
     private func pieceLink(_ piece: MyArtwork) -> some View {
         NavigationLink { ArtworkView(id: piece.id) } label: {
             VStack(alignment: .leading, spacing: 6) {
-                AsyncImage(url: client.mediaURL(piece.thumb)) { image in
+                // My Pieces is ENTIRELY owner content, so most of this grid is
+                // exactly the case AsyncImage cannot load.
+                ArtworkImage(url: client.mediaURL(piece.thumb), token: auth.session?.token) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Rectangle().fill(Blueprint.crease.opacity(0.12))
