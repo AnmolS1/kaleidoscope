@@ -76,8 +76,8 @@
     // findable and buyable, and nobody loses a layer or a public slot until the
     // caps are deliberately switched on with a real CAP_EPOCH.
     "PLUS_ENABLED": "false",
-    "PLUS_SURFACE_ENABLED": "false",
-    "PLUS_ALLOW_SANDBOX": "false",
+    "PLUS_SURFACE_ENABLED": "true",
+    "PLUS_ALLOW_SANDBOX": "true",
     "PLUS_ALLOW_TEST": "false",
     "PLUS_PRODUCT_ID": "dev.ponderance.kaleidoscope.plus",
     // Lemon Squeezy. Empty until the store leaves test mode: LS pins a new store
