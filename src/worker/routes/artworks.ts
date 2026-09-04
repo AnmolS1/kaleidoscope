@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { publicAuthorName } from "../../shared/authorname";
 import type { AppEnv } from "../middleware";
 import { requireAuth, requireCsrf } from "../middleware";
 import { verifyTurnstile } from "../lib/turnstile";
@@ -105,7 +106,7 @@ artworks.get("/hash/:sha", requireAuth, async (c) => {
     // existence and its title. The POST still 409s on it (see below).
     other:
       other && other.visibility !== "private"
-        ? { id: other.id, title: other.title, author: other.author_name }
+        ? { id: other.id, title: other.title, author: publicAuthorName(other.author_name) }
         : null,
   });
 });
@@ -478,7 +479,7 @@ artworks.get("/:id", async (c) => {
     id: art.id,
     title: art.title,
     visibility: art.visibility,
-    author: { name: art.author_name, avatar: art.author_avatar },
+    author: { name: publicAuthorName(art.author_name), avatar: art.author_avatar },
     isOwner: art.user_id === c.get("user")?.id,
     segments: art.segments,
     mirror: !!art.mirror,

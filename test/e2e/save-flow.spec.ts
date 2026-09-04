@@ -329,7 +329,11 @@ test.describe("save dialog states", () => {
     await expect(dialog(page)).toHaveAttribute("data-save-state", "other-unchanged");
     await expect(page.getByText("This exact drawing is already in the gallery.")).toBeVisible();
     await expect(page.getByText("Make a change to save your version — anything counts.")).toBeVisible();
-    await expect(page.locator(".piece-line")).toContainText("by E2E save-other-a");
+    // FIRST NAME only. The test user is "E2E save-other-a", so the trailing
+    // part being ABSENT is what proves the trim — asserting "by E2E" alone would
+    // pass on the untrimmed name too.
+    await expect(page.locator(".piece-line")).toContainText("by E2E");
+    await expect(page.locator(".piece-line")).not.toContainText("save-other-a");
     await expect(page.locator(".save-actions .btn-primary")).toBeDisabled();
   });
 
@@ -366,7 +370,8 @@ test.describe("save dialog states", () => {
     expect((await post).status()).toBe(409);
     await expect(dialog(page)).toHaveAttribute("data-save-state", "duplicate-other");
     await expect(page.locator(".note")).toContainText("This exact drawing is already in the gallery as");
-    await expect(page.locator(".note")).toContainText("by E2E save-dup-a");
+    await expect(page.locator(".note")).toContainText("by E2E");
+    await expect(page.locator(".note")).not.toContainText("save-dup-a");
     // The link is the thing this state has and the private variant does not.
     await expect(page.locator(".note a")).toHaveAttribute("href", `/p/${id}`);
     await expect(page.locator(".note a")).toHaveText("Saffron Orbit");

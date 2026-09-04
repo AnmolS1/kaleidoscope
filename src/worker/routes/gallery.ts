@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { publicAuthorName } from "../../shared/authorname";
 import type { AppEnv } from "../middleware";
 import { requireAuth } from "../middleware";
 import { listPublic, listByUser, randomPublic, encodeCursor } from "../lib/db";
@@ -27,7 +28,7 @@ gallery.get("/gallery", async (c) => {
     items: page.map((a) => ({
       id: a.id,
       title: a.title,
-      author: { name: a.author_name, avatar: a.author_avatar },
+      author: { name: publicAuthorName(a.author_name), avatar: a.author_avatar },
       thumb: `/api/artworks/${a.id}/thumb`,
       altText: a.alt_text ?? templateAlt(a),
       // `segments === 0` means the visible layers disagree — the piece is
@@ -55,7 +56,7 @@ gallery.get("/gallery/random", async (c) => {
   const items = (await randomPublic(c.env, count)).map((a) => ({
     id: a.id,
     title: a.title,
-    author: a.author_name,
+    author: publicAuthorName(a.author_name),
     altText: a.alt_text ?? templateAlt(a),
     imageUrl: `${base}/api/artworks/${a.id}/image`,
     permalink: `${base}/p/${a.id}`,

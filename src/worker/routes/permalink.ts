@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { publicAuthorName } from "../../shared/authorname";
 import type { AppEnv } from "../middleware";
 import { getArtworkWithAuthor, listPublicIds } from "../lib/db";
 
@@ -34,7 +35,8 @@ export function ogDescription(art: {
   segments: number;
 }): string {
   const kind = art.segments === 0 ? "a layered" : `a ${art.segments}-fold`;
-  return `${art.title}${art.author_name ? ` by ${art.author_name}` : ""} — ${kind} kaleidoscope drawing.`;
+  const author = publicAuthorName(art.author_name);
+  return `${art.title}${author ? ` by ${author}` : ""} — ${kind} kaleidoscope drawing.`;
 }
 
 permalink.get("/p/:id", async (c) => {

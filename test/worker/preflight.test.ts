@@ -62,7 +62,8 @@ describe("GET /api/artworks/hash/:sha", () => {
     });
     expect(await (await preflight(env, SHA_A)).json()).toEqual({
       mine: null,
-      other: { id: "theirs", title: "Ember Lattice", author: "Other Person" },
+      // FIRST NAME only — a public wall does not need a surname on it.
+      other: { id: "theirs", title: "Ember Lattice", author: "Other" },
     });
   });
 
@@ -203,8 +204,10 @@ describe("layered pieces — segments 0 metadata and copy", () => {
     // Social scrapers cache this string, so a wrong one is pinned in previews.
     // The route itself needs HTMLRewriter (a workerd global absent from the Node
     // test environment), so the copy is tested at the function that builds it.
+    // And the surname is not in it. This string is CACHED BY SCRAPERS, so it
+    // is the worst place to leak one.
     expect(ogDescription({ title: "Drift", author_name: "Other Person", segments: 0 })).toBe(
-      "Drift by Other Person — a layered kaleidoscope drawing.",
+      "Drift by Other — a layered kaleidoscope drawing.",
     );
     expect(ogDescription({ title: "Drift", author_name: null, segments: 9 })).toBe(
       "Drift — a 9-fold kaleidoscope drawing.",
