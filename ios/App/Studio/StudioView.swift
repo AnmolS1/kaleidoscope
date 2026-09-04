@@ -1,4 +1,5 @@
 import SwiftUI
+import Photos
 import KaleidoEngine
 
 /// The drawing studio: a full-bleed canvas with the blueprint-instrument chrome
@@ -23,6 +24,8 @@ struct StudioView: View {
     @EnvironmentObject private var auth: AuthModel
 
     @State private var shareItem: ShareItem?
+    @State private var showDownloadOptions = false
+    @State private var showNewDrawingConfirm = false
     @State private var customColor = Color(hex: "#E84A27")
     /// The rail-anchored card. Only ONE of brush / colour / symmetry at a time —
     /// two floating cards over a drawing is two things covering the art.
@@ -86,6 +89,24 @@ struct StudioView: View {
         .environment(\.colorScheme, model.background == .dark ? .dark : .light)
         .overlay(alignment: .topLeading) { exportProbe }
         .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
+        // An ALERT, not a second confirmationDialog. Two of those stacked on one
+        // view is a SwiftUI conflict where only one ever presents — the New
+        // drawing prompt simply never appeared. Clear next door is an alert for
+        // the same reason, and the two destructive prompts now match.
+        .alert("Start a new drawing?", isPresented: $showNewDrawingConfirm) {
+            Button("New drawing", role: .destructive) { model.newDrawing() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Clears the canvas and every layer, and stops this being a remix. "
+                 + "Anything you have already saved is untouched.")
+        }
+        .confirmationDialog("Download", isPresented: $showDownloadOptions, titleVisibility: .visible) {
+            Button("Save to Photos") { Task { await saveToPhotos() } }
+            Button("Share\u{2026}") { sharePNG() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("PNG, 1024\u{00D7}1024.")
+        }
         .sheet(isPresented: $showHelp) { StudioHelpSheet() }
         // Compact width gets bottom sheets rather than floating cards: a 280pt
         // card on a 390pt-wide screen is a modal wearing a popover's clothes.
@@ -155,7 +176,8 @@ struct StudioView: View {
         ZStack(alignment: .topLeading) {
             // Rail, full height, inset from every edge.
             StudioRail(model: model, metrics: metrics, panel: $panel, showLayers: $showLayers,
-                       onClear: { showClearConfirm = true }, onDownload: download)
+                       onClear: { showClearConfirm = true }, onDownload: download,
+                      onNewDrawing: { showNewDrawingConfirm = true })
                 .padding(.vertical, metrics.railInset)
                 .padding(.leading, metrics.railInset)
                 .frame(maxHeight: .infinity, alignment: .top)
@@ -331,7 +353,8 @@ struct StudioView: View {
                 .padding(.bottom, 8)
 
             PhoneDock(model: model, metrics: metrics, panel: $panel, showLayers: $showLayers,
-                      onClear: { showClearConfirm = true }, onDownload: download)
+                      onClear: { showClearConfirm = true }, onDownload: download,
+                      onNewDrawing: { showNewDrawingConfirm = true })
                 .padding(.horizontal, metrics.dockInset)
         }
     }
@@ -341,7 +364,8 @@ struct StudioView: View {
     private func compactRailChrome(in geo: GeometryProxy) -> some View {
         ZStack(alignment: .topLeading) {
             CompactRail(model: model, metrics: metrics, panel: $panel, showLayers: $showLayers,
-                        onClear: { showClearConfirm = true }, onDownload: download)
+                        onClear: { showClearConfirm = true }, onDownload: download,
+                      onNewDrawing: { showNewDrawingConfirm = true })
                 .padding(.leading, metrics.railInset)
                 .frame(maxHeight: .infinity, alignment: .center)
 
@@ -539,7 +563,41 @@ struct StudioView: View {
         StudioExport.renderSquare(model.currentDrawingV2(), size: size)
     }
 
-    private func download() {
+    /// Download offers a CHOICE now, rather than going straight to a share sheet.
+    ///
+    /// Reported as "when downloading the png on ios, i get the share panel which
+    /// doesn't allow me to just save it to photos". That is what a share sheet
+    /// over a FILE URL does: it offers Files and AirDrop, and Photos is not a
+    /// reliable destination for one. The common intent — put this picture in my
+    /// camera roll — had no route at all.
+    ///
+    /// "Save to Photos" writes it directly. "Share…" keeps the old sheet, which
+    /// is still the right answer for AirDrop, Messages and Files.
+    private func download() { showDownloadOptions = true }
+
+    /// Write the PNG straight into the photo library.
+    ///
+    /// Add-only authorization: this app never READS the library, and asking for
+    /// read access to save one file is a permission prompt that deserves to be
+    /// refused.
+    private func saveToPhotos() async {
+        let image = exportImage()
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard status == .authorized || status == .limited else {
+            nudges.show(.photosDenied, atRevision: model.revision)
+            return
+        }
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }
+            nudges.show(.savedToPhotos, atRevision: model.revision)
+        } catch {
+            nudges.show(.photosDenied, atRevision: model.revision)
+        }
+    }
+
+    private func sharePNG() {
         guard let png = exportImage().pngData() else { return }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("kaleidoscope.png")
         do {

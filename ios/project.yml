@@ -75,6 +75,11 @@ targets:
         # so App Store Connect won't prompt on every submission. Declared here (not
         # just in Info.plist) so `xcodegen generate` can't drop it.
         ITSAppUsesNonExemptEncryption: false
+        # ADD-ONLY. "Save to Photos" writes one PNG and this app never reads the
+        # library, so it asks for `.addOnly` authorization — a prompt that says
+        # "add to" rather than "access all your photos" is one a user can
+        # reasonably say yes to. Required, or the write traps at runtime.
+        NSPhotoLibraryAddUsageDescription: Kaleidoscope saves the drawing you export straight to your photo library.
         UILaunchScreen: {}
         # Universal app: declare orientations so iPad doesn't warn ("must support all
         # orientations unless full screen"). iPhone: portrait + both landscapes; iPad: all four.

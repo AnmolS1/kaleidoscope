@@ -30,6 +30,7 @@ struct StudioRail: View {
     /// Actions that live in the More menu.
     let onClear: () -> Void
     let onDownload: () -> Void
+    var onNewDrawing: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 2) {
@@ -56,6 +57,7 @@ struct StudioRail: View {
             Hairline().frame(width: 28).padding(.vertical, 6)
 
             MoreMenu(model: model, onClear: onClear, onDownload: onDownload,
+                     onNewDrawing: onNewDrawing,
                      buttonSize: metrics.railButton)
         }
         .padding(.vertical, 6)
@@ -168,6 +170,7 @@ struct CompactRail: View {
     @Binding var showLayers: Bool
     let onClear: () -> Void
     let onDownload: () -> Void
+    var onNewDrawing: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
@@ -192,6 +195,7 @@ struct CompactRail: View {
             IconButton(systemImage: "arrow.uturn.backward", label: "Undo",
                        isEnabled: model.canUndo, size: metrics.railButton) { model.undo() }
             MoreMenu(model: model, onClear: onClear, onDownload: onDownload,
+                     onNewDrawing: onNewDrawing,
                      buttonSize: metrics.railButton)
         }
         .frame(width: metrics.railWidth)
@@ -227,6 +231,7 @@ struct PhoneDock: View {
     @Binding var showLayers: Bool
     let onClear: () -> Void
     let onDownload: () -> Void
+    var onNewDrawing: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 0) {
@@ -271,7 +276,8 @@ struct PhoneDock: View {
                 }
                 IconButton(systemImage: "arrow.uturn.backward", label: "Undo",
                            isEnabled: model.canUndo) { model.undo() }
-                MoreMenu(model: model, onClear: onClear, onDownload: onDownload, buttonSize: 44)
+                MoreMenu(model: model, onClear: onClear, onDownload: onDownload,
+                         onNewDrawing: onNewDrawing, buttonSize: 44)
             }
             .frame(maxWidth: .infinity)
         }
@@ -352,6 +358,7 @@ struct MoreMenu: View {
     @ObservedObject var model: StudioModel
     let onClear: () -> Void
     let onDownload: () -> Void
+    var onNewDrawing: () -> Void = {}
     var buttonSize: CGFloat = 44
 
     var body: some View {
@@ -376,6 +383,15 @@ struct MoreMenu: View {
 
             Divider()
 
+            // ABOVE Clear, and distinct from it. Clear removes strokes and keeps
+            // your layers, names, symmetry — and the remix link. This starts
+            // over, which is the only way to stop a save saying "Remix of your
+            // ___". Grouped with Clear because both discard work, ordered
+            // gentler-first.
+            Button { onNewDrawing() } label: {
+                Label("New drawing", systemImage: "square.dashed")
+            }
+
             Button(role: .destructive) { onClear() } label: { Label("Clear canvas", systemImage: "trash") }
                 .disabled(model.isEmpty)
         } label: {
@@ -386,7 +402,7 @@ struct MoreMenu: View {
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("More")
-        .accessibilityHint("Canvas theme, guides, download and clear")
+        .accessibilityHint("Canvas theme, guides, download, new drawing and clear")
         .accessibilityIdentifier("more-menu")
     }
 }

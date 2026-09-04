@@ -25,6 +25,10 @@ enum StudioNudge: Equatable {
     /// the id is what "Show layer" acts on. Layer names are user-editable and
     /// need not be unique, so the two cannot be the same field.
     case hiddenLayer(id: String, name: String)
+    /// The result of "Save to Photos" — the only feedback that action has, since
+    /// nothing else on screen changes when it works.
+    case savedToPhotos
+    case photosDenied
 
     var systemImage: String {
         switch self {
@@ -33,6 +37,8 @@ enum StudioNudge: Equatable {
         case .newLayerSymmetry: return "square.3.layers.3d"
         case .switchedLayer: return "square.3.layers.3d"
         case .hiddenLayer: return "eye.slash"
+        case .savedToPhotos: return "checkmark.circle"
+        case .photosDenied: return "exclamationmark.triangle"
         }
     }
 
@@ -48,6 +54,10 @@ enum StudioNudge: Equatable {
             return "Switched to \(name)"
         case .hiddenLayer(_, let name):
             return "\u{201C}\(name)\u{201D} is hidden, so nothing was drawn."
+        case .savedToPhotos:
+            return "Saved to Photos."
+        case .photosDenied:
+            return "Kaleidoscope needs permission to add to Photos. Settings ▸ Photos."
         }
     }
 

@@ -794,6 +794,23 @@ final class StudioModel: ObservableObject {
         _ = mutate { $0.clearStrokes() }
     }
 
+    /// Start a NEW drawing: one empty layer, and no remix link.
+    ///
+    /// 🔴 THE ONLY WAY OUT OF A REMIX. `clear()` removes strokes and keeps
+    /// everything else, `remixSourceId` included — deliberately, since clearing
+    /// a layer is not the same as disowning the piece you started from. But
+    /// nothing else cleared it either, so after tapping Remix the only exit was
+    /// force-quitting: "even after [clear canvas], if i do a whole new drawing
+    /// with different layers and hit save, i still see Remix of your ____".
+    ///
+    /// Keeps the background and the active layer's symmetry, which are settings
+    /// rather than content — a fresh canvas should not also undo your setup.
+    func newDrawing() {
+        let sym = activeLayer.sym
+        let bg = doc.drawing.bg
+        load(DrawingV2(bg: bg, layers: [Layer(id: "l1", name: "Layer 1", sym: sym)]))
+    }
+
     // MARK: Loading
 
     /// Load a v2 drawing (remix or restore): replaces content + settings, resets
