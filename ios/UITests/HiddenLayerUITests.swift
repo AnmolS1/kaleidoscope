@@ -177,20 +177,39 @@ final class HiddenLayerUITests: XCTestCase {
         app.buttons["Layers"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Glow"].waitForExistence(timeout: 5))
 
-        // Rename the bottom layer (Glow) to "Gold" — double-tap the row, in the
-        // gap between the name and the eye so the row's own gesture gets it.
-        let glowRow = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Layer Glow")).firstMatch
-        XCTAssertTrue(glowRow.exists)
-        glowRow.coordinate(withNormalizedOffset: CGVector(dx: 0.62, dy: 0.5)).doubleTap()
+        // Rename the bottom layer (Glow) to "Gold". Select it, then use the
+        // pencil.
+        //
+        // This used to double-tap the row "in the gap between the name and the
+        // eye so the row's own gesture gets it" — which is a precise
+        // description of the defect that gesture WAS: an invisible target you
+        // had to know the coordinates of. It is gone, and with it the last
+        // reason anyone needed to know that trick.
+        app.buttons["Select Glow"].firstMatch.tap()
+        app.buttons["Rename Glow"].firstMatch.tap()
 
         let field = app.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5), "double-tap opens inline rename")
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "the pencil opens inline rename")
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12) + "Gold\n")
 
         // Two layers now share a name. Both eyes read "Hide Gold".
         let eyes = app.buttons.matching(NSPredicate(format: "label == %@", "Hide Gold"))
         XCTAssertEqual(eyes.count, 2, "the rename must have produced a real collision")
+
+        // Re-activate the TOP "Gold" first.
+        //
+        // Renaming now goes through Select → pencil, and selecting is exactly
+        // what it says: the bottom layer became active on the way. The old
+        // double-tap renamed without selecting, so the test used to inherit an
+        // active top layer by accident. Making it explicit is what keeps the
+        // case honest — this test is about the refusal naming the RIGHT layer
+        // when two share a name, which needs the active one to be the hidden
+        // one.
+        let selects = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Select Gold"))
+        XCTAssertEqual(selects.count, 2, "both rows should now be selectable as Gold")
+        let topSelect = (0..<selects.count).map { selects.element(boundBy: $0) }
+            .min { $0.frame.minY < $1.frame.minY }!
+        topSelect.tap()
 
         // Hide the ACTIVE one — the top row, i.e. the smaller minY.
         let top = (0..<eyes.count).map { eyes.element(boundBy: $0) }
