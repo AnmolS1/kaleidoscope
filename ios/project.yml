@@ -19,9 +19,22 @@ settings:
     # Widget extensions are simpler/more robust without the Preview debug-dylib split.
     ENABLE_DEBUG_DYLIB: NO
     MARKETING_VERSION: "1.2"
-    # Fallback build number. The per-target postBuildScripts OVERRIDE this at
-    # build/archive time with the git commit count (auto-increment). This literal is
-    # only used if git is unavailable; keep it ≥ the last App Store Connect upload.
+    # 🔴 THE BUILD NUMBER IS THIS LITERAL. Bump it by hand before an upload.
+    #
+    # There used to be a per-target postBuildScript stamping `CFBundleVersion`
+    # with the git commit count. It never worked, and it was worse than useless:
+    # a script phase has no ordering against `ProcessInfoPlistFile` or
+    # `CodeSign`, so each build raced. Landing before ProcessInfoPlistFile, the
+    # write was overwritten by this literal; landing after CodeSign, it
+    # invalidated the bundle's signature — which is how a widget signed one
+    # minute earlier failed `codesign -v` with "invalid Info.plist (plist or
+    # signature have been modified)" and refused to install on any device.
+    # It also produced app 55 / widget 214 in the same product, which uploads
+    # reject outright.
+    #
+    # One literal at `settings.base`, inherited by both targets, makes app and
+    # widget agree by construction. Highest build ever uploaded is 2, so this is
+    # comfortably clear; keep it above whatever App Store Connect holds.
     CURRENT_PROJECT_VERSION: "55"
     SWIFT_VERSION: "5.0"
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -32,19 +45,6 @@ targets:
     sources:
       - App
       - Shared
-    postBuildScripts:
-      - name: Set build number from git commit count
-        basedOnDependencyAnalysis: false
-        script: |
-          # Auto build number at build/archive time: git commit count (monotonic),
-          # floored so it never regresses. Degrades safely — if git or the plist is
-          # unavailable it leaves $(CURRENT_PROJECT_VERSION) from project.yml intact.
-          n=$(git -C "$PROJECT_DIR" rev-list --count HEAD 2>/dev/null || echo 0)
-          [ "$n" -lt 55 ] && n=55
-          plist="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
-          if [ -f "$plist" ]; then
-            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $n" "$plist" && echo "build number -> $n"
-          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ponderance.kaleidoscope
@@ -170,19 +170,6 @@ targets:
     sources:
       - Widget
       - Shared
-    postBuildScripts:
-      - name: Set build number from git commit count
-        basedOnDependencyAnalysis: false
-        script: |
-          # Auto build number at build/archive time: git commit count (monotonic),
-          # floored so it never regresses. Degrades safely — if git or the plist is
-          # unavailable it leaves $(CURRENT_PROJECT_VERSION) from project.yml intact.
-          n=$(git -C "$PROJECT_DIR" rev-list --count HEAD 2>/dev/null || echo 0)
-          [ "$n" -lt 55 ] && n=55
-          plist="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
-          if [ -f "$plist" ]; then
-            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $n" "$plist" && echo "build number -> $n"
-          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ponderance.kaleidoscope.RandomWidget
