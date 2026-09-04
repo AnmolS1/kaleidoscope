@@ -63,3 +63,4 @@ google-oauth.json
 # the App Store captures above: they are evidence for a conversation, not
 # something this repo publishes.
 /screenshots/
+notes.*
