@@ -481,15 +481,24 @@ final class StudioModel: ObservableObject {
     /// the sheet has no such binding.
     @Published var renamingLayerId: String?
     @Published var renameDraft: String = ""
+    /// Has the rename field ever actually held focus this session?
+    ///
+    /// Guards the commit-on-blur below. On iPad focus never lands (the panel's
+    /// card rebuild eats `@FocusState`), so a blind "focus went false, commit"
+    /// fired the instant the field appeared and closed it again — the field was
+    /// never observable, which read as "the pencil does nothing".
+    @Published var renameDidFocus = false
 
     func beginRename(_ id: String, current: String) {
         renamingLayerId = id
         renameDraft = current
+        renameDidFocus = false
     }
 
     func commitRename() {
         if let id = renamingLayerId { setLayerName(id, renameDraft) }
         renamingLayerId = nil
+        renameDidFocus = false
     }
 
     /// Remove-stroke: a two-phase eraser. The first tap highlights every image of

@@ -73,6 +73,8 @@ struct LayersPanel: View {
                             nameFieldFocused = true
                         },
                         onCommitRename: { model.commitRename() },
+                        didFocus: model.renameDidFocus,
+                        onDidFocus: { model.renameDidFocus = true },
                         onMove: { delta in move(row, by: delta) },
                         canMoveUp: model.layers.last?.id != row.id,
                         canMoveDown: model.layers.first?.id != row.id
@@ -229,6 +231,9 @@ private struct LayerRow: View {
     let onEndOpacityGesture: () -> Void
     let onBeginRename: () -> Void
     let onCommitRename: () -> Void
+    /// Whether the field has held focus — see `StudioModel.renameDidFocus`.
+    let didFocus: Bool
+    let onDidFocus: () -> Void
     let onMove: (Int) -> Void
     let canMoveUp: Bool
     let canMoveDown: Bool
@@ -249,9 +254,24 @@ private struct LayerRow: View {
             // is 264pt and does not, so it wraps. `ViewThatFits` picks per row
             // rather than per platform, so a Split View iPad or a large Dynamic
             // Type size gets the right one too.
-            ViewThatFits(in: .horizontal) {
-                oneLine
-                twoLines
+            if isRenaming {
+                // 🔴 RENAMING GETS ITS OWN ROW, outside `ViewThatFits`.
+                //
+                // A `TextField` inside a `ViewThatFits` candidate does not
+                // survive the measurement pass on the branch the iPad picks: the
+                // pencil reported hittable, the tap registered, and no field
+                // ever entered the tree. It works on the phone, which picks the
+                // other branch — so this looked device-specific and is really
+                // about being measured.
+                //
+                // A dedicated line is simpler anyway: while you are typing, the
+                // field wants the width more than the chips do.
+                renameLine
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    oneLine
+                    twoLines
+                }
             }
             // The slider is a second line INSIDE the row, not a popover: the
             // panel is 264pt wide with nothing beside a row, and keeping it
@@ -350,7 +370,6 @@ private struct LayerRow: View {
             HStack(spacing: 8) {
                 LayerThumbnail(layer: layer)
                 nameOrField
-                Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
         }
@@ -416,11 +435,23 @@ private struct LayerRow: View {
                            : "Shows this layer's opacity slider")
     }
 
+    /// The row while its name is being edited: thumbnail, field, nothing else
+    /// competing for the width.
+    private var renameLine: some View {
+        HStack(spacing: 8) {
+            reorderControls
+            LayerThumbnail(layer: layer)
+            nameOrField
+            visibilityButton
+        }
+    }
+
     /// Everything on a single row — chips beside the name.
     private var oneLine: some View {
         HStack(spacing: 8) {
             reorderControls
             selectTarget
+            Spacer(minLength: 8)
             if isActive && !isRenaming { renameButton }
             symmetryChip
             opacityChip
@@ -434,6 +465,7 @@ private struct LayerRow: View {
             HStack(spacing: 8) {
                 reorderControls
                 selectTarget
+                Spacer(minLength: 8)
                 if isActive && !isRenaming { renameButton }
                 visibilityButton
             }
@@ -494,7 +526,7 @@ private struct LayerRow: View {
                 // `commitRename` clears `renamingLayerId`, so the submit path
                 // and this one cannot both write.
                 .onChange(of: nameFieldFocused.wrappedValue) { _, focused in
-                    if !focused { onCommitRename() }
+                    if focused { onDidFocus() } else if didFocus { onCommitRename() }
                 }
         } else {
             Text(layer.name)
