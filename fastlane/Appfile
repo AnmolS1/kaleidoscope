@@ -1,0 +1,2 @@
+app_identifier("dev.ponderance.kaleidoscope")
+team_id("G2KBQH7KWT") # Apple Developer team; auth is via the ASC API key (no Apple ID / 2FA)

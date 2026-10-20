@@ -1,0 +1,15 @@
+# Fastlane match: signing certs + provisioning profiles stored ENCRYPTED
+# (AES-256 via MATCH_PASSWORD) in the SAME private git repo the other Ponderance
+# apps use, so the one Apple Distribution certificate is shared, not re-minted.
+#
+# This repo is PUBLIC, so the repo URL is not written here: it comes from
+# MATCH_GIT_URL (local: the gitignored .match.env, sourced before running a lane).
+# A CI runner with no SSH key can set MATCH_GIT_BASIC_AUTHORIZATION and an
+# https MATCH_GIT_URL instead; match reads both automatically.
+git_url(ENV.fetch("MATCH_GIT_URL") { UI.user_error!("MATCH_GIT_URL is not set — source .match.env first") })
+storage_mode("git")
+type("appstore")
+# BOTH bundles: the app and the embedded widget extension each need their own
+# App Store profile, or the archive exports without the widget signed.
+app_identifier(["dev.ponderance.kaleidoscope", "dev.ponderance.kaleidoscope.RandomWidget"])
+team_id("G2KBQH7KWT")

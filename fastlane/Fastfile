@@ -1,0 +1,160 @@
+require "shellwords"
+
+default_platform(:ios)
+
+# Local release lanes for the Kaleidoscope iOS app, modelled on FlatFold's
+# (the proven local distribution path for the Ponderance apps).
+#
+# Run from the repo root, with the env loaded and fastlane's gem bin on PATH
+# (gym shells out to xcpretty, and a non-interactive shell otherwise dies with
+# "Exit status: 127"):
+#
+#   export PATH="$HOME/.gem/ruby/3.4.0/bin:$PATH"
+#   set -a; . ./.match.env; set +a
+#   bundle exec fastlane ios verify
+#
+# .match.env is gitignored and must define MATCH_GIT_URL, MATCH_PASSWORD,
+# ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH. Nothing account-identifying is
+# committed: this repo is PUBLIC.
+
+ROOT = File.expand_path("..", __dir__)
+XCODEPROJ = File.join(ROOT, "ios/Kaleidoscope.xcodeproj")
+PROJECT_YML = File.join(ROOT, "ios/project.yml")
+TEAM_ID = "G2KBQH7KWT"
+APP_ID = "dev.ponderance.kaleidoscope"
+WIDGET_ID = "dev.ponderance.kaleidoscope.RandomWidget"
+# XcodeGen target name => bundle id. The widget is embedded in the app, so an
+# App Store build needs an App Store profile for EACH.
+SIGNED_TARGETS = { "Kaleidoscope" => APP_ID, "RandomWidget" => WIDGET_ID }.freeze
+
+def profile_name(bundle_id)
+  "match AppStore #{bundle_id}"
+end
+
+# Apple auth for every lane: the App Store Connect API key, so match / pilot run
+# with no Apple ID password and no 2FA. A relative ASC_KEY_PATH resolves from
+# the repo root.
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_filepath: File.expand_path(ENV.fetch("ASC_KEY_PATH"), ROOT),
+    in_house: false,
+    set_spaceship_token: true,
+  )
+end
+
+# The build number committed in ios/project.yml (`CURRENT_PROJECT_VERSION`, ONE
+# literal at settings.base, inherited by app AND widget).
+def committed_build_number
+  literal = File.read(PROJECT_YML)[/^\s*CURRENT_PROJECT_VERSION:\s*"?(\d+)"?/, 1]
+  UI.user_error!("No CURRENT_PROJECT_VERSION literal found in ios/project.yml") unless literal
+  literal.to_i
+end
+
+# TestFlight rejects any CFBundleVersion not strictly above the last upload, so
+# the archive's build number is derived, never trusted from the tree:
+# max(latest on TestFlight + 1, the committed literal). The floor at the literal
+# keeps a lane build from ever going BELOW a number already stamped on local and
+# device builds of the same tree (the literal is deliberately kept above ASC).
+# It is injected through xcargs, which applies to the app AND the widget, and
+# never mutates the committed project.
+def next_build_number(key)
+  latest = latest_testflight_build_number(api_key: key, app_identifier: APP_ID, initial_build_number: 0)
+  [latest + 1, committed_build_number].max.tap do |n|
+    UI.important("Latest TestFlight build: #{latest}; committed literal: #{committed_build_number}; next build: #{n}")
+  end
+end
+
+platform :ios do
+  desc "HUMAN ONLY: create any missing App Store profiles (app + widget) in the match repo. Never run in CI."
+  lane :certs do
+    # readonly: false reuses the Apple Distribution certificate already in the
+    # match repo and mints only the profiles that are missing. The App IDs must
+    # already exist on the Developer portal (match does not create them).
+    match(type: "appstore", api_key: asc_api_key, readonly: false, app_identifier: SIGNED_TARGETS.values)
+  end
+
+  desc "Read-only staging check: ASC auth, App IDs, match profiles for app + widget, next build number. No build, no upload."
+  lane :verify do
+    key = asc_api_key
+    problems = []
+
+    SIGNED_TARGETS.each_value do |id|
+      # App ID on the Developer portal (read-only query).
+      bundle = Spaceship::ConnectAPI::BundleId.find(id, includes: "bundleIdCapabilities")
+      if bundle.nil?
+        problems << "#{id}: App ID does not exist on the Developer portal"
+        UI.error("#{id}: App ID NOT FOUND on the Developer portal")
+      else
+        caps = (bundle.bundle_id_capabilities || []).map(&:capability_type).sort
+        UI.message("#{id}: App ID exists; capabilities: #{caps.empty? ? '(none)' : caps.join(', ')}")
+      end
+
+      # Signing material: fetch + decrypt the existing profile from the match
+      # repo and confirm it is still valid on the portal. readonly NEVER mints.
+      # One call per id so a missing widget profile cannot hide the app's state.
+      begin
+        match(type: "appstore", readonly: true, api_key: key, app_identifier: id)
+        UI.success("#{id}: '#{profile_name(id)}' fetched, decrypted and valid")
+      rescue => e
+        problems << "#{id}: match profile unavailable (#{e.message.lines.first.to_s.strip})"
+        UI.error("#{id}: match readonly FAILED: #{e.message.lines.first.to_s.strip}")
+      end
+    end
+
+    # Read-only ASC query: proves the app record exists and gives the next number.
+    next_build_number(key)
+
+    if problems.empty?
+      UI.success("verify: all checks passed")
+    else
+      UI.user_error!("verify found #{problems.size} problem(s):\n  - " + problems.join("\n  - "))
+    end
+  end
+
+  desc "Archive the signed app (widget embedded) and upload it to TestFlight"
+  lane :beta do
+    # The .xcodeproj is generated and gitignored: always build from project.yml.
+    sh("cd #{ROOT.shellescape}/ios && xcodegen generate")
+
+    key = asc_api_key
+
+    # readonly: the profiles must already exist (the `certs` lane is the only
+    # place material is minted, and a human runs it).
+    match(type: "appstore", readonly: true, api_key: key, app_identifier: SIGNED_TARGETS.values)
+
+    next_build = next_build_number(key)
+
+    # The project signs Automatic (development) for local work. Pin each signed
+    # target to its match App Store profile for the archive. SCOPED per target:
+    # unscoped, this rewrites every target (test bundles, bundle ids). It edits
+    # only the GENERATED, gitignored .xcodeproj, so the tree stays clean.
+    SIGNED_TARGETS.each do |target, id|
+      update_code_signing_settings(
+        path: XCODEPROJ,
+        targets: [target],
+        use_automatic_signing: false,
+        team_id: TEAM_ID,
+        code_sign_identity: "Apple Distribution",
+        bundle_identifier: id,
+        profile_name: profile_name(id),
+      )
+    end
+
+    # Scheme, configuration, destination and output live in Gymfile.
+    build_app(
+      xcargs: "CURRENT_PROJECT_VERSION=#{next_build}",
+      export_options: {
+        provisioningProfiles: SIGNED_TARGETS.values.to_h { |id| [id, profile_name(id)] },
+      },
+    )
+
+    # Wait for App Store Connect processing so a build that ends INVALID fails
+    # this lane instead of reading as a successful upload.
+    upload_to_testflight(
+      api_key: key,
+      skip_waiting_for_build_processing: false,
+    )
+  end
+end
