@@ -43,6 +43,37 @@ async function withScene<T>(fn: (d: ReturnType<NonNullable<typeof S.scene.value>
   return fn(scene.getDrawing());
 }
 
+/**
+ * Start a NEW drawing: one empty layer, and no remix link.
+ *
+ * The only way out of a remix. Clear removes strokes and keeps everything else,
+ * `remixOf` included — deliberately, since emptying the layers is not the same
+ * as disowning the piece you started from, and Clear is undoable: an Undo that
+ * brought the strokes back without the link would save a remix as an original.
+ * So Clear stays as it is and this sits next to it, as on iOS.
+ *
+ * Asks first whenever there is anything to lose, hidden layers included. Unlike
+ * Clear this cannot be undone — history goes with the drawing.
+ */
+function startNewDrawing(): void {
+  const scene = S.scene.peek();
+  if (!scene) return;
+  openPopover.value = null;
+  const hasContent = S.strokeCount.peek() > 0 || S.layers.peek().length > 1;
+  if (
+    hasContent &&
+    !confirm(
+      "Start a new drawing? Clears the canvas and every layer, and stops this being a remix. " +
+        "Anything you have already saved is untouched.",
+    )
+  )
+    return;
+  // The halo points at a stroke index in the drawing being thrown away.
+  clearRemoveHighlight();
+  scene.newDrawing();
+  S.exitRemix();
+}
+
 /** Gamma per preset — mirrors `applyPressureGamma` in the engine, for the preview only. */
 const PRESET_GAMMA = { light: 0.6, normal: 1, firm: 1.6 } as const;
 
@@ -421,8 +452,8 @@ export function Toolbar() {
     </details>
   );
 
-  // The More menu carries everything that is not a tool: theme, guides, clear,
-  // and the navigation the compact-height layout hides from the top bar.
+  // The More menu carries everything that is not a tool: theme, guides, new
+  // drawing, clear, and the navigation the compact-height layout hides from the top bar.
   const moreMenu = (
     <details class="menu overflow-menu" {...popProps("more")}>
       <summary class="icon-btn" aria-label="More options">
@@ -434,6 +465,11 @@ export function Toolbar() {
         </button>
         <button role="menuitem" onClick={() => (S.showGuides.value = !S.showGuides.value)}>
           {S.showGuides.value ? "Hide guide axes" : "Show guide axes"}
+        </button>
+        {/* Above Clear, gentler-first, and never disabled: an empty canvas that
+            is still a remix is exactly when this is needed. */}
+        <button role="menuitem" onClick={startNewDrawing}>
+          New drawing
         </button>
         <button
           role="menuitem"

@@ -1353,6 +1353,17 @@ export class Scene {
     this.notify();
   }
 
+  /**
+   * Start over: one empty layer, no history. Keeps the background and the
+   * active layer's symmetry, which are settings rather than content — the same
+   * line iOS `newDrawing()` draws. The remix link lives in state.ts, not here;
+   * the caller drops it.
+   */
+  newDrawing(): void {
+    const sym = this.doc.activeLayer.sym;
+    this.loadDrawing(emptyDrawing(this.state.bg, sym));
+  }
+
   destroy(): void {
     cancelAnimationFrame(this.rafId);
     this.ro?.disconnect();

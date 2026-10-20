@@ -131,6 +131,13 @@ export interface RemixSourceMeta {
 export const remixSourceHash = signal<string | null>(null);
 export const remixSourceMeta = signal<RemixSourceMeta | null>(null);
 
+/** Forget the piece being remixed, so the next save is an original. */
+export function exitRemix(): void {
+  remixOf.value = null;
+  remixSourceHash.value = null;
+  remixSourceMeta.value = null;
+}
+
 // --- UI ---
 export const helpOpen = signal<boolean>(false);
 export const saveOpen = signal<boolean>(false);

@@ -130,9 +130,7 @@ export function Canvas() {
       S.pendingRemix.value = null;
     } else {
       // Fresh studio session — don't carry a stale remix parent.
-      S.remixOf.value = null;
-      S.remixSourceHash.value = null;
-      S.remixSourceMeta.value = null;
+      S.exitRemix();
     }
 
     return () => {
