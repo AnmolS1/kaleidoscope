@@ -61,15 +61,13 @@ struct LayersPanel: View {
                         onEndOpacityGesture: { model.endLayerOpacityGesture() },
                         onBeginRename: {
                             model.beginRename(row.id, current: row.name)
-                            // 🔴 FOCUS LANDS ON IPHONE, NOT ON IPAD. `@FocusState`
-                            // lives on this view, and the iPad card rebuild that
-                            // was discarding the rename state discards this too
-                            // — tried in the same tick and on the next runloop,
-                            // neither takes. The field is present and tappable
-                            // there, so renaming works with one extra tap; the
-                            // alternative is hoisting focus onto the model,
-                            // which SwiftUI does not support for `@FocusState`.
-                            // Left honest rather than papered over.
+                            // Focus lands on both device classes. It used to be
+                            // lost on iPad: focus DID land, then the keyboard it
+                            // summoned shrank `StudioView`'s geometry until the
+                            // card flipped to its landscape branch, recreating
+                            // this view and its `@FocusState`. `StudioView` now
+                            // ignores the keyboard safe area — see the comment
+                            // there before changing that.
                             nameFieldFocused = true
                         },
                         onCommitRename: { model.commitRename() },
@@ -248,12 +246,14 @@ private struct LayerRow: View {
         VStack(alignment: .leading, spacing: 2) {
             // ONE LINE WHERE IT FITS, two where it does not.
             //
-            // The phone sheet is full-width and has room for the chips beside
-            // the name — "we have extra horizontal space" — which keeps a row at
-            // ~58pt so eight of them still fit without scrolling. The iPad panel
-            // is 264pt and does not, so it wraps. `ViewThatFits` picks per row
-            // rather than per platform, so a Split View iPad or a large Dynamic
-            // Type size gets the right one too.
+            // One line keeps a row at ~48pt; two lines are ~92pt. Which one fits
+            // depends on the width, the name and whether the row carries the
+            // pencil — since every control became a 44pt target, a 393pt phone
+            // usually wraps and a wider sheet or the iPad card often does not.
+            // `ViewThatFits` picks per row rather than per platform, so a Split
+            // View iPad or a large Dynamic Type size gets the right one too. A
+            // tall stack scrolls (the phone sheet and the iPad card both wrap
+            // the panel in a ScrollView).
             if isRenaming {
                 // 🔴 RENAMING GETS ITS OWN ROW, outside `ViewThatFits`.
                 //
@@ -279,8 +279,9 @@ private struct LayerRow: View {
             // next to the number it edits.
             if isOpacityOpen { opacitySlider }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        // Small: the 44pt targets already carry the breathing room.
+        .padding(.horizontal, 2)
+        .padding(.vertical, 2)
         .background {
             let shape = RoundedRectangle(cornerRadius: Blueprint.rSm, style: .continuous)
             if isActive {
@@ -293,16 +294,15 @@ private struct LayerRow: View {
         // needed here — but the opacity must not be the ONLY signal, which is
         // why the glyph swaps rather than just dimming.
         .opacity(layer.visible ? 1 : 0.55)
-        // 🔴 RENAME NEEDED AN AFFORDANCE. It was a double-tap on a background
-        // layer and nothing else — no glyph, no menu, nothing on screen saying
-        // the name could be changed. Reported as "there's no way to rename
-        // layers on iPad", which was true of any user who had not been told.
+        // 🔴 RENAME NEEDED AN AFFORDANCE. It was once a double-tap on a
+        // background layer and nothing else — no glyph, no menu, nothing on
+        // screen saying the name could be changed. Reported as "there's no way
+        // to rename layers on iPad". That gesture is gone.
         //
-        // A context menu is the standard iOS place to look for row actions and
-        // costs no pixels; the pencil beside the ACTIVE row's name (see
-        // `firstLine`) is the visible half, shown on one row rather than eight
-        // so the panel does not turn into a wall of icons. The double-tap stays
-        // for anyone who already knew it.
+        // Rename now has three routes: the pencil beside the ACTIVE row's name
+        // (`renameButton`; one row rather than eight so the panel does not turn
+        // into a wall of icons), this context menu — the standard iOS place to
+        // look for row actions — and the VoiceOver "Rename" action.
         .contextMenu {
             Button { onBeginRename() } label: { Label("Rename", systemImage: "pencil") }
             Button { onToggleVisible() } label: {
@@ -319,58 +319,38 @@ private struct LayerRow: View {
 
     /// Row anatomy, rebuilt around what a finger can actually hit.
     ///
-    /// 🔴 WHAT WAS WRONG. Selecting a layer had NO target of its own: the tap
-    /// lived on a `Color.clear` behind the content, so it fired only in the
-    /// slivers of empty space the controls left over — reported as "I have to
-    /// tap exactly in the empty space between the layer name and the visibility
-    /// toggle". And the two settings were bare text labels roughly 34x14 and
-    /// 30x14: "to get to the symmetry popup I think I have to tap exactly on the
-    /// caption label". Neither looked like a control, and neither came close to
-    /// a 44pt target.
+    /// 🔴 WHAT WAS WRONG, TWICE. First, selecting a layer had no target of its
+    /// own: the tap lived on a `Color.clear` behind the content and fired only
+    /// in the slivers the controls left over. The fix for that made thumbnail +
+    /// name a Select button — but the flexible space between the name and the
+    /// trailing controls stayed OUTSIDE the button, so the widest part of the
+    /// row was still dead. Reported, again, as "I have to tap exactly in the
+    /// empty space between the layer name and the visibility toggle... these
+    /// locations are both too small and not clear". And every control was under
+    /// 44pt: chevrons 28x22, eye and pencil 32x32, chips 30pt tall.
     ///
-    /// WHAT IT IS NOW. Three explicit regions, none of them emergent:
+    /// WHAT IT IS NOW. Every region is a real button with its own bounds, and
+    /// between them they tile the row:
     ///
-    ///  - the THUMBNAIL AND NAME are one button, and that button is Select. It
-    ///    is the largest thing in the row and it is the thing you point at when
-    ///    you mean "this layer".
-    ///  - symmetry and opacity are CHIPS on the second line — the shared `Chip`
-    ///    style the rest of the studio uses for a tappable value, at a 30pt
-    ///    minimum height, so they read as controls and can be hit.
-    ///  - the eye keeps its own 32pt button on the trailing edge.
+    ///  - SELECT is thumbnail + name + ALL the free width, at least 44pt tall.
+    ///    The flexible space is inside its label; there is no Spacer between it
+    ///    and the trailing controls, so there is no dead strip to hunt for.
+    ///  - every other control has a 44x44pt hit frame around a smaller glyph or
+    ///    chip. The glyphs did not grow; the targets did.
+    ///  - nothing is emergent: no background gestures, no invisible targets.
     ///
-    /// The invisible background gestures are GONE. Emergent hit areas are what
-    /// produced the original complaint; every target here is a real button with
-    /// its own bounds.
-    /// The SELECT target: thumbnail plus name, as one button.
-    ///
-    /// The trailing `Spacer` is what makes it GREEDY — without it the button is
-    /// only as wide as its text, which is how the original row ended up with a
-    /// select area you had to hunt for. It keeps a `minLength: 0` ideal width so
-    /// `ViewThatFits` still measures the row honestly.
-    @ViewBuilder
-    private var selectTarget: some View {
-        if isRenaming {
-            // 🔴 NOT WRAPPED IN THE BUTTON WHILE RENAMING. A `TextField` inside a
-            // `Button` is inert — the button swallows the touch — so the field
-            // appeared, could be focused by code, and could not be typed into.
-            // Introduced by making the name a select target; caught because the
-            // rename test types for real rather than asserting the field exists.
-            HStack(spacing: 8) {
-                LayerThumbnail(layer: layer)
-                nameOrField
-                Spacer(minLength: 0)
-            }
-        } else {
-            selectButton
-        }
-    }
-
+    /// The `Spacer` is INSIDE Select's label, so the button takes every point
+    /// the trailing controls do not. Its `minLength` is small and fixed, so the
+    /// IDEAL width is still thumbnail + name + a few points and `ViewThatFits`
+    /// measures the row honestly.
     private var selectButton: some View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
                 LayerThumbnail(layer: layer)
                 nameOrField
+                Spacer(minLength: 4)
             }
+            .frame(minHeight: Self.hit)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -382,52 +362,69 @@ private struct LayerRow: View {
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
     }
 
-    private var renameButton: some View {
-        Button(action: onBeginRename) {
-            Image(systemName: "pencil")
-                .font(.caption2)
-                .foregroundStyle(Blueprint.craneText)
-                .frame(width: 32, height: 32)
+    /// DESIGN.md §2's minimum target, applied to every row control.
+    static let hit: CGFloat = 44
+
+    /// A glyph button with a full 44pt target around a smaller drawn glyph.
+    private func glyphButton(_ systemName: String, font: Font = .body,
+                             color: Color = Blueprint.graphite.opacity(0.72),
+                             action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(font)
+                .foregroundStyle(color)
+                .frame(width: Self.hit, height: Self.hit)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Rename \(layer.name)")
+    }
+
+    private var renameButton: some View {
+        glyphButton("pencil", font: .caption, color: Blueprint.craneText, action: onBeginRename)
+            .accessibilityLabel("Rename \(layer.name)")
     }
 
     private var visibilityButton: some View {
-        Button(action: onToggleVisible) {
-            Image(systemName: layer.visible ? "eye" : "eye.slash")
-                .foregroundStyle(Blueprint.graphite.opacity(0.72))
-                .frame(width: 32, height: 32)
+        glyphButton(layer.visible ? "eye" : "eye.slash", action: onToggleVisible)
+            .accessibilityLabel(layer.visible ? "Hide \(layer.name)" : "Show \(layer.name)")
+    }
+
+    /// A value chip with a 44pt-tall target. The chip draws at its usual 30pt
+    /// (the footer's buttons share `Chip`, so the style itself is unchanged);
+    /// the button's label is the chip plus the padding that makes the target,
+    /// and 3pt either side puts two chips 6pt apart with no dead gap between.
+    private func chipButton<L: View>(action: @escaping () -> Void,
+                                     @ViewBuilder chip: () -> L) -> some View {
+        Button(action: action) {
+            chip()
+                .padding(.horizontal, 3)
+                .frame(minHeight: Self.hit)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(layer.visible ? "Hide \(layer.name)" : "Show \(layer.name)")
     }
 
     private var symmetryChip: some View {
-        Button(action: onEditSymmetry) {
+        chipButton(action: onEditSymmetry) {
             Chip {
                 Label(Readout.sym(layer.sym), systemImage: "asterisk")
                     .font(Blueprint.mono(.caption2))
                     .labelStyle(.titleAndIcon)
             }
         }
-        .buttonStyle(.plain)
         .accessibilityLabel("Symmetry for \(layer.name)")
         .accessibilityValue(Readout.spokenSym(layer.sym))
         .accessibilityHint("Opens the symmetry dial for this layer")
     }
 
     private var opacityChip: some View {
-        Button(action: onToggleOpacity) {
+        chipButton(action: onToggleOpacity) {
             Chip(isActive: isOpacityOpen) {
                 Label(Readout.percent(layer.opacity), systemImage: "circle.lefthalf.filled")
                     .font(Blueprint.mono(.caption2))
                     .labelStyle(.titleAndIcon)
             }
         }
-        .buttonStyle(.plain)
         .accessibilityLabel("Opacity for \(layer.name)")
         .accessibilityValue(Readout.percent(layer.opacity))
         .accessibilityHint(isOpacityOpen
@@ -435,76 +432,80 @@ private struct LayerRow: View {
                            : "Shows this layer's opacity slider")
     }
 
-    /// The row while its name is being edited: thumbnail, field, nothing else
-    /// competing for the width.
+    /// The row while its name is being edited: chevrons, thumbnail, field, eye.
+    ///
+    /// 🔴 THE FIELD IS NOT IN A BUTTON. A `TextField` inside a `Button` is inert
+    /// — the button swallows the touch — so the field appeared, could be
+    /// focused by code, and could not be typed into.
     private var renameLine: some View {
-        HStack(spacing: 8) {
-            reorderControls
-            LayerThumbnail(layer: layer)
-            nameOrField
+        HStack(spacing: 0) {
+            reorderControls(.horizontal)
+            HStack(spacing: 8) {
+                LayerThumbnail(layer: layer)
+                nameOrField
+            }
+            .frame(maxWidth: .infinity, minHeight: Self.hit, alignment: .leading)
             visibilityButton
         }
     }
 
-    /// Everything on a single row — chips beside the name.
+    /// Everything on a single line — chips beside the name. Chevrons sit side
+    /// by side here, so the row stays one 44pt line tall.
     private var oneLine: some View {
-        HStack(spacing: 8) {
-            reorderControls
-            selectTarget
-            Spacer(minLength: 8)
-            if isActive && !isRenaming { renameButton }
+        HStack(spacing: 0) {
+            reorderControls(.horizontal)
+            selectButton
+            if isActive { renameButton }
             symmetryChip
             opacityChip
             visibilityButton
         }
     }
 
-    /// Name on top, chips beneath — the narrow arrangement.
+    /// The narrow arrangement: name on top, chips beneath, and the chevrons
+    /// stacked in a leading column that spans both lines — two 44pt targets
+    /// stacked are exactly two 44pt lines tall.
     private var twoLines: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                reorderControls
-                selectTarget
-                Spacer(minLength: 8)
-                if isActive && !isRenaming { renameButton }
-                visibilityButton
+        HStack(alignment: .top, spacing: 0) {
+            reorderControls(.vertical)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 0) {
+                    selectButton
+                    if isActive { renameButton }
+                    visibilityButton
+                }
+                HStack(spacing: 0) {
+                    symmetryChip
+                    opacityChip
+                    Spacer(minLength: 0)
+                }
+                // Line up under the name, past the thumbnail, less the chip's
+                // own 3pt target padding.
+                .padding(.leading, 39)
             }
-            HStack(spacing: 6) {
-                symmetryChip
-                opacityChip
-                Spacer(minLength: 0)
-            }
-            // Line up under the name, past the chevrons and the thumbnail.
-            .padding(.leading, 72)
         }
     }
 
-    private var reorderControls: some View {
-        // Chevrons rather than a drag handle — see the commit that replaced the
-        // decorative `line.3.horizontal`; a drag cannot win the vertical gesture
-        // inside the iPad panel's scroll view.
-        VStack(spacing: 0) {
-            Button { onMove(1) } label: {
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 28, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+    private enum ChevronAxis { case horizontal, vertical }
+
+    /// Chevrons rather than a drag handle — see the commit that replaced the
+    /// decorative `line.3.horizontal`; a drag cannot win the vertical gesture
+    /// inside the iPad panel's scroll view. Each is a full 44pt target; the
+    /// glyph stays small.
+    @ViewBuilder
+    private func reorderControls(_ axis: ChevronAxis) -> some View {
+        let up = glyphButton("chevron.up", font: .system(size: 10, weight: .semibold),
+                             color: Blueprint.graphite.opacity(0.7)) { onMove(1) }
             .disabled(!canMoveUp)
             .accessibilityLabel("Move \(layer.name) up")
-
-            Button { onMove(-1) } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 28, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+        let down = glyphButton("chevron.down", font: .system(size: 10, weight: .semibold),
+                               color: Blueprint.graphite.opacity(0.7)) { onMove(-1) }
             .disabled(!canMoveDown)
             .accessibilityLabel("Move \(layer.name) down")
+        switch axis {
+        case .horizontal: HStack(spacing: 0) { up; down }
+        case .vertical: VStack(spacing: 0) { up; down }
         }
-        .foregroundStyle(Blueprint.graphite.opacity(0.7))
     }
 
     @ViewBuilder
@@ -534,45 +535,6 @@ private struct LayerRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-    }
-
-    /// Symmetry and opacity, as CHIPS rather than bare text.
-    ///
-    /// Indented to sit under the name so the row still reads as one thing. Both
-    /// carry their value, so the line says as much as the old caption did while
-    /// being made of things you can hit.
-    private var settingChips: some View {
-        HStack(spacing: 6) {
-            Button(action: onEditSymmetry) {
-                Chip {
-                    Label(Readout.sym(layer.sym), systemImage: "asterisk")
-                        .font(Blueprint.mono(.caption2))
-                        .labelStyle(.titleAndIcon)
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Symmetry for \(layer.name)")
-            .accessibilityValue(Readout.spokenSym(layer.sym))
-            .accessibilityHint("Opens the symmetry dial for this layer")
-
-            Button(action: onToggleOpacity) {
-                Chip(isActive: isOpacityOpen) {
-                    Label(Readout.percent(layer.opacity), systemImage: "circle.lefthalf.filled")
-                        .font(Blueprint.mono(.caption2))
-                        .labelStyle(.titleAndIcon)
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Opacity for \(layer.name)")
-            .accessibilityValue(Readout.percent(layer.opacity))
-            .accessibilityHint(isOpacityOpen
-                               ? "Hides this layer's opacity slider"
-                               : "Shows this layer's opacity slider")
-
-            Spacer(minLength: 0)
-        }
-        // Line up under the name, past the chevrons and the thumbnail.
-        .padding(.leading, 72)
     }
 
     /// The disclosed opacity slider.

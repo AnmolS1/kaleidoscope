@@ -210,10 +210,6 @@ final class AccessibilityUITests: XCTestCase {
         }
     }
 
-    /// Re-captures ONLY the artwork detail, opening the owner's own piece
-    /// "frendalist" (shows "by Anmol Saxena" — the owner's own name, fine to
-    /// display) rather than an arbitrary other-user piece. Same .accessibility3
-    /// launch arg. Used to replace 04-artwork-detail with a privacy-safe shot.
     /// Focused .accessibility3 capture of the Studio (default + a swatch selected)
     /// — used to refresh 01/02 after the controls-panel reflow without disturbing
     /// the network-backed screens.
@@ -257,6 +253,11 @@ final class AccessibilityUITests: XCTestCase {
         snap(app, "08-about")
     }
 
+    /// Re-captures ONLY the artwork detail, opening the owner's own piece
+    /// "frendalist" (its byline shows "by Anmol" — public bylines carry the
+    /// first name only, and this is the owner's own piece) rather than an
+    /// arbitrary other-user piece. Same .accessibility3 launch arg. Used to
+    /// replace 04-artwork-detail with a privacy-safe shot.
     func testAccessibility3FrendalistArtwork() {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()

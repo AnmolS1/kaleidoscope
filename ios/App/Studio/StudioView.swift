@@ -79,6 +79,17 @@ struct StudioView: View {
                 chrome(in: geo)
             }
         }
+        // 🔴 THE KEYBOARD MUST NOT RESHAPE THE STUDIO. `geo` decides which
+        // corner the iPad's layers card docks in (`height > width`), and an
+        // iPad portrait window minus the software keyboard is WIDER than it is
+        // tall — so the keyboard that renaming summons flipped the card to its
+        // landscape branch, a different view, which recreated `LayersPanel` and
+        // threw away the `@FocusState` that had just landed. The keyboard then
+        // went away and the card flipped back. That is the "the pencil shows
+        // the field but focus does not land on iPad" bug: measured as focus
+        // true, then two panel recreations ~90ms later. The keyboard overlays
+        // the canvas instead; the only text field in the studio is near the top.
+        .ignoresSafeArea(.keyboard)
         .background(Blueprint.graph.ignoresSafeArea())
         // The chrome follows the CANVAS, not the system. Every `Blueprint` token
         // is a light/dark pair, so without this a dark canvas kept light chrome:
@@ -510,14 +521,22 @@ struct StudioView: View {
             case .symmetry(let id): SymmetryPopover(model: model, layerId: id) { panel = nil }
             case nil:
                 if showLayers {
-                    LayersPanel(model: model,
-                                onEditSymmetry: { showLayers = false; panel = .symmetry($0) },
-                                onNudge: { nudges.show($0, atRevision: model.revision) })
-                        // The phone path, and the one that actually needs this:
-                        // a `.sheet` is a separate presentation, so inheritance
-                        // is the thing not to rely on.
-                        .environmentObject(auth)
-                        .environmentObject(router)
+                    // SCROLLS. With every row control at 44pt a row is ~92pt
+                    // when it wraps, so eight layers plus the footer are taller
+                    // than even the `.large` detent of a small phone, and a
+                    // sheet clips rather than scrolls on its own.
+                    ScrollView {
+                        LayersPanel(model: model,
+                                    onEditSymmetry: { showLayers = false; panel = .symmetry($0) },
+                                    onNudge: { nudges.show($0, atRevision: model.revision) })
+                            // The phone path, and the one that actually needs
+                            // this: a `.sheet` is a separate presentation, so
+                            // inheritance is the thing not to rely on.
+                            .environmentObject(auth)
+                            .environmentObject(router)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
                 }
             }
         }

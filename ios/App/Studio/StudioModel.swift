@@ -483,10 +483,11 @@ final class StudioModel: ObservableObject {
     @Published var renameDraft: String = ""
     /// Has the rename field ever actually held focus this session?
     ///
-    /// Guards the commit-on-blur below. On iPad focus never lands (the panel's
-    /// card rebuild eats `@FocusState`), so a blind "focus went false, commit"
-    /// fired the instant the field appeared and closed it again — the field was
-    /// never observable, which read as "the pencil does nothing".
+    /// Guards the commit-on-blur below. A blind "focus went false, commit" fires
+    /// whenever the field appears without focus — which on iPad it used to,
+    /// every time (the keyboard flipped the card's layout branch and recreated
+    /// the panel; fixed in `StudioView`) — and closes it again at once. Kept as
+    /// a guard: a field that opens unfocused must stay open.
     @Published var renameDidFocus = false
 
     func beginRename(_ id: String, current: String) {

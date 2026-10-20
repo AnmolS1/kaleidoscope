@@ -171,22 +171,10 @@ final class HiddenLayerUITests: XCTestCase {
     /// wrong layer was targeted, a `Show Gold` eye remains. And the consequence
     /// the user would actually feel — the next stroke still refused — is asserted
     /// too.
-    /// 🔴 PHONE ONLY, and the skip is about the SETUP rather than the subject.
-    ///
-    /// What this tests — "Show layer" acting on the layer that refused rather
-    /// than on its namesake — is resolved by layer id and has no device
-    /// dependence. Getting two layers to share a name does: it renames through
-    /// the panel, and on an iPad the panel is a scrollable card where the pencil
-    /// reports hittable at a frame outside the panel's own bounds
-    /// (pencil y=327, panel 205…249) and the tap opens no field. The same rename
-    /// works in `LayerRenameUITests` on iPad with one layer, so this is the
-    /// popover's layout and not the rename.
-    ///
-    /// Skipping loudly beats weakening the assertion until it passes on both.
+    /// Runs on both device classes. It used to skip on iPad because its SETUP
+    /// renames through the panel's pencil, which neither fired nor kept focus
+    /// there — see `LayerRenameUITests` for both causes, now fixed.
     func testShowLayerActsOnTheRefusingLayerWhenTwoLayersShareAName() throws {
-        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .phone,
-                          "renaming through the iPad popover cannot be driven here; "
-                          + "the behaviour under test is device-independent")
         let app = launch()
 
         app.buttons["Layers"].firstMatch.tap()
