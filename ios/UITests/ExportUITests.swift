@@ -66,6 +66,30 @@ final class ExportUITests: XCTestCase {
                           "download exported a v1 flatten — StudioView.exportImage() must use currentDrawingV2()")
     }
 
+    /// Download offers the SVG, and choosing it opens the share sheet. The file's
+    /// content is pinned in unit tests (`SVGExportTests`) and its byte parity
+    /// with the web in KaleidoEngine; this proves the button is wired to it.
+    func testDownloadOffersSVGAndOpensTheShareSheet() {
+        let app = XCUIApplication()
+        app.launchEnvironment["KALEIDO_DEMO"] = "1"
+        app.launch()
+        XCTAssertTrue(app.otherElements["Drawing canvas"].waitForExistence(timeout: 20))
+
+        let download = app.buttons["Download"].firstMatch
+        XCTAssertTrue(download.waitForExistence(timeout: 10))
+        download.tap()
+
+        XCTAssertTrue(app.buttons["Share PNG\u{2026}"].waitForExistence(timeout: 5),
+                      "the PNG share option is still offered")
+        let svg = app.buttons["Share SVG\u{2026}"]
+        XCTAssertTrue(svg.exists, "Download must offer an SVG")
+        svg.tap()
+
+        // UIActivityViewController's root is identified as ActivityListView.
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 10),
+                      "choosing SVG must open the share sheet")
+    }
+
     /// The demo fixture the whole suite leans on: three layers, mixed symmetry,
     /// with the top one active. Asserted through the canvas's spoken value so a
     /// change to the seed or to the active-layer rule shows up here.

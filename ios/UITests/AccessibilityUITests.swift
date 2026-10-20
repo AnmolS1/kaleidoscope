@@ -40,7 +40,7 @@ final class AccessibilityUITests: XCTestCase {
                       "Canvas should expose a 'Drawing canvas' accessibility element")
 
         // Always on screen.
-        XCTAssertTrue(app.buttons["Download PNG"].exists, "Download button needs a label")
+        XCTAssertTrue(app.buttons["Download"].exists, "Download button needs a label")
         XCTAssertTrue(app.buttons["Save"].exists, "Save button should be present")
         XCTAssertTrue(app.buttons["Glow brush"].exists, "Glow tool needs its label")
         XCTAssertTrue(app.buttons["Remove stroke"].exists, "Remove-stroke tool needs its label")

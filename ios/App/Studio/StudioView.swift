@@ -102,10 +102,11 @@ struct StudioView: View {
         }
         .confirmationDialog("Download", isPresented: $showDownloadOptions, titleVisibility: .visible) {
             Button("Save to Photos") { Task { await saveToPhotos() } }
-            Button("Share\u{2026}") { sharePNG() }
+            Button("Share PNG\u{2026}") { sharePNG() }
+            Button("Share SVG\u{2026}") { shareSVG() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("PNG, 1024\u{00D7}1024.")
+            Text("PNG, 1024\u{00D7}1024, or SVG.")
         }
         .sheet(isPresented: $showHelp) { StudioHelpSheet() }
         // Compact width gets bottom sheets rather than floating cards: a 280pt
@@ -418,7 +419,7 @@ struct StudioView: View {
             GhostAction(title: "Download", systemImage: "square.and.arrow.down",
                         height: metrics.actionHeight, compact: layout != .rail,
                         isEnabled: !model.isEmpty,
-                        accessibilityLabelText: "Download PNG", action: download)
+                        accessibilityLabelText: "Download", action: download)
 
             PrimaryAction(title: "Save", systemImage: "sparkles",
                           height: metrics.actionHeight, compact: false,
@@ -571,8 +572,9 @@ struct StudioView: View {
     /// reliable destination for one. The common intent — put this picture in my
     /// camera roll — had no route at all.
     ///
-    /// "Save to Photos" writes it directly. "Share…" keeps the old sheet, which
-    /// is still the right answer for AirDrop, Messages and Files.
+    /// "Save to Photos" writes it directly. "Share PNG…" keeps the old sheet,
+    /// which is still the right answer for AirDrop, Messages and Files, and
+    /// "Share SVG…" shares the vector original the web also downloads.
     private func download() { showDownloadOptions = true }
 
     /// Write the PNG straight into the photo library.
@@ -605,6 +607,18 @@ struct StudioView: View {
             shareItem = ShareItem(url: url)
         } catch {
             // Non-fatal: sharing simply won't open.
+        }
+    }
+
+    /// The vector original: the same SVG document the web downloads
+    /// (`KaleidoEngine.exportSVG`, golden-tested byte-for-byte against it), so a
+    /// piece opened in a vector editor is one file whichever app made it. Share
+    /// sheet only — Photos does not take SVG.
+    private func shareSVG() {
+        do {
+            shareItem = ShareItem(url: try StudioExport.svgFile(model.currentDrawingV2()))
+        } catch {
+            // Non-fatal, like the PNG path: sharing simply won't open.
         }
     }
 

@@ -16,6 +16,26 @@ struct Golden: Decodable {
     /// sides trim by extended grapheme cluster and "both implement UAX #29" is a
     /// claim about two separate implementations (REVIEW.md minor mI7).
     let copyNames: [CopyNameFixture]
+    /// SVG-only drawings covering branches no serializer fixture reaches.
+    let svgCases: [SvgCase]
+    /// JS number formatting pinned on its own (toFixed ties, toString layout).
+    let svgNumbers: [SvgNumber]
+
+    struct SvgCase: Decodable {
+        let name: String
+        let drawing: RawV2
+        /// exportSVG's S, or nil for its default.
+        let half: Int?
+        let expected: String
+    }
+
+    struct SvgNumber: Decodable {
+        let x: Double
+        let fixed2: String
+        let fixed4: String
+        let svg: String
+        let str: String
+    }
 
     struct CopyNameFixture: Decodable {
         let name: String
@@ -31,6 +51,8 @@ struct Golden: Decodable {
         let upgraded: String
         let forHash: String
         let hash: String
+        /// The web exportSVG of the upgraded drawing.
+        let svg: String
     }
 
     struct V2Fixture: Decodable {
@@ -45,6 +67,8 @@ struct Golden: Decodable {
         let palette: [String]
         let topSym: RawSym?
         let hashTwinOf: String?
+        /// The web exportSVG of drawing.
+        let svg: String
     }
 
     struct SmoothGolden: Decodable {

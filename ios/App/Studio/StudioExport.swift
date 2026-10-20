@@ -1,4 +1,5 @@
 import UIKit
+import UniformTypeIdentifiers
 import KaleidoEngine
 
 /// Offscreen rasterization of a drawing to PNG, for upload + local download.
@@ -60,5 +61,37 @@ enum StudioExport {
 
     static func exportSet(_ drawing: Drawing) -> (image: Data, thumb: Data, og: Data)? {
         exportSet(upgradeToV2(drawing))
+    }
+
+    // MARK: SVG
+
+    /// The web studio's download stamp: `new Date().toISOString().slice(0, 19)`
+    /// with `:` and `T` turned into `-`, i.e. UTC `YYYY-MM-DD-HH-mm-ss`
+    /// (src/client/ui/Toolbar.tsx `STAMP`). The studio has no title — a piece
+    /// only gets one when it is saved — so the web names its downloads by time,
+    /// and so does this.
+    static func downloadStamp(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd-HH-mm-ss"
+        return f.string(from: date)
+    }
+
+    /// `kaleidoscope-<stamp>.svg`, the web's SVG download name.
+    static func svgFilename(at date: Date) -> String {
+        "kaleidoscope-\(downloadStamp(date)).svg"
+    }
+
+    /// Write the drawing's SVG — the same document the web exports, see
+    /// `KaleidoEngine.exportSVG` — to a temporary file for the share sheet.
+    /// One function for the Download button and its test, so the test cannot
+    /// pass against a path the button does not take.
+    static func svgFile(_ drawing: DrawingV2, at date: Date = Date(),
+                        directory: URL = FileManager.default.temporaryDirectory) throws -> URL {
+        let url = directory.appendingPathComponent(svgFilename(at: date), conformingTo: .svg)
+        try Data(exportSVG(drawing).utf8).write(to: url, options: .atomic)
+        return url
     }
 }

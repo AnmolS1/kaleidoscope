@@ -28,6 +28,7 @@ import {
 } from "../../src/shared/vector";
 import { smoothStroke } from "../../src/shared/smooth";
 import { copyName } from "../../src/client/engine/history";
+import { exportSVG } from "../../src/client/engine/export";
 
 const COPY_NAME_CASES = [
   "Layer 1",
@@ -420,6 +421,8 @@ interface V1Fixture {
   /** Render-equivalent projection of the upgrade, and its SHA-256. */
   forHash: string;
   hash: string;
+  /** `exportSVG` of the upgraded drawing (`deserialize(upgraded)`). */
+  svg: string;
 }
 
 interface V2Fixture {
@@ -434,6 +437,8 @@ interface V2Fixture {
   palette: string[];
   topSym: Symmetry | null;
   hashTwinOf?: string;
+  /** `exportSVG` of `drawing` as given. */
+  svg: string;
 }
 
 const v1Fixtures: V1Fixture[] = [];
@@ -443,7 +448,12 @@ for (const c of v1Cases) {
   const forHash = serializeForHash(upgradedDrawing);
   const hash = await contentHash(expected);
   if (hash !== (await sha256hex(forHash))) throw new Error(`${c.name}: hash disagrees with projection`);
-  v1Fixtures.push({ name: c.name, drawing: c.drawing, expected, upgraded: serialize(upgradedDrawing), forHash, hash });
+  const upgraded = serialize(upgradedDrawing);
+  // From the UPGRADED bytes, not the raw literal: that is the drawing a v1 piece
+  // actually is once loaded (3dp-rounded), and the one Swift can rebuild with
+  // `deserializeV2(upgraded)` without a second, unpinned upgrade path.
+  const svg = exportSVG(deserialize(upgraded));
+  v1Fixtures.push({ name: c.name, drawing: c.drawing, expected, upgraded, forHash, hash, svg });
 }
 
 const v2Fixtures: V2Fixture[] = [];
@@ -473,6 +483,7 @@ for (const c of v2Cases) {
     palette: paletteOf(c.drawing),
     topSym: topSym(c.drawing),
     ...(c.hashTwinOf ? { hashTwinOf: c.hashTwinOf } : {}),
+    svg: exportSVG(c.drawing),
   });
 }
 
@@ -500,6 +511,114 @@ if (JSON.stringify(recomputed) !== JSON.stringify(smooth.cubics)) {
   throw new Error("test/unit/fixtures/smooth.json is stale — regenerate it in T01's tests first");
 }
 
+// ---- SVG export -----------------------------------------------------------
+// Every v1/v2 fixture above also carries `svg`, the web exporter's output for
+// it. These add what none of those drawings reach: the smoothed `C` branch, XML
+// escaping, an empty stroke consuming an id index, exact toFixed ties, a tiny
+// negative that must print "-0.00", float-tail opacities, and a non-default `S`.
+// They are SVG-only: not every value here is one the format accepts on save.
+
+interface SvgCase {
+  name: string;
+  drawing: DrawingV2;
+  /** `exportSVG`'s `S`; absent means its default. */
+  half?: number;
+}
+
+const svgCases: SvgCase[] = [
+  {
+    name: "svg-hazards",
+    drawing: {
+      v: 2,
+      bg: "dark",
+      layers: [
+        {
+          id: "l1",
+          name: `Tom & Jerry <"quoted"> it's`,
+          visible: true,
+          opacity: 1,
+          sym: { segments: 7, mirror: true },
+          strokes: [
+            // Smoothed and pressure-alpha'd: the `C` branch and the po mean.
+            {
+              tool: "solid", color: "#2e5e8c", size: 5, opacity: 0.9, po: 1, sm: 1,
+              pts: smooth.points.map(([x, y, p]): [number, number, number] => [x, y, p]),
+            },
+            // Empty: skipped, but its index (1) is still consumed — the next id is s2.
+            { tool: "solid", color: "#123456", size: 3, opacity: 1, pts: [] },
+            // A dot. Size 2.25 at full pressure is width 1.125: an exact tie that
+            // toFixed(2) rounds UP and libc printf rounds to even. Upper-case hex
+            // passes through verbatim; 0.1 + 0.2 keeps its float tail.
+            { tool: "solid", color: "#ABCDEF", size: 2.25, opacity: 0.1 + 0.2, pts: [[1 / 32, -1 / 32, 1]] },
+            // ±1/32 × 500 = ±15.625, a tie of both signs; -0.000001 × 500 rounds
+            // to zero but keeps its sign ("-0.00"); 1e-7 is "1e-7", not "1e-07".
+            {
+              tool: "solid", color: "#00ff88", size: 4, opacity: 1e-7,
+              pts: [[-1 / 32, 3 / 32, 0.5], [-0.000001, 0.375, 0.25], [0.6, -0.000004, 0.75]],
+            },
+          ],
+        },
+        {
+          id: "l2",
+          name: "glow   🎨",
+          visible: true,
+          opacity: 0.1 + 0.2,
+          sym: { segments: 24, mirror: false },
+          strokes: [
+            { tool: "glow", color: "spectrum", size: 13.7, opacity: 0.85, po: 1, pts: [[-0.4, -0.2, 0.33], [-0.35, -0.3, 0.66]] },
+            { tool: "glow", color: "spectrum", size: 13.7, opacity: 0.8, sm: 1, pts: [[0.1, 0.7, 0.2], [0.2, 0.6, 0.4], [0.25, 0.4, 0.9], [0.1, 0.1, 1]] },
+          ],
+        },
+        { id: "l3", name: "hidden", visible: false, opacity: 1, sym: SYM6, strokes: inkA },
+      ],
+    },
+  },
+  {
+    name: "custom-half",
+    half: 333,
+    drawing: {
+      v: 2,
+      bg: "light",
+      layers: [{ id: "l1", name: "A", visible: true, opacity: 1, sym: SYM12, strokes: [...inkA, ...inkB] }],
+    },
+  },
+];
+
+// The formatters on their own, over values the drawings only rarely hit: exact
+// ties (where JS and libc disagree), the classic not-a-tie 1.005, and a seeded
+// sweep through the real ranges — coordinates × S, widths, opacity products.
+// `str` is `String(x)`, the raw stroke-opacity path.
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(0x5f3759df);
+const numberInputs: number[] = [
+  1.125, -1.125, 0.375, 15.625, -15.625, 0.03125, 0.00005, -0.00005, 2.5, 0.5,
+  1.005, 8.345, -0.0005, -0.000001, 0, 1, 0.1 + 0.2, 0.8 * 0.7, 1e-7, 1.5e-7,
+  123456.789, 0.000001, 1e20, 1.5e21,
+];
+for (let i = 0; i < 300; i++) {
+  numberInputs.push((rand() * 2 - 1) * 500); // coordinate × S
+  numberInputs.push(rand() * 1000 * 0.5 * (0.35 + 0.65 * rand())); // width
+  numberInputs.push(rand() * 0.7 * (0.25 + 0.75 * rand())); // opacity product
+}
+// k/8 is exact, and a tie at 2dp whenever k is odd.
+for (let i = 0; i < 100; i++) numberInputs.push((Math.floor(rand() * 8000) - 4000) / 8);
+const svgNumbers = numberInputs.map((x) => ({
+  x,
+  fixed2: x.toFixed(2),
+  fixed4: x.toFixed(4),
+  svg: String(Number(x.toFixed(4))),
+  str: String(x),
+}));
+
 const out = {
   _comment:
     "Golden fixtures for the Swift KaleidoEngine port. Generated by " +
@@ -517,6 +636,14 @@ const out = {
   // implement UAX #29" is a claim about two separate implementations, which is
   // exactly the kind of claim that belongs in a fixture rather than a comment.
   copyNames: COPY_NAME_CASES.map((name) => ({ name, expected: copyName(name) })),
+  // `exportSVG` parity beyond the per-fixture `svg` fields — see "SVG export".
+  svgCases: svgCases.map((c) => ({
+    name: c.name,
+    drawing: c.drawing,
+    half: c.half ?? null,
+    expected: c.half === undefined ? exportSVG(c.drawing) : exportSVG(c.drawing, c.half),
+  })),
+  svgNumbers,
 };
 
 

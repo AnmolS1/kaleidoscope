@@ -378,7 +378,7 @@ struct MoreMenu: View {
 
             Divider()
 
-            Button { onDownload() } label: { Label("Download PNG", systemImage: "square.and.arrow.down") }
+            Button { onDownload() } label: { Label("Download", systemImage: "square.and.arrow.down") }
                 .disabled(model.isEmpty)
 
             Divider()
