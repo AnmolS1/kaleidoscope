@@ -231,7 +231,13 @@ struct ArtworkView: View {
     private func share(_ d: ArtworkDetail) async {
         busy = true; defer { busy = false }
         do {
-            let (data, _) = try await URLSession.shared.data(from: client.mediaURL(d.urls.image))
+            // With the token and a 200 check, through the same loader as the
+            // on-screen image. This used to be a bare `URLSession.shared` load
+            // that "worked" for a private piece only because the leaky shared
+            // cache answered it; without that cache it would have fetched the
+            // 404 body and shared it as a .webp.
+            let data = try await ArtworkImageLoader.shared.data(for: client.mediaURL(d.urls.image),
+                                                                token: auth.session?.token)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(id).webp")
             try data.write(to: url)
             shareItem = ShareURL(url: url)

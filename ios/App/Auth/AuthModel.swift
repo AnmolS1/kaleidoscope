@@ -46,6 +46,7 @@ final class AuthModel: ObservableObject {
     // MARK: Persistence
 
     private func restore() {
+        ArtworkImageLoader.purgeLegacySharedCacheOnce()
         if let data = Keychain.get(Self.account),
            let stored = try? JSONDecoder().decode(StoredSession.self, from: data) {
             session = stored
@@ -61,13 +62,19 @@ final class AuthModel: ObservableObject {
     }
 
     private func persist(_ stored: StoredSession) {
+        // A different person on this device: nothing the last one fetched may
+        // survive. (The loader also scopes by token, so this is belt and braces.)
+        if session?.user.id != stored.user.id { ArtworkImageLoader.shared.purgeAuthenticated() }
         session = stored
         if let data = try? JSONEncoder().encode(stored) {
             Keychain.set(data, for: Self.account)
         }
     }
 
+    /// Every way a session ends (sign-out, account deletion, a token the server
+    /// rejected) comes through here, so this is where private image bytes go.
     private func clearLocal() {
+        ArtworkImageLoader.shared.purgeAuthenticated()
         session = nil
         plus = nil
         Keychain.delete(Self.account)

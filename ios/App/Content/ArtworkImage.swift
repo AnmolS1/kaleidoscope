@@ -48,13 +48,9 @@ struct ArtworkImage<Content: View, Placeholder: View>: View {
     private func load() async {
         loaded = nil
         failed = false
-        var req = URLRequest(url: url)
-        req.cachePolicy = .returnCacheDataElseLoad
-        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         do {
-            let (data, res) = try await URLSession.shared.data(for: req)
-            guard let http = res as? HTTPURLResponse, http.statusCode == 200,
-                  let img = UIImage(data: data) else { failed = true; return }
+            let data = try await ArtworkImageLoader.shared.data(for: url, token: token)
+            guard let img = UIImage(data: data) else { failed = true; return }
             loaded = img
         } catch {
             failed = true
