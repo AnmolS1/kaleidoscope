@@ -105,7 +105,11 @@ describe("private artwork bytes are not publicly cacheable (M5)", () => {
       const cc = res.headers.get("Cache-Control") ?? "";
       expect(cc, `${path} must not be publicly cacheable`).not.toMatch(/(^|[ ,])public/);
       expect(cc).toMatch(/private/);
-      expect(cc).toMatch(/max-age=31536000/); // still immutable, just not shared
+      // Not a year of `immutable` either: the browser would keep showing the
+      // piece from its own cache after sign-out, on a shared machine, without
+      // ever asking the worker — which is the only thing that checks the owner.
+      expect(cc, `${path} must be revalidated on every use`).toMatch(/no-cache/);
+      expect(cc).not.toMatch(/immutable/);
     }
   });
 

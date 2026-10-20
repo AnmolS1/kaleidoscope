@@ -15,20 +15,21 @@ export const keys = {
 
 export const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
 /**
- * The same year of immutability, but PRIVATE.
+ * PRIVATE, and revalidated on every use.
  *
- * A private piece's bytes are immutable in exactly the same way a public one's
- * are — the content is addressed by id and never rewritten — so the freshness
- * story is unchanged. What must change is WHO may keep a copy: the URL carries
- * no per-user component, so `public` invites the browser cache, any
- * intermediary, and (one "Cache Everything" rule away) Cloudflare's edge to
- * store a private drawing and hand it to somebody else.
+ * The URL carries no per-user component, so `public` would invite the browser
+ * cache, any intermediary, and (one "Cache Everything" rule away) Cloudflare's
+ * edge to store a private drawing and hand it to somebody else. And a year of
+ * `immutable`, even private, lets the browser keep showing the piece after
+ * sign-out on a shared machine without ever asking the worker — the only thing
+ * that checks the owner. `no-cache` keeps the copy but makes every view ask
+ * first; the images are small and the ETag rides along.
  */
-export const PRIVATE_IMMUTABLE_CACHE = "private, max-age=31536000, immutable";
+export const PRIVATE_CACHE = "private, no-cache";
 
 /** Cache directive for an artwork representation, by the artwork's visibility. */
 export function cacheFor(visibility: string | null | undefined): string {
-  return visibility === "private" ? PRIVATE_IMMUTABLE_CACHE : IMMUTABLE_CACHE;
+  return visibility === "private" ? PRIVATE_CACHE : IMMUTABLE_CACHE;
 }
 // Avatars are overwritten on each login, so they can't be immutable. A day of
 // freshness with a week of stale-while-revalidate keeps the edge fast without
