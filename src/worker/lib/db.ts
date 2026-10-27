@@ -415,30 +415,44 @@ export async function setArtworkHash(
  * counting the moment the flag goes off — no cleanup deploy required, and no
  * window where a free Sandbox purchase is worth real money.
  */
-function liveEntitlement(env: Env): string {
-  return envFlag(env.PLUS_ALLOW_SANDBOX)
-    ? "revoked_at IS NULL"
-    : "revoked_at IS NULL AND (environment IS NULL OR environment = 'Production')";
+function liveEntitlement(env: Env): { sql: string; binds: string[] } {
+  // An allow-list, not "anything goes once a flag is on". PLUS_ALLOW_SANDBOX
+  // used to drop the environment clause entirely, which would also have let a
+  // Stripe 'Test' row (or any unknown string) count. Each non-Production value
+  // now lives exactly as long as its own flag (STRIPE-PLAN T4):
+  //   'Sandbox', 'Xcode' — Apple's non-production environments → PLUS_ALLOW_SANDBOX
+  //   'Test'             — Stripe test mode                    → PLUS_ALLOW_TEST
+  // NULL (comp / legacy rows) always counts. Values are bound, never inlined.
+  const allowed = ["Production"];
+  if (envFlag(env.PLUS_ALLOW_SANDBOX)) allowed.push("Sandbox", "Xcode");
+  if (envFlag(env.PLUS_ALLOW_TEST)) allowed.push("Test");
+  const marks = allowed.map(() => "?").join(", ");
+  return {
+    sql: `revoked_at IS NULL AND (environment IS NULL OR environment IN (${marks}))`,
+    binds: allowed,
+  };
 }
 
 export async function plusSources(env: Env, userId: string): Promise<PlusSource[]> {
+  const live = liveEntitlement(env);
   const { results } = await env.DB.prepare(
     `SELECT DISTINCT source FROM entitlements
-      WHERE user_id = ? AND product = 'plus' AND ${liveEntitlement(env)}
+      WHERE user_id = ? AND product = 'plus' AND ${live.sql}
       ORDER BY source`,
   )
-    .bind(userId)
+    .bind(userId, ...live.binds)
     .all<{ source: PlusSource }>();
   return (results ?? []).map((r) => r.source);
 }
 
 /** Whether this user has Plus from any source. */
 export async function hasPlus(env: Env, userId: string): Promise<boolean> {
+  const live = liveEntitlement(env);
   const row = await env.DB.prepare(
     `SELECT 1 AS one FROM entitlements
-      WHERE user_id = ? AND product = 'plus' AND ${liveEntitlement(env)} LIMIT 1`,
+      WHERE user_id = ? AND product = 'plus' AND ${live.sql} LIMIT 1`,
   )
-    .bind(userId)
+    .bind(userId, ...live.binds)
     .first<{ one: number }>();
   return !!row;
 }
