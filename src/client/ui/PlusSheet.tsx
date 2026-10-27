@@ -19,6 +19,8 @@ import {
   type PlusInfo,
 } from "../api";
 import {
+  CONFIRMING_MESSAGE,
+  CONFIRM_SLOW_MESSAGE,
   PLUS_PRICE,
   plusOutcomeForError,
   priceFootnote,
@@ -82,15 +84,26 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
   const [outcome, setOutcome] = useState<PlusOutcome | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
+  const confirm = S.plusConfirm.value;
   const kind = resolvePlusState({
     signedIn: !!user,
     owned: plus.active,
     busy,
     outcome,
+    confirm,
   });
+  // Both billing actions stay off while the post-checkout polls run: Unlock
+  // because this person has probably just paid, Restore because its "nothing
+  // found" answer, arriving before the webhook, would put an enabled Unlock
+  // back in front of them.
+  const locked = busy || kind === "confirming";
 
   const close = () => {
     S.plusOpen.value = false;
+    // "Slow" is an answer to the return from checkout, not a standing state:
+    // the next time the sheet opens it is the ordinary sheet again. A pending
+    // poll is left alone — it still publishes the grant when it lands.
+    if (S.plusConfirm.peek() === "slow") S.plusConfirm.value = "idle";
   };
 
   useEffect(() => {
@@ -150,9 +163,9 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
     setBusy(true);
     try {
       const url = await fetchCheckoutUrl();
-      // A full-page redirect to Lemon Squeezy's hosted checkout, never an
-      // overlay — the overlay would need LS's script host in `script-src` and
-      // PLAN §2.3 pins the CSP as unchanged.
+      // A full-page redirect to Stripe's hosted Checkout, never an embedded
+      // form — embedding would need Stripe.js in `script-src` and PLAN §2.3
+      // pins the CSP as unchanged.
       //
       // `busy` is deliberately NOT cleared: the document is on its way out, and
       // flipping the button back to "Unlock" for the last frame before it goes
@@ -238,7 +251,7 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
   );
 
   const unlockButton = (
-    <button class="btn btn-primary plus-cta" onClick={buy} disabled={busy}>
+    <button class="btn btn-primary plus-cta" onClick={buy} disabled={locked}>
       {busy ? "Unlocking…" : unlockLabel(PLUS_PRICE)}
     </button>
   );
@@ -254,7 +267,7 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
         Privacy
       </a>{" "}
       ·{" "}
-      <button type="button" class="link-inline" onClick={restore} disabled={busy}>
+      <button type="button" class="link-inline" onClick={restore} disabled={locked}>
         Restore purchase
       </button>
     </p>
@@ -330,6 +343,28 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
               </div>
             </div>
             {unlockButton}
+            {footnote}
+          </>
+        );
+
+      // Back from Stripe Checkout. One body for both phases, with the note FIRST
+      // in each, so Preact keeps the same `role="status"` node and the switch
+      // from "confirming" to "slow" is a text change a screen reader announces.
+      case "confirming":
+      case "confirm-slow":
+        return (
+          <>
+            <div class="note" role="status">
+              <span class="note-icon" aria-hidden="true">
+                <InfoIcon />
+              </span>
+              <div>{kind === "confirming" ? CONFIRMING_MESSAGE : CONFIRM_SLOW_MESSAGE}</div>
+            </div>
+            {features}
+            {/* Still shown while confirming, disabled — the sheet keeps its shape
+                and the person can see why nothing is on offer. Gone once the
+                polls run out: Restore is the next step, not another payment. */}
+            {kind === "confirming" && unlockButton}
             {footnote}
           </>
         );

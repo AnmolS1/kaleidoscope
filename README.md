@@ -89,13 +89,16 @@ capping every existing user; a test refuses a tree where `PLUS_ENABLED` is true
 and the epoch is still the placeholder.
 
 One entitlement in D1 is honoured by both platforms — StoreKit on iOS
-(`POST /api/billing/apple`, plus Apple's server notifications) and Lemon Squeezy
-on the web (`POST /api/billing/lemonsqueezy`, HMAC over the raw body). Refunds
-**tombstone** rather than delete, because both providers hand the client a
-credential it keeps: Apple's device still holds a JWS signed before the refund,
-and LS retries `order_created` for three days. A Sandbox entitlement counts only
-while `PLUS_ALLOW_SANDBOX` says it may, so it expires with the flag instead of
-lasting forever.
+(`POST /api/billing/apple`, plus Apple's server notifications) and Stripe
+Checkout with Managed Payments on the web (`POST /api/billing/stripe`, HMAC over
+the timestamp and raw body). With Managed Payments the merchant of record is
+Stripe's affiliate Link, LLC ("Sold through Link, LLC"), which handles sales
+tax and VAT. Refunds **tombstone** rather than delete, because both
+providers can deliver a stale credential: Apple's device still holds a JWS
+signed before the refund, and Stripe retries `checkout.session.completed` for
+up to three days. A Sandbox entitlement counts only while `PLUS_ALLOW_SANDBOX`
+says it may, and a Stripe test-mode one only while `PLUS_ALLOW_TEST` does, so
+neither outlives its flag.
 
 ### Storage
 

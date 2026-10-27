@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../../src/client/api";
 import {
+  CONFIRMING_MESSAGE,
+  CONFIRM_SCHEDULE_MS,
+  CONFIRM_SLOW_MESSAGE,
   GENERIC_ERROR_MESSAGE,
   UNAVAILABLE_MESSAGE,
   PLUS_PRICE,
   RATE_LIMITED_MESSAGE,
   plusOutcomeForError,
+  confirmPurchase,
   priceFootnote,
   publicPostsLine,
+  stripCheckoutReturn,
   resolvePlusState,
   unlockLabel,
   type PlusStateInput,
@@ -35,6 +40,8 @@ describe("resolvePlusState — every state is reachable", () => {
     ["restore-none", { outcome: { kind: "restore-none" } }],
     ["bound-elsewhere", { outcome: { kind: "bound-elsewhere" } }],
     ["error", { outcome: { kind: "error", message: "boom" } }],
+    ["confirming", { confirm: "pending" }],
+    ["confirm-slow", { confirm: "slow" }],
   ];
 
   for (const [kind, patch] of table) {
@@ -55,6 +62,8 @@ describe("resolvePlusState — every state is reachable", () => {
       "bound-elsewhere",
       "sign-in",
       "error",
+      "confirming",
+      "confirm-slow",
     ];
     expect([...covered].sort()).toEqual([...all].sort());
   });
@@ -132,6 +141,194 @@ describe("plusOutcomeForError — codes that have their own state never fall thr
 
   it("the generic message says nothing was charged", () => {
     expect(GENERIC_ERROR_MESSAGE).toContain("Nothing was charged");
+  });
+
+  it("502 checkout_failed (Stripe refused) falls through to the generic message", () => {
+    // Transient, and nothing was charged — which is what the generic copy
+    // says. Neither "not on sale" nor "too many attempts" is true of it.
+    expect(plusOutcomeForError(new ApiError(502, "checkout_failed", { error: "checkout_failed" })))
+      .toEqual({ kind: "error", message: GENERIC_ERROR_MESSAGE });
+  });
+});
+
+describe("resolvePlusState — back from checkout", () => {
+  it("the grant outranks confirming, so the sheet flips the moment it lands", () => {
+    expect(resolvePlusState({ ...FREE, owned: true, confirm: "pending" })).toBe("purchased");
+    expect(resolvePlusState({ ...FREE, owned: true, confirm: "slow" })).toBe("purchased");
+  });
+
+  it("an answer the user just asked for (Restore) outranks the slow note", () => {
+    expect(resolvePlusState({ ...FREE, confirm: "slow", outcome: { kind: "restore-none" } })).toBe(
+      "restore-none",
+    );
+  });
+
+  it("idle and absent both mean the ordinary sheet", () => {
+    expect(resolvePlusState({ ...FREE, confirm: "idle" })).toBe("before");
+    expect(resolvePlusState(FREE)).toBe("before");
+  });
+
+  it("a signed-out user is asked to sign in, not told a purchase is confirming", () => {
+    expect(resolvePlusState({ ...FREE, signedIn: false, confirm: "pending" })).toBe("sign-in");
+  });
+
+  it("the copy is calm, points at Restore, and names no price", () => {
+    expect(CONFIRMING_MESSAGE).not.toBe(CONFIRM_SLOW_MESSAGE);
+    expect(CONFIRM_SLOW_MESSAGE).toContain("Restore purchase");
+    for (const m of [CONFIRMING_MESSAGE, CONFIRM_SLOW_MESSAGE]) {
+      expect(m).not.toContain("!");
+      expect(m).not.toMatch(/\$\d/);
+    }
+  });
+});
+
+/** A fake clock: `sleep` advances it, and `read` can take time of its own. */
+function fakeClock() {
+  let t = 1_000_000;
+  return {
+    now: () => t,
+    advance: (ms: number) => {
+      t += ms;
+    },
+    sleep: (ms: number) => {
+      t += ms;
+      return Promise.resolve();
+    },
+  };
+}
+
+describe("confirmPurchase — polls for the webhook's grant", () => {
+  it("the schedule is 0 / 1.5 / 3 / 6 s", () => {
+    expect([...CONFIRM_SCHEDULE_MS]).toEqual([0, 1500, 3000, 6000]);
+  });
+
+  it("reads are measured from the START, not as gaps after a slow read", async () => {
+    // Each read takes a full second. Gap-based waits would land at
+    // 0 / 2.5 / 6.5 / 13.5 s; offsets from the start keep the schedule.
+    const clock = fakeClock();
+    const start = clock.now();
+    const at: number[] = [];
+    const r = await confirmPurchase<{ active: boolean }>({
+      read: () => {
+        at.push(clock.now() - start);
+        clock.advance(1000);
+        return Promise.resolve({ active: false });
+      },
+      isActive: (b) => b.active,
+      publish: () => {},
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    expect(at).toEqual([0, 1500, 3000, 6000]);
+    expect(r).toBe("slow");
+  });
+
+  it("a read slower than the gap to the next one does not wait at all", async () => {
+    const clock = fakeClock();
+    const start = clock.now();
+    const at: number[] = [];
+    const sleeps: number[] = [];
+    await confirmPurchase<{ active: boolean }>({
+      read: () => {
+        at.push(clock.now() - start);
+        clock.advance(2000);
+        return Promise.resolve({ active: false });
+      },
+      isActive: (b) => b.active,
+      publish: () => {},
+      now: clock.now,
+      sleep: (ms) => {
+        sleeps.push(ms);
+        return clock.sleep(ms);
+      },
+    });
+    // 0 → (2s read, already past 1.5) → 2000 → (past 3s) → 4000 → wait 2s → 6000
+    expect(at).toEqual([0, 2000, 4000, 6000]);
+    expect(sleeps.every((ms) => ms > 0)).toBe(true);
+  });
+
+  it("stops at the first read that shows the grant, and publishes every block", async () => {
+    const clock = fakeClock();
+    const blocks = [{ active: false }, { active: false }, { active: true }];
+    let reads = 0;
+    const published: boolean[] = [];
+    const r = await confirmPurchase<{ active: boolean }>({
+      read: () => Promise.resolve(blocks[reads++]),
+      isActive: (b) => b.active,
+      publish: (b) => published.push(b.active),
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    expect(r).toBe("granted");
+    expect(reads).toBe(3);
+    expect(published).toEqual([false, false, true]);
+  });
+
+  it("a failed read is skipped, not fatal", async () => {
+    const clock = fakeClock();
+    let reads = 0;
+    const r = await confirmPurchase<{ active: boolean }>({
+      read: () => {
+        reads++;
+        return reads === 1 ? Promise.reject(new TypeError("Failed to fetch")) : Promise.resolve({ active: true });
+      },
+      isActive: (b) => b.active,
+      publish: () => {},
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    expect(r).toBe("granted");
+    expect(reads).toBe(2);
+  });
+
+  it("every read failing still ends, as slow — never stuck pending", async () => {
+    const clock = fakeClock();
+    let reads = 0;
+    const r = await confirmPurchase<{ active: boolean }>({
+      read: () => {
+        reads++;
+        return Promise.reject(new Error("down"));
+      },
+      isActive: (b) => b.active,
+      publish: () => {},
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    expect(r).toBe("slow");
+    expect(reads).toBe(CONFIRM_SCHEDULE_MS.length);
+  });
+
+  it("a lapsed session (null) stops at once and publishes nothing", async () => {
+    const clock = fakeClock();
+    let reads = 0;
+    const published: unknown[] = [];
+    const r = await confirmPurchase<{ active: boolean }>({
+      read: () => {
+        reads++;
+        return Promise.resolve(null);
+      },
+      isActive: (b) => b.active,
+      publish: (b) => published.push(b),
+      now: clock.now,
+      sleep: clock.sleep,
+    });
+    expect(r).toBe("signed-out");
+    expect(reads).toBe(1);
+    expect(published).toEqual([]);
+  });
+});
+
+describe("stripCheckoutReturn", () => {
+  it("is null without the param, so nothing else is ever rewritten", () => {
+    expect(stripCheckoutReturn("", "/", "")).toBeNull();
+    expect(stripCheckoutReturn("?plus=other", "/", "")).toBeNull();
+    expect(stripCheckoutReturn("?keep=1", "/gallery", "#x")).toBeNull();
+  });
+
+  it("drops only `plus`, keeping other params and the hash", () => {
+    expect(stripCheckoutReturn("?plus=thanks", "/", "")).toBe("/");
+    expect(stripCheckoutReturn("?plus=thanks&keep=1", "/", "#h")).toBe("/?keep=1#h");
+    expect(stripCheckoutReturn("?a=1&plus=thanks&b=2", "/p/x", "")).toBe("/p/x?a=1&b=2");
   });
 });
 

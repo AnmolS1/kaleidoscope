@@ -11,7 +11,13 @@ import type {
   DrawingV2,
   PressurePreset,
 } from "../shared/vector";
-import { DEFAULT_LAYER_CAP, type PlusInfo, type SessionUser, fetchMe } from "./api";
+import { DEFAULT_LAYER_CAP, type PlusInfo, type SessionUser, fetchMe, refreshPlus } from "./api";
+import {
+  CONFIRMING_MESSAGE,
+  type ConfirmPhase,
+  confirmPurchase,
+  stripCheckoutReturn,
+} from "./ui/plusState";
 
 // --- tool state ---
 export const tool = signal<BrushTool>("solid");
@@ -98,6 +104,12 @@ export const authLoaded = signal<boolean>(false);
 export const plus = signal<PlusInfo | null>(null);
 /** Drives the Plus sheet (rendered by T08); set from anywhere that hits a gate. */
 export const plusOpen = signal<boolean>(false);
+/**
+ * The post-checkout confirmation (see `handleCheckoutReturn`). A signal rather
+ * than sheet state because it outlives the sheet: closing it mid-poll must not
+ * stop the grant from being published.
+ */
+export const plusConfirm = signal<ConfirmPhase>("idle");
 
 export async function initAuth(): Promise<void> {
   try {
@@ -114,6 +126,53 @@ export async function initAuth(): Promise<void> {
   } finally {
     authLoaded.value = true;
   }
+  void handleCheckoutReturn();
+}
+
+/**
+ * Back from Stripe Checkout: the session's `success_url` is `/?plus=thanks`.
+ *
+ * The webhook that grants Plus usually lands a moment AFTER the redirect, so
+ * the first /api/me can honestly say "not yet". Open the sheet so the purchase
+ * is acknowledged rather than landing on a silent canvas, hold it in a
+ * confirming state (Unlock disabled — this person has probably just paid), and
+ * re-read the entitlement on a short schedule. The sheet reads `plus`, so it
+ * flips to "You're in." by itself once the grant shows up.
+ *
+ * Signed out on return: only the param is stripped. There is no account to
+ * confirm against, and the sheet would only say "sign in".
+ */
+export async function handleCheckoutReturn(): Promise<void> {
+  if (typeof location === "undefined") return;
+  const next = stripCheckoutReturn(location.search, location.pathname, location.hash);
+  if (next === null) return;
+  history.replaceState(history.state, "", next);
+  if (!me.value) return;
+
+  plusOpen.value = true;
+  // Already granted (the webhook beat the redirect): straight to "You're in.".
+  if (plus.value?.active) return;
+
+  plusConfirm.value = "pending";
+  announce(CONFIRMING_MESSAGE);
+  const result = await confirmPurchase<PlusInfo>({
+    read: refreshPlus,
+    isActive: (p) => p.active,
+    publish: (p) => {
+      plus.value = p;
+      layerCap.value = p.layerCap;
+    },
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  });
+  // Always a terminal phase: `pending` left behind would disable Unlock for
+  // the rest of the session. A lapsed session lands on "slow" too — its copy
+  // is still true, and Restore is what turns it into "sign in".
+  plusConfirm.value = result === "granted" ? "idle" : "slow";
+  // The confirming note is REPLACED by the purchased body, so its live region
+  // cannot carry this; the app-wide one can. The slow message needs no call:
+  // it is a text change inside that same status node, which announces itself.
+  if (result === "granted") announce("You’re in. Kaleidoscope Plus is active.");
 }
 
 // --- remix: a drawing to load into the studio + the parent id to record ---

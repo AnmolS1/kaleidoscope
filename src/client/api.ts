@@ -17,7 +17,7 @@ export interface SessionUser {
  */
 export interface PlusInfo {
   active: boolean;
-  sources: Array<"apple" | "lemonsqueezy" | "comp">;
+  sources: Array<"apple" | "stripe" | "comp">;
   publicCount: number;
   publicCap: number | null;
   layerCap: number;
@@ -393,16 +393,21 @@ export function likeArtwork(id: string): Promise<{ likes: number }> {
 // ---- billing (Kaleidoscope Plus) ----
 
 /**
- * The Lemon Squeezy hosted-checkout URL for the signed-in user.
+ * A Stripe Checkout URL for the signed-in user — a fresh hosted session per
+ * call, so it is never cached or reused.
  *
- * A URL to NAVIGATE to, never an overlay: the overlay needs LS's script host in
- * `script-src` and PLAN §2.3 pins the CSP as unchanged. The worker puts the
- * user id in `checkout[custom][user_id]`, which is what the webhook later binds
- * the entitlement to, so the caller must not rebuild this URL itself.
+ * A URL to NAVIGATE to, never an embedded form: embedding needs Stripe.js in
+ * `script-src` and PLAN §2.3 pins the CSP as unchanged. The worker writes the
+ * user id into the session, which is what the webhook later binds the
+ * entitlement to, so the caller must not build or alter this URL itself. After
+ * payment Stripe sends the user back to `/?plus=thanks` (see
+ * `handleCheckoutReturn` in state.ts).
  *
  * Throws `ApiError` with the real status — 401 (session gone), 409
- * `bound_elsewhere`, 429 (10/h), 503 (Plus dark or unconfigured). Each maps to
- * a different sheet state, so callers must read `status`/`code`, not `ok`.
+ * `bound_elsewhere`, 429 (10/h), 502 `checkout_failed` (Stripe refused or was
+ * unreachable; nothing was charged, so it falls through to the generic
+ * message), 503 (Plus dark or unconfigured). Each maps to a sheet state, so
+ * callers must read `status`/`code`, not `ok`.
  */
 export async function fetchCheckoutUrl(): Promise<string> {
   const body = await request<{ url?: unknown }>("/api/billing/checkout", { csrf: true });
@@ -420,8 +425,9 @@ export async function fetchCheckoutUrl(): Promise<string> {
  * There is nothing device-local to restore on the web: entitlements live on the
  * server against the account, so the only thing that can be stale is this
  * client's cached `/api/me` block. That is a real window, not a formality — the
- * Lemon Squeezy webhook lands asynchronously, so someone returning from
- * checkout can genuinely arrive before the grant exists.
+ * Stripe webhook lands asynchronously, so someone returning from checkout can
+ * genuinely arrive before the grant exists. The return path polls this on a
+ * short schedule for exactly that reason; Restore is the fallback after it.
  *
  * Returns the fresh block and deliberately does NOT touch the `me` signal: a
  * transient failure here must not sign anybody out of the UI.

@@ -30,7 +30,7 @@ const plusMenuItem = (page: Page) => page.getByRole("menuitem", { name: /Kaleido
  * `mockAtCap`.
  *
  * The patch is read on every call, so a test can flip `active` mid-run to play
- * the Lemon Squeezy webhook landing late.
+ * the Stripe webhook landing late.
  */
 async function mockPlus(page: Page, patch: () => Record<string, unknown>): Promise<void> {
   await page.route("**/api/me", async (route) => {
@@ -196,7 +196,7 @@ test.describe("Plus sheet states", () => {
     await signedInWithPlus(page, "plus-buying", () => ({ enabled: true, publicCount: 2 }));
     // A deliberate delay: without it the state exists for one frame and the
     // test is either flaky or vacuous. The URL is LOCAL, so the redirect is
-    // observable and never leaves for lemonsqueezy.com.
+    // observable and never leaves for checkout.stripe.com.
     await page.route("**/api/billing/checkout*", async (route) => {
       await new Promise((r) => setTimeout(r, 1200));
       await route.fulfill({ status: 200, json: { url: "/?checkout=stub" } });
@@ -230,7 +230,7 @@ test.describe("Plus sheet states", () => {
     await openSheetFromMenu(page);
     await expect(sheet(page)).toHaveAttribute("data-plus-state", "before");
 
-    // The Lemon Squeezy webhook lands. This is the real reason web restore
+    // The Stripe webhook lands. This is the real reason web restore
     // exists: the grant is asynchronous and this client's block is stale.
     owned = true;
     const me = page.waitForResponse((r) => r.url().includes("/api/me"));
@@ -355,6 +355,105 @@ test.describe("Plus sheet states", () => {
     await assert503();
     await expect(sheet(page).locator(".note")).toContainText("Nothing was charged");
     await expect(sheet(page).locator(".note")).not.toContainText("Give it a few minutes");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Back from Stripe Checkout: `success_url` is `/?plus=thanks`.
+//
+// The grant arrives by webhook, usually a moment after the redirect, so the
+// return lands on a sheet that is still confirming. `owned` is flipped mid-run
+// to play the webhook; the client polls /api/me at 0 / 1.5 / 3 / 6 s.
+// ---------------------------------------------------------------------------
+
+test.describe("returning from checkout", () => {
+  const CONFIRMING = "Confirming your purchase…";
+  const SLOW =
+    "Your payment can take a minute to reach your account. Use Restore purchase in a moment to check again.";
+
+  /**
+   * Sign in on a plain URL FIRST, then arrive with the param. Landing on it
+   * signed out would strip it on the first load (that is the signed-out
+   * behaviour, tested below), and testLogin's reload would come back without it.
+   */
+  async function returnFromCheckout(page: Page, prefix: string, owned: () => boolean) {
+    await signedInWithPlus(page, prefix, () => ({ enabled: true, active: owned() }));
+    await page.goto("/?plus=thanks&keep=1#h");
+  }
+
+  test("confirming → You're in: param stripped, Unlock held off until the grant lands", async ({
+    page,
+  }) => {
+    let owned = false;
+    await returnFromCheckout(page, "plus-return", () => owned);
+
+    // Only `plus` is dropped; another param and the hash survive.
+    await expect.poll(() => page.evaluate(() => location.pathname + location.search + location.hash))
+      .toBe("/?keep=1#h");
+
+    await expect(sheet(page)).toBeVisible();
+    await expect(sheet(page)).toHaveAttribute("data-plus-state", "confirming");
+    await expect(sheet(page).getByRole("status")).toHaveText(CONFIRMING);
+    // The double-purchase guard: the person has probably just paid.
+    const cta = sheet(page).locator(".plus-cta");
+    await expect(cta).toHaveText("Unlock for $4.99");
+    await expect(cta).toBeDisabled();
+    await expect(sheet(page).getByRole("button", { name: "Restore purchase" })).toBeDisabled();
+    // The app-wide live region said so too — the sheet mounted with its note
+    // already in it, which a screen reader may not read out on its own.
+    await expect(page.locator(".visually-hidden[role=status]")).toHaveText(CONFIRMING);
+
+    // The webhook lands; the next scheduled poll picks it up, with nobody
+    // pressing anything.
+    owned = true;
+    await expect(sheet(page)).toHaveAttribute("data-plus-state", "purchased", { timeout: 8_000 });
+    await expect(sheet(page).getByText("You’re in.")).toBeVisible();
+    await expect(page.locator(".visually-hidden[role=status]")).toContainText("You’re in.");
+
+    // Published, not just displayed: the account menu stops offering a price.
+    await sheet(page).getByRole("button", { name: "Back to canvas" }).click();
+    await openAccountMenu(page);
+    await expect(accountRow(page).locator(".chip")).toHaveCount(0);
+  });
+
+  test("no grant within the window: a calm note pointing at Restore, and no buy button", async ({
+    page,
+  }) => {
+    await returnFromCheckout(page, "plus-slow", () => false);
+    await expect(sheet(page)).toHaveAttribute("data-plus-state", "confirming");
+
+    // Tag the live node, so the slow note can be proved to be the SAME element
+    // with new text — which is what makes a screen reader announce it.
+    const status = sheet(page).getByRole("status");
+    await status.evaluate((el) => el.setAttribute("data-e2e-node", "confirming"));
+
+    // The last poll is at 6 s; the default 5 s expect timeout would race it.
+    await expect(sheet(page)).toHaveAttribute("data-plus-state", "confirm-slow", {
+      timeout: 12_000,
+    });
+    await expect(status).toHaveText(SLOW);
+    await expect(status).toHaveAttribute("data-e2e-node", "confirming");
+    await expect(sheet(page).getByText(/Unlock for/)).toHaveCount(0);
+    await expect(sheet(page).getByText(/[!]/)).toHaveCount(0);
+    const restore = sheet(page).getByRole("button", { name: "Restore purchase" });
+    await expect(restore).toBeEnabled();
+
+    // "Slow" answers the return; it is not where the sheet lives from now on.
+    await sheet(page).getByRole("button", { name: "Close" }).click();
+    await expect(sheet(page)).toHaveCount(0);
+    await openSheetFromMenu(page);
+    await expect(sheet(page)).toHaveAttribute("data-plus-state", "before");
+    await expect(sheet(page).locator(".plus-cta")).toBeEnabled();
+  });
+
+  test("signed out on return: the param is stripped and nothing opens", async ({ page }) => {
+    // Surface ON, so an absent sheet means "not opened", not "not available".
+    await mockPlus(page, () => ({ enabled: true }));
+    await page.goto("/?plus=thanks");
+    await expect.poll(() => page.evaluate(() => location.pathname + location.search)).toBe("/");
+    // Give initAuth its chance to have opened something before asserting it did not.
+    await expect(page.locator("a.btn-primary", { hasText: "Sign in" })).toBeVisible();
+    await expect(page.locator("[data-plus-state]")).toHaveCount(0);
   });
 });
 

@@ -81,7 +81,7 @@ struct SavedPiece: Identifiable {
 /// purchasing mechanism other than in-app purchase. This screen used to offer
 /// "Draw your own online" pointing at `Config.webURL`; that was harmless while
 /// the web had nothing to sell, and stops being harmless the moment Plus ships
-/// there, because the same product is then buyable through Lemon Squeezy one tap
+/// there, because the same product is then buyable through Stripe one tap
 /// from an App Store build. It would have become a rejection at the worst
 /// possible time — a review cycle after the paywall lands, not before it.
 ///

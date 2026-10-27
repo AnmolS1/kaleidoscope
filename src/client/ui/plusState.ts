@@ -35,6 +35,19 @@ export type PlusStateKind =
   /** `PlusSignIn` — no session, so a purchase would have nothing to attach to. */
   | "sign-in"
   /**
+   * Not one of DESIGN.md's six. Back from Stripe Checkout, waiting for the
+   * webhook's grant to show up in /api/me. Unlock is disabled: the person in
+   * front of it has very probably just paid, and an enabled buy button is how
+   * they pay twice.
+   */
+  | "confirming"
+  /**
+   * The confirmation window ran out without a grant. Not an error — the
+   * payment may simply be slower than the polls — so it points at Restore and
+   * still offers no buy button.
+   */
+  | "confirm-slow"
+  /**
    * Not one of DESIGN.md's six. 429 / 503 / a dead network have to land
    * somewhere, and landing on the buy button ("nothing happened") is worse than
    * saying so. Deliberately LAST in the error map, after the codes that have
@@ -59,7 +72,16 @@ export interface PlusStateInput {
   busy: boolean;
   /** The last attempt's result, or null before anything has been attempted. */
   outcome: PlusOutcome | null;
+  /** Where the post-checkout confirmation stands. Optional: "idle" when absent. */
+  confirm?: ConfirmPhase;
 }
+
+/**
+ * The post-checkout confirmation, as published by `state.ts`.
+ * `idle` — nothing to confirm; `pending` — polling /api/me; `slow` — polled
+ * out without seeing the grant.
+ */
+export type ConfirmPhase = "idle" | "pending" | "slow";
 
 export function resolvePlusState(i: PlusStateInput): PlusStateKind {
   // An outcome outranks everything: it is the answer to the question the user
@@ -67,7 +89,11 @@ export function resolvePlusState(i: PlusStateInput): PlusStateKind {
   if (i.outcome) return i.outcome.kind;
   if (i.busy) return "purchasing";
   if (!i.signedIn) return "sign-in";
+  // Owned outranks confirming, so the sheet flips to "You're in." the moment
+  // the grant lands, without anyone having to clear the confirm phase first.
   if (i.owned) return "purchased";
+  if (i.confirm === "pending") return "confirming";
+  if (i.confirm === "slow") return "confirm-slow";
   return "before";
 }
 
@@ -79,7 +105,7 @@ export const GENERIC_ERROR_MESSAGE =
  * A 503 from the checkout route is PERMANENT, not transient (minor).
  *
  * It means Plus is not on sale here yet — either the surface flag is off or the
- * Lemon Squeezy ids are still empty. The generic message tells the user to "try
+ * Stripe key and price are not configured. The generic message tells the user to "try
  * again in a moment", which is advice about a condition no amount of retrying
  * changes; they then retry, and eventually collect a rate limit for it.
  */
@@ -101,6 +127,9 @@ export const UNAVAILABLE_MESSAGE =
  * in Swift, and because an unmapped code is indistinguishable from a network
  * failure at the moment it first happens.
  */
+// A 502 (Stripe refused the session or was unreachable) deliberately has no
+// branch: it is transient and nothing was charged, which is exactly what the
+// generic message says.
 export function plusOutcomeForError(err: unknown): PlusOutcome {
   if (err instanceof ApiError) {
     if (err.status === 401) return { kind: "sign-in" };
@@ -127,4 +156,79 @@ export function priceFootnote(price: string): string {
 /** The account menu's mono counter, e.g. "7 of 10 public posts". */
 export function publicPostsLine(count: number, cap: number): string {
   return `${count} of ${cap} public posts`;
+}
+
+// ---- back from checkout ------------------------------------------------------
+
+/** Shown while the post-checkout polls run. */
+export const CONFIRMING_MESSAGE = "Confirming your purchase…";
+/**
+ * Shown when the polls run out. Calm on purpose: a slow webhook is normal, and
+ * the person has most likely paid, so this must not read as a failure — nor
+ * invite them to buy again.
+ */
+export const CONFIRM_SLOW_MESSAGE =
+  "Your payment can take a minute to reach your account. Use Restore purchase in a moment to check again.";
+
+/**
+ * When to re-read /api/me after returning from checkout, in ms from the START.
+ *
+ * Offsets, not gaps: a slow /api/me must not push every later read back, or
+ * the last one lands well after the window the copy above describes.
+ */
+export const CONFIRM_SCHEDULE_MS = [0, 1500, 3000, 6000] as const;
+
+export type ConfirmResult = "granted" | "signed-out" | "slow";
+
+export interface ConfirmDeps<T> {
+  /** One read of the entitlement. Null means the session is gone. */
+  read: () => Promise<T | null>;
+  /** Whether a block shows the grant. */
+  isActive: (block: T) => boolean;
+  /** Called with every fresh block, so the caller can publish it. */
+  publish: (block: T) => void;
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+  schedule?: readonly number[];
+}
+
+/**
+ * Poll for the webhook's grant on the schedule above, stopping early once it
+ * is there. Injected clock and reader so the timing is unit-testable without
+ * a DOM or a server.
+ *
+ * Every path returns a result — the caller turns it into a terminal confirm
+ * phase, and a phase stuck on `pending` would leave Unlock disabled for good.
+ * A failed read is skipped rather than fatal: one dropped request is not a
+ * reason to stop checking.
+ */
+export async function confirmPurchase<T>(d: ConfirmDeps<T>): Promise<ConfirmResult> {
+  const start = d.now();
+  for (const at of d.schedule ?? CONFIRM_SCHEDULE_MS) {
+    const wait = start + at - d.now();
+    if (wait > 0) await d.sleep(wait);
+    let fresh: T | null;
+    try {
+      fresh = await d.read();
+    } catch {
+      continue;
+    }
+    if (fresh === null) return "signed-out";
+    d.publish(fresh);
+    if (d.isActive(fresh)) return "granted";
+  }
+  return "slow";
+}
+
+/**
+ * The URL to replace the current one with after reading `?plus=thanks`, or
+ * null when the param is not there. Every other param and the hash survive.
+ * Stripped so a reload, a bookmark, or a shared link does not replay it.
+ */
+export function stripCheckoutReturn(search: string, pathname: string, hash: string): string | null {
+  const params = new URLSearchParams(search);
+  if (params.get("plus") !== "thanks") return null;
+  params.delete("plus");
+  const q = params.toString();
+  return `${pathname}${q ? `?${q}` : ""}${hash}`;
 }
