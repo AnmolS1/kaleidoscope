@@ -45,17 +45,16 @@ export interface Env {
   PLUS_ENABLED?: string;
   PLUS_SURFACE_ENABLED?: string; // show the Plus UI (paywall/Restore) — NOT the caps
   PLUS_ALLOW_SANDBOX?: string; // accept StoreKit Sandbox receipts (review window)
-  PLUS_ALLOW_TEST?: string; // accept Lemon Squeezy test-mode webhooks
+  PLUS_ALLOW_TEST?: string; // accept Stripe test-mode payments (and a sk_test_ key at checkout)
   PLUS_PRODUCT_ID?: string; // "dev.ponderance.kaleidoscope.plus"
-  LS_STORE_ID?: string; // store SLUG (subdomain), e.g. "kaleidoscope-plus"
-  LS_CHECKOUT_ID?: string; // UUID from the Share modal — used in the checkout URL
-  LS_VARIANT_ID?: string; // NUMERIC variant id — used to verify the webhook
-  LS_WEBHOOK_SECRET?: string; // secret
-  LS_API_KEY?: string; // secret
+  STRIPE_PRICE_ID?: string; // var — price_… of the Plus product (its tax code must be Managed Payments-eligible)
+  STRIPE_SECRET_KEY?: string; // secret — sk_/rk_; a restricted key needs Checkout Sessions write + PaymentIntents read
+  STRIPE_WEBHOOK_SECRET?: string; // secret — whsec_… of the webhook endpoint
 }
 
-/** Where a Plus entitlement came from. */
-export type PlusSource = "apple" | "lemonsqueezy" | "comp";
+/** Where a Plus entitlement came from. `lemonsqueezy` is gone: the store was
+ *  never approved and prod D1 held no rows from it (checked 2026-10-27). */
+export type PlusSource = "apple" | "stripe" | "comp";
 
 export interface Entitlement {
   source: PlusSource;

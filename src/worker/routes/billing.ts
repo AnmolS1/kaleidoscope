@@ -1,16 +1,16 @@
 // Kaleidoscope Plus: StoreKit grants, App Store Server Notifications, the
-// Lemon Squeezy webhook, and the hosted-checkout redirect (PLAN §2.3).
+// Stripe webhook, and the Stripe Checkout redirect (PLAN §2.3).
 //
 // Four routes with deliberately different gates:
 //
 //   POST /api/billing/apple              auth + CSRF + rate limit  (the iOS app calls it)
 //   POST /api/billing/apple/notifications  NONE                    (Apple's server calls it)
-//   POST /api/billing/lemonsqueezy         NONE                    (LS's server calls it)
-//   GET  /api/billing/checkout           auth + rate limit         (the web client calls it)
+//   POST /api/billing/stripe               NONE                    (Stripe's server calls it)
+//   GET  /api/billing/checkout           auth + CSRF + rate limit  (the web client calls it)
 //
-// The two webhooks are unauthenticated by necessity — Apple and Lemon Squeezy
-// have no session with us. Their ONLY authentication is the signature, which is
-// why both signature paths are fail-closed and mutation-tested.
+// The two webhooks are unauthenticated by necessity — Apple and Stripe have no
+// session with us. Their ONLY authentication is the signature, which is why
+// both signature paths are fail-closed and mutation-tested.
 
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -26,12 +26,21 @@ import {
   type AppleTransactionInfo,
 } from "../lib/apple-billing";
 import {
-  verifyLsSignature,
-  checkLsOrder,
-  checkoutUrl,
+  verifyStripeSignature,
+  checkCheckoutEvent,
+  checkRevocationEvent,
+  checkoutConfigured,
+  createCheckoutSession,
+  fetchPaymentState,
+  eventIds,
+  keyMode,
   testModeAllowed,
-  type LsWebhook,
-} from "../lib/lemonsqueezy";
+  StripeApiError,
+  GRANT_EVENTS,
+  REVOKE_EVENTS,
+  type PaymentState,
+  type StripeEvent,
+} from "../lib/stripe";
 import type { Env, PlusSource } from "../types";
 
 export const billing = new Hono<AppEnv>();
@@ -44,10 +53,10 @@ const BILLING_RULE = { limit: 10, windowSec: 3600 };
  *
  * Both are open by design — the signature is the only credential — so every
  * byte of work before that signature is checked is reachable by anyone: an
- * x5c chain to parse on the Apple side, an HMAC over the raw body on the LS
- * side. Keyed by IP because there is no user to key on yet.
+ * x5c chain to parse on the Apple side, an HMAC over the raw body on the
+ * Stripe side. Keyed by IP because there is no user to key on yet.
  *
- * Deliberately loose. Apple retries notifications and Lemon Squeezy retries for
+ * Deliberately loose. Apple retries notifications and Stripe retries for up to
  * three days, so a tight limit would drop deliveries we actually want; this is
  * a ceiling on abuse, not a throttle on normal traffic. A dropped webhook is
  * re-sent by both providers, so 429 is safe here in a way it would not be on a
@@ -58,14 +67,16 @@ const WEBHOOK_IP_RULE = { limit: 300, windowSec: 60 };
 /**
  * Record a webhook that did NOT result in a grant (S2).
  *
- * There was no `console.*` anywhere in the billing files, so an LS storefront
- * purchase — one made from LS's own product page, which carries no
- * `custom_data` and therefore no user to attach to — answered
- * `200 {ignored:true}` and vanished: money taken, nothing granted, no trace, no
- * repair path, and no way to even discover it had happened.
+ * There was no `console.*` anywhere in the billing files, so a purchase with no
+ * user to attach to — e.g. a Payment Link made by hand in the Stripe dashboard,
+ * which carries none of our metadata — answered `200 {ignored:true}` and
+ * vanished: money taken, nothing granted, no trace, no repair path, and no way
+ * to even discover it had happened.
  *
  * `console.warn` reaches Workers Logs, which is the only observability this
- * project has. Deliberately no PII beyond ids that already exist in D1.
+ * project has. Ids only — the Stripe event, session and payment intent ids are
+ * what support needs to find it in the dashboard. Never an email, never a raw
+ * payload (a Checkout Session carries `customer_details.email`), never a key.
  */
 function logNoGrant(source: string, reason: string, detail: Record<string, unknown> = {}): void {
   console.warn("billing: no grant", { source, reason, ...detail });
@@ -109,9 +120,9 @@ function findEntitlement(
  *  🔴 `revoked_at` is deliberately NOT in the DO UPDATE list. A refunded row
  *  must stay refunded even if the same purchase is reported again — which both
  *  providers make easy: Apple's device still holds a JWS signed before the
- *  refund, and Lemon Squeezy retries `order_created` for three days and offers
- *  a manual resend. Clearing the tombstone here would re-grant on a replay and
- *  undo the whole point of having one. */
+ *  refund, and Stripe retries `checkout.session.completed` for up to three days
+ *  and offers a manual resend. Clearing the tombstone here would re-grant on a
+ *  replay and undo the whole point of having one. */
 async function upsertEntitlement(
   env: Env,
   e: { source: PlusSource; externalId: string; userId: string; environment: string | null },
@@ -328,95 +339,129 @@ billing.post("/apple/notifications", async (c) => {
   return c.json({ ok: true, removed });
 });
 
-// ---- POST /api/billing/lemonsqueezy ---------------------------------------
+// ---- POST /api/billing/stripe ---------------------------------------------
 //
-// Unauthenticated; the HMAC over the RAW BODY is the only credential.
+// Unauthenticated; the HMAC over the signed timestamp and the RAW BODY is the
+// only credential.
 //
-// Business rejections (test mode, unpaid, wrong variant, unknown user) answer
-// 200 `{ ignored: true, reason }` rather than 4xx, because LS retries non-2xx on
-// a schedule and none of these will ever succeed on a retry. The security
-// assertion in the tests is therefore "no entitlement row exists", not the
-// status code — a bad signature is the one case that stays a hard 401.
-billing.post("/lemonsqueezy", async (c) => {
+// Business refusals (test mode, unpaid, wrong product, unknown user, refunded)
+// answer 200 `{ ignored: true, reason }` rather than 4xx, because Stripe
+// retries non-2xx for up to three days and none of these will ever succeed on a
+// retry. The security assertion in the tests is therefore "no entitlement row
+// exists", not the status code. Two things DO answer non-2xx on purpose: a bad
+// signature (401), and anything that stops us confirming the payment with
+// Stripe (503) — that one SHOULD be retried, because the customer has paid.
+billing.post("/stripe", async (c) => {
   // Unauthenticated route: bound the work an anonymous caller can ask for
   // before the signature is checked (S1). 429 is safe here — both providers
   // retry, so a dropped delivery comes back.
-  if (!(await checkAll(c.env, [{ key: ipKey(c, "lemonsqueezy"), rule: WEBHOOK_IP_RULE }]))) {
+  if (!(await checkAll(c.env, [{ key: ipKey(c, "stripe"), rule: WEBHOOK_IP_RULE }]))) {
     return c.json({ error: "rate_limited" }, 429);
   }
   // The raw bytes, exactly as sent. Re-serializing a parsed body would change
   // key order and whitespace, so the HMAC would match only bodies we built
   // ourselves and never a real webhook.
   const raw = await c.req.text();
-  const signature = c.req.header("X-Signature");
+  const signature = c.req.header("Stripe-Signature");
 
-  if (!(await verifyLsSignature(c.env.LS_WEBHOOK_SECRET ?? "", raw, signature))) {
+  if (!(await verifyStripeSignature(c.env.STRIPE_WEBHOOK_SECRET ?? "", raw, signature))) {
     return c.json({ error: "bad_signature" }, 401);
   }
 
-  let body: LsWebhook;
+  let event: StripeEvent;
   try {
-    body = JSON.parse(raw) as LsWebhook;
+    event = JSON.parse(raw) as StripeEvent;
   } catch {
     return c.json({ error: "bad_body" }, 400);
   }
+  if (!event || typeof event !== "object") return c.json({ error: "bad_body" }, 400);
 
-  const event = typeof body.meta?.event_name === "string" ? body.meta.event_name : "";
-  const orderId =
-    typeof body.data?.id === "string"
-      ? body.data.id
-      : typeof body.data?.id === "number"
-        ? String(body.data.id)
-        : null;
+  const type = typeof event.type === "string" ? event.type : "";
+  // Ids only, never the object: a Checkout Session carries the buyer's email.
+  const { eventId, objectId, paymentIntentId } = eventIds(event);
 
-  if (event === "order_refunded") {
-    if (!orderId) {
-      logNoGrant("lemonsqueezy", "missing_order_id");
-      return c.json({ ok: true, ignored: true, reason: "missing_order_id" });
+  if (REVOKE_EVENTS.has(type)) {
+    const rev = checkRevocationEvent(event);
+    if (!rev.ok) {
+      logNoGrant("stripe", rev.reason, { type, eventId, objectId, paymentIntent: paymentIntentId });
+      return c.json({ ok: true, ignored: true, reason: rev.reason });
     }
-    const removed = await revokeEntitlement(c.env, "lemonsqueezy", orderId);
+    // An unknown payment intent changes nothing and inserts nothing: there is
+    // no placeholder row for a refund that arrives before its grant. That case
+    // is closed by the grant path's re-read, which sees the refunded charge.
+    const removed = await revokeEntitlement(c.env, "stripe", rev.paymentIntentId);
     return c.json({ ok: true, removed });
   }
 
-  if (event !== "order_created") {
-    logNoGrant("lemonsqueezy", "event", { event });
+  if (!GRANT_EVENTS.has(type)) {
+    logNoGrant("stripe", "event", { type, eventId });
     return c.json({ ok: true, ignored: true, reason: "event" });
   }
 
-  const check = checkLsOrder(body, {
-    variantId: (c.env.LS_VARIANT_ID ?? "").trim(),
-    allowTest: testModeAllowed(c.env),
-  });
+  const check = checkCheckoutEvent(event, { allowTest: testModeAllowed(c.env) });
   if (!check.ok) {
-    // The one that loses money silently: a storefront purchase has no
-    // custom_data, so `check.reason` is "no_user" and nobody ever hears about it.
-    logNoGrant("lemonsqueezy", check.reason, { orderId });
+    // The one that loses money silently: a payment with no user to attach to
+    // (a Payment Link made by hand in the dashboard carries none of our
+    // metadata) answers 200 and is otherwise never heard of again.
+    logNoGrant("stripe", check.reason, { type, eventId, sessionId: objectId, paymentIntent: paymentIntentId });
     return c.json({ ok: true, ignored: true, reason: check.reason });
   }
+  const ids = { eventId, sessionId: objectId, paymentIntent: check.paymentIntentId };
 
-  // `entitlements.user_id` has a FK to `users`. A custom_data user_id that no
-  // longer resolves would raise a constraint error and turn into a 500, which
-  // LS would then retry forever; check first and answer cleanly instead.
+  // `entitlements.user_id` has a FK to `users`. A user id that no longer
+  // resolves would raise a constraint error and turn into a 500, which Stripe
+  // would then retry for days; check first and answer cleanly instead.
   if (!(await getUserById(c.env, check.userId))) {
-    logNoGrant("lemonsqueezy", "unknown_user", { orderId: check.orderId, userId: check.userId });
+    logNoGrant("stripe", "unknown_user", { ...ids, userId: check.userId });
     return c.json({ ok: true, ignored: true, reason: "unknown_user" });
   }
 
-  // A refunded order stays refunded (REVIEW M2). LS retries `order_created` for
-  // up to three days and the dashboard offers a manual resend; the retry is
-  // byte-identical and correctly signed, so nothing upstream distinguishes it
-  // from the original. 200 rather than an error code, because a non-2xx here
-  // makes LS retry the thing we are declining.
-  if (await isRevoked(c.env, "lemonsqueezy", check.orderId)) {
-    logNoGrant("lemonsqueezy", "revoked", { orderId: check.orderId });
+  // A refunded purchase stays refunded (REVIEW M2). Stripe retries a grant event
+  // for up to three days and the dashboard can resend it; the resend is
+  // correctly signed and freshly timestamped, so only the tombstone tells it
+  // apart from the original. Checked before the re-read so a replay costs no
+  // Stripe call. 200, because a non-2xx makes Stripe retry what we declined.
+  if (await isRevoked(c.env, "stripe", check.paymentIntentId)) {
+    logNoGrant("stripe", "revoked", ids);
     return c.json({ ok: true, ignored: true, reason: "revoked" });
   }
 
+  // Re-read the payment rather than trusting the snapshot (see
+  // fetchPaymentState). Without a usable key we cannot, and granting unread
+  // would reopen the refund-before-grant hole — so 503, and Stripe retries
+  // until the key is fixed.
+  if (!keyMode((c.env.STRIPE_SECRET_KEY ?? "").trim())) {
+    console.error("billing: STRIPE_SECRET_KEY unset or malformed; cannot confirm payment", ids);
+    return c.json({ error: "not_configured" }, 503);
+  }
+  let state: PaymentState;
+  try {
+    state = await fetchPaymentState(c.env, check.paymentIntentId);
+  } catch (err) {
+    // 503 so Stripe retries: a paid customer must not be dropped because one
+    // API read failed.
+    console.error("billing: stripe payment re-read failed", {
+      ...ids,
+      error: err instanceof StripeApiError ? `${err.status} ${err.code}` : "unknown",
+    });
+    return c.json({ error: "stripe_unavailable" }, 503);
+  }
+  if (!state.ok) {
+    if (state.retry) {
+      // Still settling (a delayed method, 3-D Secure in progress). Not a
+      // refusal: Stripe redelivers, and a later delivery finds it succeeded.
+      console.warn("billing: payment not settled yet", { ...ids, reason: state.reason });
+      return c.json({ error: "payment_pending" }, 503);
+    }
+    logNoGrant("stripe", state.reason, ids);
+    return c.json({ ok: true, ignored: true, reason: state.reason });
+  }
+
   await upsertEntitlement(c.env, {
-    source: "lemonsqueezy",
-    externalId: check.orderId,
+    source: "stripe",
+    externalId: check.paymentIntentId,
     userId: check.userId,
-    environment: null,
+    environment: check.environment,
   });
 
   return c.json({ ok: true, plus: true });
@@ -424,12 +469,13 @@ billing.post("/lemonsqueezy", async (c) => {
 
 // ---- GET /api/billing/checkout --------------------------------------------
 //
-// Returns a URL for the client to navigate to. A redirect, not an overlay: the
-// overlay would need LS's script host in `script-src`, and §2.3 pins the CSP as
-// unchanged. Nothing in security.ts needed touching.
+// Creates a Managed Payments Checkout Session and returns its URL for the
+// client to navigate to. A redirect, not an embedded form: nothing from Stripe
+// runs on our origin, so security.ts and the CSP are unchanged.
+//
 // `requireCsrf` on a GET is unusual and deliberate (REVIEW.md minor mB5). This
-// route reads nothing but it SPENDS something — a 10/h per-user budget — and the
-// session cookie is SameSite=Lax, which is sent on a cross-site top-level
+// route SPENDS something — a 10/h per-user budget, and a Stripe API call — and
+// the session cookie is SameSite=Lax, which is sent on a cross-site top-level
 // navigation. A hostile page could bounce a signed-in visitor through this URL
 // ten times and leave the real Buy button answering 429 for the next hour. The
 // CSRF token is not readable cross-origin and cannot be attached to a
@@ -447,17 +493,27 @@ billing.get("/checkout", requireAuth, requireCsrf, async (c) => {
   // purchase the user can see and cannot make.
   if (!envFlag(c.env.PLUS_SURFACE_ENABLED)) return c.json({ error: "not_enabled" }, 503);
 
-  // CONFIG BEFORE THE RATE LIMIT (minor). `not_configured` is permanent: the LS
-  // ids are empty, and no amount of retrying fills them. Charging the per-user
-  // budget for it meant ten clicks on a button that can never work earned a 429
-  // — so the user was told to slow down about a thing that was never going to
+  // CONFIG BEFORE THE RATE LIMIT (minor). `not_configured` is permanent: no
+  // amount of retrying fills in a price or a key. Charging the per-user budget
+  // for it meant ten clicks on a button that can never work earned a 429 — so
+  // the user was told to slow down about a thing that was never going to
   // happen, and the honest error was replaced by a misleading one.
-  const url = checkoutUrl(c.env, user.id);
-  if (!url) return c.json({ error: "not_configured" }, 503);
+  if (!checkoutConfigured(c.env)) return c.json({ error: "not_configured" }, 503);
 
   if (!(await checkAll(c.env, [{ key: `billing:checkout:${user.id}:h`, rule: BILLING_RULE }]))) {
     return c.json({ error: "rate_limited" }, 429);
   }
 
-  return c.json({ url });
+  try {
+    return c.json({ url: await createCheckoutSession(c.env, user.id) });
+  } catch (err) {
+    // 502: our upstream failed, not the request. The client shows its generic
+    // error, which is the right message. Status and Stripe's code only — never
+    // the key, and never the error object, which can hold the request.
+    console.error("billing: checkout session failed", {
+      userId: user.id,
+      error: err instanceof StripeApiError ? `${err.status} ${err.code}` : "unknown",
+    });
+    return c.json({ error: "checkout_failed" }, 502);
+  }
 });

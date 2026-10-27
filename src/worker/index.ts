@@ -198,7 +198,7 @@ app.route("/api/auth", auth);
 app.route("/api/artworks", artworks);
 app.route("/api", gallery); // /api/gallery, /api/users/me/artworks
 app.route("/api/admin", admin);
-app.route("/api/billing", billing); // Plus: StoreKit, ASSN, LS webhook, checkout
+app.route("/api/billing", billing); // Plus: StoreKit, ASSN, Stripe webhook, checkout
 app.route("/og", og);
 app.route("/", permalink); // /p/:id (OG injection) + /sitemap.xml
 

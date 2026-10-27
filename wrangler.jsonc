@@ -70,7 +70,7 @@
     // App Review opens the app and finds no Plus row, no paywall, no Restore
     // and no product, which is a Guideline 2.1 rejection of the binary as well
     // as the IAP. Turning the single flag on instead would have imposed the web
-    // cap while Lemon Squeezy still had nothing to sell.
+    // cap while the web still had nothing to sell.
     //
     // So the review deploy runs SURFACE=true, ENABLED=false: the purchase is
     // findable and buyable, and nobody loses a layer or a public slot until the
@@ -78,18 +78,18 @@
     "PLUS_ENABLED": "false",
     "PLUS_SURFACE_ENABLED": "true",
     "PLUS_ALLOW_SANDBOX": "true",
+    // PLUS_ALLOW_TEST: accept Stripe TEST-mode payments as grants (recorded with
+    // environment "Test") and let checkout run on an sk_test_/rk_test_ key. Off
+    // in production: with it off, a test key makes checkout answer
+    // not_configured rather than send real visitors to a checkout that grants
+    // nothing.
     "PLUS_ALLOW_TEST": "false",
     "PLUS_PRODUCT_ID": "dev.ponderance.kaleidoscope.plus",
-    // Lemon Squeezy. Empty until the store leaves test mode: LS pins a new store
-    // to test mode until it approves the application, and test-mode products,
-    // webhooks and API keys are a separate dataset whose ids do NOT carry over
-    // to live. Fill these from the LIVE product, not the test one.
-    //   LS_STORE_ID    store slug / subdomain          ("kaleidoscope-plus")
-    //   LS_CHECKOUT_ID UUID from the Share modal        -> the checkout URL
-    //   LS_VARIANT_ID  numeric variant id from the API  -> the webhook check
-    "LS_STORE_ID": "",
-    "LS_CHECKOUT_ID": "",
-    "LS_VARIANT_ID": ""
+    // Stripe Checkout + Managed Payments (Stripe/Link is the merchant of
+    // record). The price_… id of the LIVE Plus product: test-mode products and
+    // prices are a separate dataset whose ids do not carry over to live. Empty
+    // means "not on sale", and checkout answers 503 not_configured.
+    "STRIPE_PRICE_ID": ""
   },
   "ai": { "binding": "AI" },
   "d1_databases": [
@@ -104,5 +104,5 @@
   ]
   // TURNSTILE_SITE_KEY is the real widget for kaleidoscope.ponderance.dev;
   // the matching TURNSTILE_SECRET_KEY is a Wrangler secret.
-  // LS_WEBHOOK_SECRET and LS_API_KEY are Wrangler secrets too (T02d).
+  // STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are Wrangler secrets too.
 }

@@ -1,5 +1,5 @@
 // Kaleidoscope Plus billing: Apple StoreKit grants, App Store Server
-// Notifications, and the Lemon Squeezy webhook (PLAN §2.3).
+// Notifications, the Stripe webhook and the Stripe Checkout redirect (PLAN §2.3).
 //
 // This is security code, so a green run is not the bar. Two rules shape the file:
 //
@@ -16,13 +16,19 @@
 //
 // Mutation-tested (see the T02d report): disabling the chain check, the HMAC
 // compare, or the environment gate each fails exactly the tests that name them.
+//
+// Stripe is never called for real. `globalThis.fetch` is replaced for EVERY test
+// in this file by a stub that answers only the two Stripe endpoints the worker
+// is allowed to use; anything else is recorded and fails the test in afterEach.
+// It records rather than throws on purpose: the routes turn a throwing fetch
+// into a 502/503, so a throw would let a negative test pass for the wrong reason.
 
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as x509 from "@peculiar/x509";
 import { CompactSign } from "jose";
 import app from "../../src/worker/index";
-import { makeD1, makeKV, makeEnv, seedUser, seedSession, bearer } from "./helpers";
+import { makeD1, makeKV, makeEnv, seedUser, seedSession, bearer, BASE } from "./helpers";
 import { hasPlus, plusSources } from "../../src/worker/lib/db";
 
 x509.cryptoProvider.set(crypto as Crypto);
@@ -47,6 +53,104 @@ vi.mock("../../src/worker/lib/apple-billing", async (importOriginal) => {
 
 beforeEach(() => {
   H.stub = null;
+});
+
+// ---- the Stripe API stub -------------------------------------------------
+
+const STRIPE_API = "https://api.stripe.com";
+const CHECKOUT_URL = "https://checkout.stripe.com/c/pay/cs_live_a1KaleidoscopePlus";
+
+interface StripeCall {
+  url: string;
+  method: string;
+  headers: Headers;
+  body: string;
+  signal: unknown;
+}
+
+const jsonResponse = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+/** A PaymentIntent as `GET /v1/payment_intents/:id?expand[]=latest_charge`
+ *  returns it: succeeded, with its charge expanded and untouched. */
+function piReply(
+  id: string,
+  over: Record<string, unknown> = {},
+  charge: Record<string, unknown> = {},
+): Response {
+  return jsonResponse(200, {
+    id,
+    object: "payment_intent",
+    status: "succeeded",
+    amount: 499,
+    livemode: true,
+    latest_charge: {
+      id: "ch_3KaleidoscopePlus01",
+      object: "charge",
+      payment_intent: id,
+      paid: true,
+      refunded: false,
+      amount_refunded: 0,
+      disputed: false,
+      ...charge,
+    },
+    ...over,
+  });
+}
+
+const defaultCheckoutReply = () =>
+  jsonResponse(200, { id: "cs_live_a1KaleidoscopePlus", object: "checkout.session", url: CHECKOUT_URL });
+
+/** What the stub answers per endpoint (tests swap these) and what it saw. */
+const S = {
+  calls: [] as StripeCall[],
+  unexpected: [] as string[],
+  pi: (id: string): Response => piReply(id),
+  checkout: defaultCheckoutReply as () => Response,
+};
+
+const REAL_FETCH = globalThis.fetch;
+
+beforeEach(() => {
+  S.calls = [];
+  S.unexpected = [];
+  S.pi = (id) => piReply(id);
+  S.checkout = defaultCheckoutReply;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const method = (init?.method ?? "GET").toUpperCase();
+    const call: StripeCall = {
+      url,
+      method,
+      headers: new Headers(init?.headers),
+      body: typeof init?.body === "string" ? init.body : "",
+      signal: init?.signal,
+    };
+    const u = new URL(url);
+    if (u.origin === STRIPE_API && method === "POST" && u.pathname === "/v1/checkout/sessions" && !u.search) {
+      S.calls.push(call);
+      return S.checkout();
+    }
+    const pi = /^\/v1\/payment_intents\/([A-Za-z0-9_]+)$/.exec(u.pathname);
+    if (
+      u.origin === STRIPE_API &&
+      method === "GET" &&
+      pi &&
+      JSON.stringify([...u.searchParams.entries()]) === JSON.stringify([["expand[]", "latest_charge"]])
+    ) {
+      S.calls.push(call);
+      return S.pi(pi[1]!);
+    }
+    S.unexpected.push(`${method} ${url}`);
+    return new Response("unexpected request in test", { status: 599 });
+  }) as typeof fetch;
+});
+
+afterEach(() => {
+  globalThis.fetch = REAL_FETCH;
+  vi.restoreAllMocks();
+  // Fails the test that made the call, by name.
+  expect(S.unexpected, "unexpected outbound requests").toEqual([]);
 });
 
 // ---- certificate + JWS fixtures ------------------------------------------
@@ -379,12 +483,7 @@ describe("POST /api/billing/apple — gates", () => {
   it("does NOT share its rate-limit budget with /checkout", async () => {
     // A single `billing:<user>` key would give both routes ONE 10/h budget, so
     // ten checkout fetches would 429 the purchase report — paid, not granted.
-    const { DB, env } = ctx({
-      PLUS_SURFACE_ENABLED: "true",
-      LS_STORE_ID: "ponderance",
-      LS_CHECKOUT_ID: CHECKOUT_ID,
-      LS_VARIANT_ID: VARIANT,
-    });
+    const { DB, env } = ctx(READY);
     for (let i = 0; i < 10; i++) {
       expect((await app.request("/api/billing/checkout", { headers: bearer("s1") }, env as never)).status).toBe(200);
     }
@@ -708,20 +807,22 @@ describe("POST /api/billing/apple/notifications", () => {
 });
 
 // ==========================================================================
-// 4. POST /api/billing/lemonsqueezy
+// 4. POST /api/billing/stripe — the webhook
 // ==========================================================================
 
-const LS_SECRET = "whsec_kaleidoscope_test";
-const VARIANT = "778899";
-/**
- * The checkout UUID is a DIFFERENT value from the numeric variant id, on
- * purpose: LS's Share modal gives a UUID for the URL while the webhook reports
- * `first_order_item.variant_id` as a number. Keeping them visibly unequal here
- * is what makes a regression that overloads one var fail this suite.
- */
-const CHECKOUT_ID = "95128e95-ea6a-421c-87c4-0334ac3d7102";
+const WHSEC = "whsec_kaleidoscope_test_secret";
+/** A LIVE key, so `checkoutConfigured` passes without PLUS_ALLOW_TEST. Never a
+ *  real key: every Stripe call in this file goes to the stub above. */
+const SK = "sk_live_kaleidoscope_test_only";
+const PRICE = "price_1KaleidoscopePlus";
+const PI = "pi_3KaleidoscopePlus01";
+const SESSION_ID = "cs_live_a1KaleidoscopePlus";
+const EVENT_ID = "evt_1KaleidoscopeGrant";
+const BUYER_EMAIL = "buyer@example.test";
 
-async function lsSign(secret: string, raw: string): Promise<string> {
+const nowSec = () => Math.floor(Date.now() / 1000);
+
+async function hmacHex(secret: string, msg: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -729,262 +830,709 @@ async function lsSign(secret: string, raw: string): Promise<string> {
     false,
     ["sign"],
   );
-  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
   return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** THE valid LS order body. Negatives perturb exactly one field. */
-function lsOrder(over: {
-  meta?: Record<string, unknown>;
-  attributes?: Record<string, unknown>;
-  item?: Record<string, unknown>;
-  id?: unknown;
+/** A `Stripe-Signature` header exactly as Stripe builds it: `t=<unix>,v1=<hex>`
+ *  where the MAC is over `"<t>.<raw body>"`, keyed with the whole whsec string. */
+async function stripeSign(secret: string, raw: string, t = nowSec()): Promise<string> {
+  return `t=${t},v1=${await hmacHex(secret, `${t}.${raw}`)}`;
+}
+
+/**
+ * THE valid grant event. Every negative below is this object with exactly one
+ * field changed. `customer_details.email` is in it on purpose: it is what a
+ * real session carries, and the log tests assert it never reaches a log line.
+ */
+function checkoutEvent(o: {
+  event?: Record<string, unknown>;
+  session?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 } = {}) {
   return {
-    meta: { event_name: "order_created", test_mode: false, custom_data: { user_id: "u1" }, ...over.meta },
+    id: EVENT_ID,
+    object: "event",
+    api_version: "2026-04-22.dahlia",
+    type: "checkout.session.completed",
+    livemode: true,
+    created: 1767225600,
+    ...o.event,
     data: {
-      type: "orders",
-      id: over.id === undefined ? "ord_1001" : over.id,
-      attributes: {
-        store_id: 12345,
-        status: "paid",
-        total: 499,
-        test_mode: false,
-        refunded: false,
-        first_order_item: { variant_id: Number(VARIANT), test_mode: false, ...over.item },
-        ...over.attributes,
+      object: {
+        id: SESSION_ID,
+        object: "checkout.session",
+        livemode: true,
+        mode: "payment",
+        status: "complete",
+        payment_status: "paid",
+        amount_total: 499,
+        currency: "usd",
+        payment_intent: PI,
+        client_reference_id: "u1",
+        customer_details: { email: BUYER_EMAIL },
+        metadata: { app: "kaleidoscope", product: "plus", user_id: "u1", ...o.metadata },
+        ...o.session,
       },
     },
   };
 }
 
-async function postLs(
+function refundEvent(over: Record<string, unknown> = {}) {
+  return {
+    id: "evt_1KaleidoscopeRefund",
+    object: "event",
+    type: "charge.refunded",
+    livemode: true,
+    data: {
+      object: {
+        id: "ch_3KaleidoscopePlus01",
+        object: "charge",
+        payment_intent: PI,
+        amount: 499,
+        amount_refunded: 499,
+        refunded: true,
+        ...over,
+      },
+    },
+  };
+}
+
+function disputeEvent(over: Record<string, unknown> = {}) {
+  return {
+    id: "evt_1KaleidoscopeDispute",
+    object: "event",
+    type: "charge.dispute.closed",
+    livemode: true,
+    data: {
+      object: {
+        id: "dp_1KaleidoscopePlus01",
+        object: "dispute",
+        charge: "ch_3KaleidoscopePlus01",
+        payment_intent: PI,
+        amount: 499,
+        status: "lost",
+        ...over,
+      },
+    },
+  };
+}
+
+/** POST a webhook. `header: null` sends no Stripe-Signature at all. */
+async function postStripe(
   env: unknown,
   raw: string,
-  o: { secret?: string; signature?: string } = {},
+  o: { secret?: string; header?: string | null; t?: number } = {},
 ) {
-  const sig = o.signature ?? (await lsSign(o.secret ?? LS_SECRET, raw));
-  return app.request(
-    "/api/billing/lemonsqueezy",
-    { method: "POST", headers: { "X-Signature": sig, "Content-Type": "application/json" }, body: raw },
-    env as never,
-  );
+  const header =
+    o.header === undefined ? await stripeSign(o.secret ?? WHSEC, raw, o.t) : o.header;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (header !== null) headers["Stripe-Signature"] = header;
+  return app.request("/api/billing/stripe", { method: "POST", headers, body: raw }, env as never);
 }
 
-function lsCtx(over: Record<string, unknown> = {}) {
-  return ctx({ LS_WEBHOOK_SECRET: LS_SECRET, LS_VARIANT_ID: VARIANT, ...over });
+const post = (env: unknown, body: object) => postStripe(env, JSON.stringify(body));
+
+function stripeCtx(over: Record<string, unknown> = {}) {
+  return ctx({ STRIPE_WEBHOOK_SECRET: WHSEC, STRIPE_SECRET_KEY: SK, ...over });
 }
 
-describe("POST /api/billing/lemonsqueezy — signature", () => {
-  it("CONTROL: a correctly-signed paid order grants Plus", async () => {
-    const { DB, env } = lsCtx();
-    const res = await postLs(env, JSON.stringify(lsOrder()));
+
+describe("POST /api/billing/stripe — signature", () => {
+  it("CONTROL: a correctly-signed paid checkout grants Plus", async () => {
+    const { DB, env } = stripeCtx();
+    const res = await post(env, checkoutEvent());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, plus: true });
+    expect(rows(DB)).toHaveLength(1);
     expect(rows(DB)[0]).toMatchObject({
-      source: "lemonsqueezy",
-      external_id: "ord_1001",
+      source: "stripe",
+      external_id: PI,
       user_id: "u1",
       product: "plus",
+      environment: "Production",
     });
   });
 
   it("401s a body signed with the WRONG secret", async () => {
-    const { DB, env } = lsCtx();
-    const res = await postLs(env, JSON.stringify(lsOrder()), { secret: "whsec_attacker" });
+    const { DB, env } = stripeCtx();
+    const res = await postStripe(env, JSON.stringify(checkoutEvent()), { secret: "whsec_attacker" });
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "bad_signature" });
     expect(rows(DB)).toHaveLength(0);
+    expect(S.calls).toHaveLength(0);
   });
 
   it("401s when the body is MUTATED after signing", async () => {
-    // The discriminator: a real signature over a real body, then one byte of the
-    // body changed to a value that would otherwise grant Plus to someone else.
-    const { DB, env } = lsCtx();
-    const raw = JSON.stringify(lsOrder());
-    const sig = await lsSign(LS_SECRET, raw);
-    const mutated = raw.replace('"user_id":"u1"', '"user_id":"u2"');
+    // A real signature over a real body, then the body changed to one that
+    // would otherwise grant Plus to someone else.
+    const { DB, env } = stripeCtx();
+    const raw = JSON.stringify(checkoutEvent());
+    const header = await stripeSign(WHSEC, raw);
+    const mutated = raw.replaceAll('"u1"', '"u2"');
     expect(mutated).not.toBe(raw);
-    const res = await postLs(env, mutated, { signature: sig });
-    expect(res.status).toBe(401);
+    expect((await postStripe(env, mutated, { header })).status).toBe(401);
     expect(rows(DB)).toHaveLength(0);
   });
 
-  it("401s with no signature header, an empty one, or a non-hex one", async () => {
-    const { env } = lsCtx();
-    const raw = JSON.stringify(lsOrder());
-    expect(
-      (
-        await app.request(
-          "/api/billing/lemonsqueezy",
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: raw },
-          env as never,
-        )
-      ).status,
-    ).toBe(401);
-    expect((await postLs(env, raw, { signature: "" })).status).toBe(401);
-    expect((await postLs(env, raw, { signature: "zz".repeat(32) })).status).toBe(401);
-  });
-
-  it("401s every webhook when LS_WEBHOOK_SECRET is unset (fails closed)", async () => {
-    const { DB, env } = lsCtx({ LS_WEBHOOK_SECRET: undefined });
-    const raw = JSON.stringify(lsOrder());
-    // A well-formed hex signature, i.e. the best an attacker can do against an
-    // endpoint with no secret. (WebCrypto refuses a zero-length HMAC key, so the
-    // test cannot sign with "" — but the code returns false on an empty secret
-    // before it ever reaches importKey, which is the behaviour under test.)
-    expect((await postLs(env, raw, { signature: "ab".repeat(32) })).status).toBe(401);
-    // …and the signature that WOULD be valid under the real secret is also
-    // rejected, so this is not passing merely because the digest differs.
-    expect((await postLs(env, raw, { secret: LS_SECRET })).status).toBe(401);
+  it("401s with no header, an empty one, garbage, or a v1 that is not hex", async () => {
+    const { DB, env } = stripeCtx();
+    const raw = JSON.stringify(checkoutEvent());
+    const t = nowSec();
+    for (const header of [
+      null,
+      "",
+      "garbage",
+      `t=${t}`, // a timestamp and no signature
+      `v1=${await hmacHex(WHSEC, `${t}.${raw}`)}`, // a signature and no timestamp
+      `t=${t},v1=${"zz".repeat(32)}`,
+      `t=${t},v1=${(await hmacHex(WHSEC, `${t}.${raw}`)).slice(0, 63)}`, // truncated
+    ]) {
+      expect((await postStripe(env, raw, { header })).status, String(header)).toBe(401);
+    }
     expect(rows(DB)).toHaveLength(0);
   });
 
-  it("verifies the RAW bytes: non-canonical key order and whitespace still pass", async () => {
-    // This is what distinguishes HMAC-over-raw-body from
-    // HMAC-over-JSON.stringify(parsed). The latter passes every test whose body
-    // was built by stringify — including all of the above — and then never
-    // matches a real webhook. This body round-trips to different bytes.
-    const { DB, env } = lsCtx();
-    const canonical = JSON.stringify(lsOrder());
-    const raw = JSON.stringify(lsOrder(), null, 2); // reordered/reindented bytes
+  it("ignores v0: a header whose only valid MAC is under v0 is refused", async () => {
+    // v0 is Stripe's legacy test-mode scheme and its libraries ignore it. A
+    // verifier that read "any vN" would accept a scheme we never agreed to.
+    const { DB, env } = stripeCtx();
+    const raw = JSON.stringify(checkoutEvent());
+    const t = nowSec();
+    const mac = await hmacHex(WHSEC, `${t}.${raw}`);
+    expect((await postStripe(env, raw, { header: `t=${t},v0=${mac}` })).status).toBe(401);
+    expect(rows(DB)).toHaveLength(0);
+    // CONTROL: the same MAC under v1 is accepted.
+    expect((await postStripe(env, raw, { header: `t=${t},v0=${mac},v1=${mac}` })).status).toBe(200);
+  });
+
+  it("accepts two v1 entries when the SECOND is the valid one (secret rolling)", async () => {
+    // While an endpoint secret rolls, Stripe signs with both. A verifier that
+    // stopped at the first v1 would drop every delivery for the whole overlap.
+    const { DB, env } = stripeCtx();
+    const raw = JSON.stringify(checkoutEvent());
+    const t = nowSec();
+    const old = await hmacHex("whsec_the_old_secret", `${t}.${raw}`);
+    const good = await hmacHex(WHSEC, `${t}.${raw}`);
+    expect((await postStripe(env, raw, { header: `t=${t},v1=${old},v1=${good}` })).status).toBe(200);
+    expect(rows(DB)).toHaveLength(1);
+  });
+
+  it("401s a MAC that is valid for a DIFFERENT timestamp than the one in the header", async () => {
+    // The timestamp is inside the signed string. If it were not, an attacker
+    // could freshen a captured delivery by rewriting `t` alone.
+    const { DB, env } = stripeCtx();
+    const raw = JSON.stringify(checkoutEvent());
+    const t = nowSec();
+    const macForEarlier = await hmacHex(WHSEC, `${t - 1000}.${raw}`);
+    expect((await postStripe(env, raw, { header: `t=${t},v1=${macForEarlier}` })).status).toBe(401);
+    expect(rows(DB)).toHaveLength(0);
+  });
+
+  describe("the five-minute window", () => {
+    // Pinned clock: with real time a CONTROL at 299s can drift past 300 between
+    // signing and verifying, which would make the pair flaky in the wrong way.
+    const NOW = 1_767_225_600_000;
+    beforeEach(() => {
+      vi.spyOn(Date, "now").mockReturnValue(NOW);
+    });
+
+    it("401s a correctly-signed delivery 301s old (a captured replay)", async () => {
+      const { DB, env } = stripeCtx();
+      const raw = JSON.stringify(checkoutEvent());
+      expect((await postStripe(env, raw, { t: NOW / 1000 - 301 })).status).toBe(401);
+      expect(rows(DB)).toHaveLength(0);
+    });
+
+    it("401s a correctly-signed delivery 301s in the FUTURE", async () => {
+      const { DB, env } = stripeCtx();
+      const raw = JSON.stringify(checkoutEvent());
+      expect((await postStripe(env, raw, { t: NOW / 1000 + 301 })).status).toBe(401);
+      expect(rows(DB)).toHaveLength(0);
+    });
+
+    it("CONTROL: the same delivery 299s old is accepted", async () => {
+      const { DB, env } = stripeCtx();
+      const raw = JSON.stringify(checkoutEvent());
+      expect((await postStripe(env, raw, { t: NOW / 1000 - 299 })).status).toBe(200);
+      expect(rows(DB)).toHaveLength(1);
+    });
+  });
+
+  it("401s every webhook when STRIPE_WEBHOOK_SECRET is unset or blank (fails closed)", async () => {
+    for (const secret of [undefined, "", "   "]) {
+      const { DB, env } = stripeCtx({ STRIPE_WEBHOOK_SECRET: secret });
+      const raw = JSON.stringify(checkoutEvent());
+      // The best an attacker can do against an endpoint with no secret…
+      expect((await postStripe(env, raw, { header: `t=${nowSec()},v1=${"ab".repeat(32)}` })).status).toBe(401);
+      // …and the signature that WOULD be valid under the real secret, so this
+      // is not passing merely because the digest differs.
+      expect((await postStripe(env, raw)).status).toBe(401);
+      expect(rows(DB)).toHaveLength(0);
+    }
+  });
+
+  it("trims the configured secret: a trailing newline from `wrangler secret put` still verifies", async () => {
+    const { DB, env } = stripeCtx({ STRIPE_WEBHOOK_SECRET: `${WHSEC}\n` });
+    expect((await post(env, checkoutEvent())).status).toBe(200);
+    expect(rows(DB)).toHaveLength(1);
+  });
+
+  it("verifies the RAW bytes: re-indented JSON still passes", async () => {
+    // HMAC-over-JSON.stringify(parsed) passes every test whose body was built
+    // by stringify and then never matches a real webhook.
+    const { DB, env } = stripeCtx();
+    const canonical = JSON.stringify(checkoutEvent());
+    const raw = JSON.stringify(checkoutEvent(), null, 2);
     expect(raw).not.toBe(canonical);
-    expect(JSON.stringify(JSON.parse(raw))).toBe(canonical); // same object
-    const res = await postLs(env, raw);
-    expect(res.status).toBe(200);
+    expect(JSON.stringify(JSON.parse(raw))).toBe(canonical);
+    expect((await postStripe(env, raw)).status).toBe(200);
     expect(rows(DB)).toHaveLength(1);
   });
 
   it("400s a correctly-signed body that is not JSON", async () => {
-    const { env } = lsCtx();
-    expect((await postLs(env, "not json at all")).status).toBe(400);
+    const { env } = stripeCtx();
+    expect((await postStripe(env, "not json at all")).status).toBe(400);
+    expect(S.calls).toHaveLength(0);
+  });
+
+  it("takes no session and no CSRF token (Stripe has neither)", async () => {
+    // No Authorization, no Cookie, no X-CSRF-Token anywhere in postStripe.
+    const { DB, env } = stripeCtx();
+    expect((await post(env, checkoutEvent())).status).toBe(200);
+    expect(rows(DB)).toHaveLength(1);
   });
 });
 
-describe("POST /api/billing/lemonsqueezy — order checks", () => {
-  const cases: [string, Parameters<typeof lsOrder>[0], string][] = [
-    ["test_mode in meta", { meta: { test_mode: true } }, "test_mode"],
-    ["test_mode on the order attributes", { attributes: { test_mode: true } }, "test_mode"],
-    ["test_mode on the order item", { item: { test_mode: true } }, "test_mode"],
-    ["an unpaid (pending) order", { attributes: { status: "pending" } }, "not_paid"],
-    ["a failed order", { attributes: { status: "failed" } }, "not_paid"],
-    ["an order with no status", { attributes: { status: undefined } }, "not_paid"],
-    ["the wrong variant", { item: { variant_id: 999999 } }, "wrong_variant"],
-    ["no variant at all", { item: { variant_id: undefined } }, "wrong_variant"],
-    ["a zero total", { attributes: { total: 0 } }, "not_positive_total"],
-    ["a negative total", { attributes: { total: -499 } }, "not_positive_total"],
-    ["no custom_data user_id", { meta: { custom_data: {} } }, "unattributed"],
-    ["no order id", { id: null }, "missing_order_id"],
+describe("verifyStripeSignature — direct", () => {
+  const NOW = 1_767_225_600_000;
+  const raw = '{"id":"evt_1"}';
+
+  it("accepts its own header, and rejects at 301s either side", async () => {
+    const { verifyStripeSignature } = await import("../../src/worker/lib/stripe");
+    const t = NOW / 1000;
+    expect(await verifyStripeSignature(WHSEC, raw, await stripeSign(WHSEC, raw, t), NOW)).toBe(true);
+    expect(await verifyStripeSignature(WHSEC, raw, await stripeSign(WHSEC, raw, t - 300), NOW)).toBe(true);
+    expect(await verifyStripeSignature(WHSEC, raw, await stripeSign(WHSEC, raw, t - 301), NOW)).toBe(false);
+    expect(await verifyStripeSignature(WHSEC, raw, await stripeSign(WHSEC, raw, t + 301), NOW)).toBe(false);
+  });
+
+  it("is false for an empty secret or header without throwing", async () => {
+    const { verifyStripeSignature } = await import("../../src/worker/lib/stripe");
+    const header = await stripeSign(WHSEC, raw, NOW / 1000);
+    expect(await verifyStripeSignature("", raw, header, NOW)).toBe(false);
+    expect(await verifyStripeSignature(WHSEC, raw, undefined, NOW)).toBe(false);
+    expect(await verifyStripeSignature(WHSEC, raw, "", NOW)).toBe(false);
+  });
+
+  it("refuses a header with two timestamps rather than guessing which one was signed", async () => {
+    const { verifyStripeSignature } = await import("../../src/worker/lib/stripe");
+    const t = NOW / 1000;
+    const mac = await hmacHex(WHSEC, `${t}.${raw}`);
+    expect(await verifyStripeSignature(WHSEC, raw, `t=${t},t=${t - 9999},v1=${mac}`, NOW)).toBe(false);
+  });
+
+  it("skips a malformed v1 entry and still checks the well-formed one after it", async () => {
+    const { verifyStripeSignature } = await import("../../src/worker/lib/stripe");
+    const t = NOW / 1000;
+    const mac = await hmacHex(WHSEC, `${t}.${raw}`);
+    expect(await verifyStripeSignature(WHSEC, raw, `t=${t},v1=nothex,v1=${mac}`, NOW)).toBe(true);
+  });
+});
+
+describe("POST /api/billing/stripe — checkout event checks", () => {
+  // Each case perturbs exactly ONE field of the same otherwise-valid fixture.
+  const cases: [string, Parameters<typeof checkoutEvent>[0], string][] = [
+    ["event.livemode false", { event: { livemode: false } }, "test_mode"],
+    ["session.livemode false", { session: { livemode: false } }, "test_mode"],
+    ["event.livemode missing", { event: { livemode: undefined } }, "test_mode"],
+    ["session.livemode missing", { session: { livemode: undefined } }, "test_mode"],
+    ["event.livemode the STRING \"true\"", { event: { livemode: "true" } }, "test_mode"],
+    ["an object that is not a checkout session", { session: { object: "payment_intent" } }, "not_a_session"],
+    ["metadata.app of another app", { metadata: { app: "calque" } }, "wrong_product"],
+    ["no metadata.app", { metadata: { app: undefined } }, "wrong_product"],
+    ["metadata.product of another product", { metadata: { product: "pro" } }, "wrong_product"],
+    ["no metadata.product", { metadata: { product: undefined } }, "wrong_product"],
+    ["no metadata at all", { session: { metadata: undefined } }, "wrong_product"],
+    ["mode subscription", { session: { mode: "subscription" } }, "wrong_mode"],
+    ["payment_status unpaid", { session: { payment_status: "unpaid" } }, "not_paid"],
+    ["payment_status no_payment_required", { session: { payment_status: "no_payment_required" } }, "not_paid"],
+    ["no payment_status", { session: { payment_status: undefined } }, "not_paid"],
+    ["amount_total 0", { session: { amount_total: 0 } }, "not_positive_total"],
+    ["amount_total missing", { session: { amount_total: undefined } }, "not_positive_total"],
+    ["amount_total as a string", { session: { amount_total: "499" } }, "not_positive_total"],
+    ["no payment_intent", { session: { payment_intent: null } }, "missing_payment_intent"],
+    ["an expanded payment_intent with no id", { session: { payment_intent: { object: "payment_intent" } } }, "missing_payment_intent"],
+    ["no client_reference_id", { session: { client_reference_id: null } }, "unattributed"],
+    ["no metadata.user_id", { metadata: { user_id: undefined } }, "unattributed"],
+    ["client_reference_id and metadata.user_id disagree", { metadata: { user_id: "u2" } }, "attribution_mismatch"],
   ];
 
   for (const [name, over, reason] of cases) {
-    it(`writes nothing for ${name} → ${reason}`, async () => {
-      const { DB, env } = lsCtx();
-      const res = await postLs(env, JSON.stringify(lsOrder(over)));
-      // 200 on purpose: LS retries non-2xx forever and none of these will ever
-      // succeed on a retry. The security assertion is the empty table.
+    it(`writes nothing for ${name} → ${reason}, and never calls Stripe`, async () => {
+      const { DB, env } = stripeCtx();
+      const res = await post(env, checkoutEvent(over));
+      // 200 on purpose: Stripe retries non-2xx for three days and none of these
+      // will ever succeed on a retry. The security assertion is the empty table.
       expect(res.status).toBe(200);
-      expect(await res.json()).toMatchObject({ ignored: true, reason });
+      expect(await res.json()).toEqual({ ok: true, ignored: true, reason });
+      expect(rows(DB)).toHaveLength(0);
+      // Refused on the event alone: no re-read was spent on it.
+      expect(S.calls).toHaveLength(0);
+    });
+  }
+
+  it("CONTROL: a test-mode event grants under PLUS_ALLOW_TEST, as environment Test", async () => {
+    // Proves the test_mode rejections come from the FLAG and not from the
+    // fixture being malformed. Asserted at the row level only: whether a Test
+    // row COUNTS is liveEntitlement's decision, not this route's.
+    for (const over of [{ event: { livemode: false } }, { session: { livemode: false } }]) {
+      const { DB, env } = stripeCtx({ PLUS_ALLOW_TEST: "true" });
+      expect((await post(env, checkoutEvent(over))).status).toBe(200);
+      expect(rows(DB)).toHaveLength(1);
+      expect(rows(DB)[0]).toMatchObject({ source: "stripe", external_id: PI, environment: "Test" });
+    }
+  });
+
+  it("CONTROL: a LIVE event under PLUS_ALLOW_TEST is still recorded as Production", async () => {
+    // The flag widens what is accepted; it must not relabel a real payment.
+    const { DB, env } = stripeCtx({ PLUS_ALLOW_TEST: "true" });
+    expect((await post(env, checkoutEvent())).status).toBe(200);
+    expect(rows(DB)[0]).toMatchObject({ environment: "Production" });
+  });
+
+  it("CONTROL: an EXPANDED payment_intent object is accepted and keyed by its id", async () => {
+    const { DB, env } = stripeCtx();
+    const res = await post(env, checkoutEvent({ session: { payment_intent: { id: PI, object: "payment_intent" } } }));
+    expect(res.status).toBe(200);
+    expect(rows(DB)[0]).toMatchObject({ external_id: PI });
+  });
+
+  it("logs a refusal with the event, session and payment intent ids — and never the email", async () => {
+    // A refusal that leaves no trace is money taken and nothing granted, with no
+    // way to find it again. The ids are what support needs to look it up in
+    // Stripe; the buyer's email is what the log must not carry.
+    const { env } = stripeCtx();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await post(env, checkoutEvent({ session: { client_reference_id: null } }));
+    expect(warn).toHaveBeenCalledTimes(1);
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).toContain(EVENT_ID);
+    expect(logged).toContain(SESSION_ID);
+    expect(logged).toContain(PI);
+    expect(logged).toContain("unattributed");
+    expect(logged).not.toContain(BUYER_EMAIL);
+    expect(logged).not.toContain(WHSEC);
+    expect(logged).not.toContain(SK);
+  });
+});
+
+describe("POST /api/billing/stripe — flow", () => {
+  it("ignores an event type it does not handle, without calling Stripe", async () => {
+    const { DB, env } = stripeCtx();
+    for (const type of ["payment_intent.succeeded", "checkout.session.expired", "checkout.session.async_payment_failed"]) {
+      const res = await post(env, checkoutEvent({ event: { type } }));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, ignored: true, reason: "event" });
+    }
+    expect(rows(DB)).toHaveLength(0);
+    expect(S.calls).toHaveLength(0);
+  });
+
+  it("ignores a purchase for a user that no longer exists, without a 500 or a Stripe call", async () => {
+    const { DB, env } = stripeCtx();
+    const res = await post(env, checkoutEvent({ session: { client_reference_id: "ghost" }, metadata: { user_id: "ghost" } }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, ignored: true, reason: "unknown_user" });
+    expect(rows(DB)).toHaveLength(0);
+    expect(S.calls).toHaveLength(0);
+  });
+
+  it("is idempotent by payment intent", async () => {
+    const { DB, env } = stripeCtx();
+    const raw = JSON.stringify(checkoutEvent());
+    for (let i = 0; i < 3; i++) expect((await postStripe(env, raw)).status).toBe(200);
+    // async_payment_succeeded for the SAME session is the same purchase.
+    expect((await post(env, checkoutEvent({ event: { type: "checkout.session.async_payment_succeeded" } }))).status).toBe(200);
+    expect(rows(DB)).toHaveLength(1);
+  });
+
+  it("a delayed method: `completed` unpaid grants nothing, `async_payment_succeeded` grants", async () => {
+    const { DB, env } = stripeCtx();
+    const first = await post(env, checkoutEvent({ session: { payment_status: "unpaid" } }));
+    expect(await first.json()).toMatchObject({ ignored: true, reason: "not_paid" });
+    expect(rows(DB)).toHaveLength(0);
+
+    const later = await post(env, checkoutEvent({ event: { id: "evt_later", type: "checkout.session.async_payment_succeeded" } }));
+    expect(later.status).toBe(200);
+    expect(await later.json()).toEqual({ ok: true, plus: true });
+    expect(rows(DB)).toHaveLength(1);
+  });
+
+  it("an apple and a stripe entitlement coexist and both report", async () => {
+    const { DB, env } = stripeCtx();
+    H.stub = async () => validTx();
+    await postApple(env, "x");
+    await post(env, checkoutEvent());
+    expect(await plusSources(env as never, "u1")).toEqual(["apple", "stripe"]);
+    expect(rows(DB)).toHaveLength(2);
+  });
+
+  it("grants are recorded even while PLUS_ENABLED and the surface are off", async () => {
+    // Refusing to RECORD a payment already taken would be far worse than
+    // recording one that is not yet useful.
+    const { DB, env } = stripeCtx({ PLUS_ENABLED: "false", PLUS_SURFACE_ENABLED: "false" });
+    expect((await post(env, checkoutEvent())).status).toBe(200);
+    expect(rows(DB)).toHaveLength(1);
+  });
+});
+
+describe("POST /api/billing/stripe — re-reading the payment before granting", () => {
+  it("asks for exactly the event's payment intent, with the charge expanded, pinned and authenticated", async () => {
+    const { env } = stripeCtx();
+    await post(env, checkoutEvent());
+    expect(S.calls).toHaveLength(1);
+    const call = S.calls[0]!;
+    const u = new URL(call.url);
+    expect(call.method).toBe("GET");
+    expect(u.origin + u.pathname).toBe(`https://api.stripe.com/v1/payment_intents/${PI}`);
+    expect([...u.searchParams.entries()]).toEqual([["expand[]", "latest_charge"]]);
+    expect(call.headers.get("Authorization")).toBe(`Bearer ${SK}`);
+    expect(call.headers.get("Stripe-Version")).toBe("2026-04-22.dahlia");
+    expect(call.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("a charge refunded BEFORE the grant arrived grants nothing", async () => {
+    // The hole the re-read closes: grant webhook delayed (endpoint down, Stripe
+    // retrying), refund issued meanwhile, refund event finds no row to
+    // tombstone — and the late grant would hand out Plus for free.
+    const { DB, env } = stripeCtx();
+    S.pi = (id) => piReply(id, {}, { refunded: true, amount_refunded: 499 });
+    const res = await post(env, checkoutEvent());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, ignored: true, reason: "refunded" });
+    expect(rows(DB)).toHaveLength(0);
+  });
+
+  it("CONTROL: a PARTIAL refund still grants (only a full refund revokes)", async () => {
+    const { DB, env } = stripeCtx();
+    S.pi = (id) => piReply(id, {}, { refunded: false, amount_refunded: 100 });
+    expect((await post(env, checkoutEvent())).status).toBe(200);
+    expect(liveRows(DB)).toHaveLength(1);
+  });
+
+  it("a DISPUTED charge still grants — only a LOST dispute revokes", async () => {
+    // Disputes take weeks to close and Stripe stops retrying after three days.
+    // Refusing here would strand a paying customer whose dispute is then won;
+    // a lost dispute arrives as charge.dispute.closed and revokes the row.
+    const { DB, env } = stripeCtx();
+    S.pi = (id) => piReply(id, {}, { disputed: true });
+    expect((await post(env, checkoutEvent())).status).toBe(200);
+    expect(liveRows(DB)).toHaveLength(1);
+  });
+
+  for (const status of ["processing", "requires_action", "requires_confirmation", "requires_capture", "some_future_status"]) {
+    it(`a payment intent still ${status} 503s so Stripe retries, and writes nothing`, async () => {
+      const { DB, env } = stripeCtx();
+      S.pi = (id) => piReply(id, { status, latest_charge: null });
+      const res = await post(env, checkoutEvent());
+      expect(res.status).toBe(503);
       expect(rows(DB)).toHaveLength(0);
     });
   }
 
-  it("CONTROL: accepts a test_mode order when PLUS_ALLOW_TEST is true", async () => {
-    // Proves the three test_mode rejections come from the FLAG, not from the
-    // fixture being malformed.
-    const { DB, env } = lsCtx({ PLUS_ALLOW_TEST: "true" });
-    const res = await postLs(env, JSON.stringify(lsOrder({ meta: { test_mode: true } })));
-    expect(res.status).toBe(200);
-    expect(rows(DB)).toHaveLength(1);
+  it("processing → 503, then the retry after it succeeds grants", async () => {
+    const { DB, env } = stripeCtx();
+    const raw = JSON.stringify(checkoutEvent());
+    S.pi = (id) => piReply(id, { status: "processing", latest_charge: null });
+    expect((await postStripe(env, raw)).status).toBe(503);
+    expect(rows(DB)).toHaveLength(0);
+    S.pi = (id) => piReply(id);
+    expect((await postStripe(env, raw)).status).toBe(200);
+    expect(liveRows(DB)).toHaveLength(1);
   });
 
-  it("rejects EVERY order when LS_VARIANT_ID is unset — an empty var matches nothing", async () => {
-    // wrangler.jsonc ships LS_VARIANT_ID as "". A naive equality would let a
-    // payload with no variant match it and grant Plus on any signed webhook.
-    const { DB, env } = lsCtx({ LS_VARIANT_ID: "" });
-    expect(
-      await (await postLs(env, JSON.stringify(lsOrder()))).json(),
-    ).toMatchObject({ reason: "wrong_variant" });
-    expect(
-      await (await postLs(env, JSON.stringify(lsOrder({ item: { variant_id: undefined } })))).json(),
-    ).toMatchObject({ reason: "wrong_variant" });
+  for (const [status, reason] of [
+    ["canceled", "payment_canceled"],
+    ["requires_payment_method", "payment_failed"],
+  ] as const) {
+    it(`a payment intent that is ${status} is a final no (200), not a retry`, async () => {
+      const { DB, env } = stripeCtx();
+      S.pi = (id) => piReply(id, { status, latest_charge: null });
+      const res = await post(env, checkoutEvent());
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, ignored: true, reason });
+      expect(rows(DB)).toHaveLength(0);
+    });
+  }
+
+  it("succeeded with the charge NOT expanded is an anomaly: 503, not a grant", async () => {
+    const { DB, env } = stripeCtx();
+    S.pi = (id) => piReply(id, { latest_charge: "ch_3KaleidoscopePlus01" });
+    expect((await post(env, checkoutEvent())).status).toBe(503);
+    S.pi = (id) => piReply(id, { latest_charge: null });
+    expect((await post(env, checkoutEvent())).status).toBe(503);
     expect(rows(DB)).toHaveLength(0);
   });
 
-  it("matches a variant id whether LS sends it as a number or a string", async () => {
-    const { DB, env } = lsCtx();
-    await postLs(env, JSON.stringify(lsOrder({ item: { variant_id: VARIANT } })));
+  it("a Stripe 500 → 503 and no row; the retry then grants", async () => {
+    const { DB, env } = stripeCtx();
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    S.pi = () => jsonResponse(500, { error: { type: "api_error" } });
+    expect((await post(env, checkoutEvent())).status).toBe(503);
+    expect(rows(DB)).toHaveLength(0);
+    // Logged with ids, never the key.
+    const logged = JSON.stringify(err.mock.calls);
+    expect(logged).toContain(PI);
+    expect(logged).not.toContain(SK);
+
+    S.pi = (id) => piReply(id);
+    expect((await post(env, checkoutEvent())).status).toBe(200);
     expect(rows(DB)).toHaveLength(1);
   });
 
-  it("ignores an order for a user that no longer exists, without a 500", async () => {
-    const { DB, env } = lsCtx();
-    const res = await postLs(env, JSON.stringify(lsOrder({ meta: { custom_data: { user_id: "ghost" } } })));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ reason: "unknown_user" });
+  it("a 2xx whose body is not JSON → 503, never read as an empty object", async () => {
+    const { DB, env } = stripeCtx();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    // Asserted by BODY, not just status: read as `{}`, the missing status would
+    // also 503 (as payment_pending), and the test could not tell the two apart.
+    for (const body of ["<html>gateway</html>", "[]", "null"]) {
+      S.pi = () => new Response(body, { status: 200 });
+      const res = await post(env, checkoutEvent());
+      expect(res.status, body).toBe(503);
+      expect(await res.json(), body).toEqual({ error: "stripe_unavailable" });
+    }
     expect(rows(DB)).toHaveLength(0);
   });
 
-  it("is idempotent by order id", async () => {
-    const { DB, env } = lsCtx();
-    const raw = JSON.stringify(lsOrder());
-    for (let i = 0; i < 3; i++) expect((await postLs(env, raw)).status).toBe(200);
-    expect(rows(DB)).toHaveLength(1);
+  it("a network failure or timeout → 503", async () => {
+    const { DB, env } = stripeCtx();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    S.pi = () => {
+      throw new DOMException("The operation timed out.", "TimeoutError");
+    };
+    expect((await post(env, checkoutEvent())).status).toBe(503);
+    expect(rows(DB)).toHaveLength(0);
   });
 
-  it("order_refunded removes the row; an unknown event does not", async () => {
-    const { DB, env } = lsCtx();
-    await postLs(env, JSON.stringify(lsOrder()));
-    expect(rows(DB)).toHaveLength(1);
+  it("503s without calling Stripe when STRIPE_SECRET_KEY is unset — the payment cannot be confirmed", async () => {
+    for (const key of [undefined, "", "  ", "pk_live_publishable"]) {
+      const { DB, env } = stripeCtx({ STRIPE_SECRET_KEY: key });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = await post(env, checkoutEvent());
+      expect(res.status, String(key)).toBe(503);
+      expect(rows(DB)).toHaveLength(0);
+    }
+    expect(S.calls).toHaveLength(0);
+  });
+});
 
-    // CONTROL first: some other event must NOT delete.
-    await postLs(env, JSON.stringify(lsOrder({ meta: { event_name: "subscription_updated" } })));
-    expect(rows(DB)).toHaveLength(1);
+describe("POST /api/billing/stripe — refunds and disputes", () => {
+  it("a FULL refund tombstones the row: kept for support, no longer live", async () => {
+    const { DB, env } = stripeCtx();
+    await post(env, checkoutEvent());
+    expect(liveRows(DB)).toHaveLength(1);
+    const before = S.calls.length;
 
-    const res = await postLs(env, JSON.stringify(lsOrder({ meta: { event_name: "order_refunded" } })));
+    const res = await post(env, refundEvent());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, removed: true });
-    // Tombstoned, not deleted: the row survives so the refund cannot be undone
-    // by replaying the JWS the device still holds, and support can still see it.
     expect(rows(DB)).toHaveLength(1);
+    expect(liveRows(DB)).toHaveLength(0);
+    expect(await hasPlus(env as never, "u1")).toBe(false);
+    // Revocation acts on the signed event alone; it never needs a re-read.
+    expect(S.calls.length).toBe(before);
+  });
+
+  it("a PARTIAL refund does not revoke", async () => {
+    const { DB, env } = stripeCtx();
+    await post(env, checkoutEvent());
+    const res = await post(env, refundEvent({ refunded: false, amount_refunded: 100 }));
+    expect(await res.json()).toEqual({ ok: true, ignored: true, reason: "partial_refund" });
+    expect(liveRows(DB)).toHaveLength(1);
+  });
+
+  it("an UNSIGNED refund cannot revoke", async () => {
+    const { DB, env } = stripeCtx();
+    await post(env, checkoutEvent());
+    expect((await postStripe(env, JSON.stringify(refundEvent()), { secret: "whsec_attacker" })).status).toBe(401);
+    expect(liveRows(DB)).toHaveLength(1);
+  });
+
+  it("a refund of one payment intent leaves another's row alone", async () => {
+    const { DB, env } = stripeCtx();
+    await post(env, checkoutEvent());
+    await post(
+      env,
+      checkoutEvent({
+        event: { id: "evt_u2" },
+        session: { id: "cs_live_u2", payment_intent: "pi_3OtherPurchase02", client_reference_id: "u2" },
+        metadata: { user_id: "u2" },
+      }),
+    );
+    expect(rows(DB)).toHaveLength(2);
+    await post(env, refundEvent());
+    expect(rows(DB)).toHaveLength(2);
+    const live = liveRows(DB);
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ external_id: "pi_3OtherPurchase02", user_id: "u2" });
+  });
+
+  it("a LOST dispute revokes", async () => {
+    const { DB, env } = stripeCtx();
+    await post(env, checkoutEvent());
+    const res = await post(env, disputeEvent());
+    expect(await res.json()).toEqual({ ok: true, removed: true });
     expect(liveRows(DB)).toHaveLength(0);
   });
 
-  it("an UNSIGNED refund cannot remove a row", async () => {
-    const { DB, env } = lsCtx();
-    await postLs(env, JSON.stringify(lsOrder()));
-    const raw = JSON.stringify(lsOrder({ meta: { event_name: "order_refunded" } }));
-    expect((await postLs(env, raw, { secret: "whsec_attacker" })).status).toBe(401);
-    expect(rows(DB)).toHaveLength(1);
+  for (const status of ["won", "warning_closed", "needs_response", undefined]) {
+    it(`CONTROL: a dispute closed as ${String(status)} does not`, async () => {
+      const { DB, env } = stripeCtx();
+      await post(env, checkoutEvent());
+      const res = await post(env, disputeEvent({ status }));
+      expect(await res.json()).toEqual({ ok: true, ignored: true, reason: "dispute_not_lost" });
+      expect(liveRows(DB)).toHaveLength(1);
+    });
+  }
+
+  it("a refund event whose object is not a charge does not revoke", async () => {
+    const { DB, env } = stripeCtx();
+    await post(env, checkoutEvent());
+    const res = await post(env, refundEvent({ object: "refund" }));
+    expect(await res.json()).toMatchObject({ ignored: true, reason: "not_a_charge" });
+    expect(liveRows(DB)).toHaveLength(1);
   });
 
-  it("a refund for one order does not touch a different order's row", async () => {
-    const { DB, env } = lsCtx();
-    await postLs(env, JSON.stringify(lsOrder()));
-    await postLs(env, JSON.stringify(lsOrder({ id: "ord_2002", meta: { custom_data: { user_id: "u2" } } })));
-    expect(rows(DB)).toHaveLength(2);
-    await postLs(env, JSON.stringify(lsOrder({ meta: { event_name: "order_refunded" } })));
-    // Both rows remain; only the refunded one is tombstoned.
-    expect(rows(DB)).toHaveLength(2);
-    const r = liveRows(DB);
-    expect(r).toHaveLength(1);
-    expect(r[0]!.external_id).toBe("ord_2002");
+  it("a refund with no payment_intent does not revoke anything", async () => {
+    const { DB, env } = stripeCtx();
+    await post(env, checkoutEvent());
+    const res = await post(env, refundEvent({ payment_intent: null }));
+    expect(await res.json()).toMatchObject({ ignored: true, reason: "missing_payment_intent" });
+    expect(liveRows(DB)).toHaveLength(1);
   });
 
-  it("an apple and a lemonsqueezy entitlement coexist and both report", async () => {
-    const { DB, env } = lsCtx();
-    H.stub = async () => validTx();
-    await postApple(env, "x");
-    await postLs(env, JSON.stringify(lsOrder()));
-    const { plusSources } = await import("../../src/worker/lib/db");
-    expect(await plusSources(env, "u1")).toEqual(["apple", "lemonsqueezy"]);
-    expect(rows(DB)).toHaveLength(2);
+  it("a refund for an UNKNOWN payment intent changes nothing and inserts no placeholder", async () => {
+    const { DB, env } = stripeCtx();
+    const res = await post(env, refundEvent({ payment_intent: "pi_never_granted" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, removed: false });
+    expect(rows(DB)).toHaveLength(0);
   });
 });
 
 // ==========================================================================
 // 5. GET /api/billing/checkout
 // ==========================================================================
+
+/** Everything checkout needs. Shared with the section-2 budget test. */
+const READY = {
+  // The SURFACE flag gates checkout, not cap enforcement: if the paywall is
+  // visible the buy button behind it has to work (REVIEW L1 split them).
+  PLUS_SURFACE_ENABLED: "true",
+  STRIPE_SECRET_KEY: SK,
+  STRIPE_PRICE_ID: PRICE,
+};
 
 describe("GET /api/billing/checkout", () => {
   const get = (env: unknown, sid: string | null = "s1") =>
@@ -994,16 +1542,10 @@ describe("GET /api/billing/checkout", () => {
       env as never,
     );
 
-  const READY = {
-    // The SURFACE flag gates checkout now, not cap enforcement: if the paywall
-    // is visible the buy button behind it has to work (REVIEW L1 split them).
-    PLUS_SURFACE_ENABLED: "true",
-    LS_STORE_ID: "ponderance",
-    LS_CHECKOUT_ID: CHECKOUT_ID,
-    LS_VARIANT_ID: VARIANT,
-  };
+  const checkoutCalls = () => S.calls.filter((c) => c.url.includes("/v1/checkout/sessions"));
 
-  // REVIEW.md minor mB5 — this GET reads nothing but it SPENDS something.
+  // REVIEW.md minor mB5 — this GET SPENDS something: a 10/h budget and a
+  // Stripe API call.
   it("a cookie session needs the CSRF token, so the budget cannot be burned cross-site", async () => {
     const { env } = ctx(READY);
 
@@ -1016,6 +1558,7 @@ describe("GET /api/billing/checkout", () => {
     // navigation. Without this, a hostile page could bounce a signed-in visitor
     // through the URL ten times and leave the real Buy button 429ing for an hour.
     expect(cookieOnly.status).toBe(403);
+    expect(S.calls).toHaveLength(0);
 
     // CONTROL: the same call with the token works, so the 403 is attributable to
     // CSRF and not to the cookie path being broken.
@@ -1029,7 +1572,6 @@ describe("GET /api/billing/checkout", () => {
 
   it("and the refused attempts do not spend the budget they were trying to burn", async () => {
     const { env } = ctx(READY);
-    // Twenty forged attempts — twice the hourly allowance.
     for (let i = 0; i < 20; i++) {
       const res = await app.request(
         "/api/billing/checkout",
@@ -1038,8 +1580,7 @@ describe("GET /api/billing/checkout", () => {
       );
       expect(res.status).toBe(403);
     }
-    // The user's own button still works. This is the half that matters: a 403
-    // that still charged the limiter would leave the attack working.
+    expect(S.calls).toHaveLength(0);
     expect((await get(env)).status).toBe(200);
   });
 
@@ -1048,36 +1589,87 @@ describe("GET /api/billing/checkout", () => {
     expect((await get(env)).status).toBe(200);
   });
 
-  it("returns a hosted-checkout URL carrying checkout[custom][user_id]", async () => {
+  it("returns the hosted Checkout Session URL Stripe handed back", async () => {
     const { env } = ctx(READY);
     const res = await get(env);
     expect(res.status).toBe(200);
-    const { url } = (await res.json()) as { url: string };
-    const u = new URL(url);
-    expect(u.origin).toBe("https://ponderance.lemonsqueezy.com");
-    // `/checkout/buy/<UUID>` — the exact shape LS's own Share modal emits.
-    // `/buy/<numeric variant id>`, which this once built, is not a real path.
-    expect(u.pathname).toBe(`/checkout/buy/${CHECKOUT_ID}`);
-    expect(u.pathname).not.toContain(VARIANT);
-    // The ONLY thing tying a payment back to an account — and exactly what the
-    // webhook reads out of meta.custom_data.
-    expect(u.searchParams.get("checkout[custom][user_id]")).toBe("u1");
-    // Redirect, not overlay: no LS script host is needed, so the CSP is unchanged.
-    expect(u.searchParams.get("embed")).toBe("0");
+    expect(await res.json()).toEqual({ url: CHECKOUT_URL });
   });
 
-  it("the URL it hands out is one the webhook actually attributes", async () => {
-    // Closes the loop rather than trusting the two halves separately.
-    const { DB, env } = ctx({ ...READY, LS_WEBHOOK_SECRET: LS_SECRET });
-    const { url } = (await (await get(env)).json()) as { url: string };
-    const userId = new URL(url).searchParams.get("checkout[custom][user_id]")!;
-    await postLs(env, JSON.stringify(lsOrder({ meta: { custom_data: { user_id: userId } } })));
-    expect(rows(DB)[0]).toMatchObject({ user_id: "u1", source: "lemonsqueezy" });
+  it("creates the session with EXACTLY the Managed Payments parameters, and nothing else", async () => {
+    const { env } = ctx(READY);
+    await get(env);
+    expect(checkoutCalls()).toHaveLength(1);
+    const params = new URLSearchParams(checkoutCalls()[0]!.body);
+    // The full set, sorted: an added parameter fails this as surely as a
+    // missing one. Managed Payments REJECTS a list of otherwise-ordinary ones.
+    expect([...params.entries()].sort()).toEqual(
+      [
+        ["mode", "payment"],
+        ["line_items[0][price]", PRICE],
+        ["line_items[0][quantity]", "1"],
+        ["managed_payments[enabled]", "true"],
+        ["client_reference_id", "u1"],
+        ["metadata[app]", "kaleidoscope"],
+        ["metadata[product]", "plus"],
+        ["metadata[user_id]", "u1"],
+        ["payment_intent_data[metadata][app]", "kaleidoscope"],
+        ["payment_intent_data[metadata][product]", "plus"],
+        ["payment_intent_data[metadata][user_id]", "u1"],
+        ["success_url", `${BASE}/?plus=thanks`],
+        ["cancel_url", `${BASE}/`],
+      ].sort(),
+    );
+    // Named, so a regression reads as the rule it breaks: each of these is
+    // forbidden alongside managed_payments, and ui_mode stays the hosted default.
+    for (const forbidden of ["automatic_tax", "payment_method_types", "ui_mode", "customer_update", "tax_id_collection"]) {
+      expect([...params.keys()].some((k) => k.startsWith(forbidden)), forbidden).toBe(false);
+    }
+  });
+
+  it("authenticates with the secret key as a Bearer, pins the API version, form-encodes, and times out", async () => {
+    const { env } = ctx(READY);
+    await get(env);
+    const call = checkoutCalls()[0]!;
+    expect(call.method).toBe("POST");
+    expect(call.url).toBe("https://api.stripe.com/v1/checkout/sessions");
+    expect(call.headers.get("Authorization")).toBe(`Bearer ${SK}`);
+    expect(call.headers.get("Stripe-Version")).toBe("2026-04-22.dahlia");
+    expect(call.headers.get("Content-Type")).toBe("application/x-www-form-urlencoded");
+    expect(call.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("trims whitespace around the configured key and price", async () => {
+    const { env } = ctx({ ...READY, STRIPE_SECRET_KEY: ` ${SK}\n`, STRIPE_PRICE_ID: ` ${PRICE} ` });
+    expect((await get(env)).status).toBe(200);
+    const call = checkoutCalls()[0]!;
+    expect(call.headers.get("Authorization")).toBe(`Bearer ${SK}`);
+    expect(new URLSearchParams(call.body).get("line_items[0][price]")).toBe(PRICE);
+  });
+
+  it("the session it creates is one the webhook actually attributes", async () => {
+    // Closes the loop: build the webhook from what checkout really SENT, rather
+    // than trusting the two halves separately.
+    const { DB, env } = ctx({ ...READY, STRIPE_WEBHOOK_SECRET: WHSEC });
+    await get(env);
+    const params = new URLSearchParams(checkoutCalls()[0]!.body);
+    const meta = {
+      app: params.get("metadata[app]"),
+      product: params.get("metadata[product]"),
+      user_id: params.get("metadata[user_id]"),
+    };
+    const res = await post(
+      env,
+      checkoutEvent({ session: { client_reference_id: params.get("client_reference_id") }, metadata: meta }),
+    );
+    expect(res.status).toBe(200);
+    expect(rows(DB)[0]).toMatchObject({ user_id: "u1", source: "stripe", external_id: PI });
   });
 
   it("requires authentication", async () => {
     const { env } = ctx(READY);
     expect((await get(env, null)).status).toBe(401);
+    expect(S.calls).toHaveLength(0);
   });
 
   it("503s while the Plus surface is off", async () => {
@@ -1085,68 +1677,110 @@ describe("GET /api/billing/checkout", () => {
     const res = await get(env);
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: "not_enabled" });
+    expect(S.calls).toHaveLength(0);
   });
 
-  // The review window: caps off, surface on. The reviewer has to be able to
-  // buy, so enforcement must NOT gate the checkout.
+  // The review window: caps off, surface on.
   it("sells while the surface is on even though caps are not enforced", async () => {
     const { env } = ctx({ ...READY, PLUS_ENABLED: "false" });
     const res = await get(env);
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { url: string }).url).toContain("/checkout/buy/");
+    expect(((await res.json()) as { url: string }).url).toBe(CHECKOUT_URL);
   });
 
-  // A permanent condition must not burn the retry budget (minor): the ids are
-  // empty and no amount of retrying fills them, so the honest 503 must survive
-  // being clicked repeatedly rather than turning into a 429.
+  describe("configuration", () => {
+    const unconfigured: [string, Record<string, unknown>][] = [
+      ["no price", { STRIPE_PRICE_ID: "" }],
+      ["a blank price", { STRIPE_PRICE_ID: "   " }],
+      ["a price that is not a price_ id", { STRIPE_PRICE_ID: "prod_KaleidoscopePlus" }],
+      ["no key", { STRIPE_SECRET_KEY: undefined }],
+      ["a blank key", { STRIPE_SECRET_KEY: "  " }],
+      ["a publishable key", { STRIPE_SECRET_KEY: "pk_live_kaleidoscope" }],
+      ["a garbage key", { STRIPE_SECRET_KEY: "hunter2" }],
+      ["a TEST key without PLUS_ALLOW_TEST", { STRIPE_SECRET_KEY: "sk_test_kaleidoscope" }],
+      ["a restricted TEST key without PLUS_ALLOW_TEST", { STRIPE_SECRET_KEY: "rk_test_kaleidoscope" }],
+    ];
+    for (const [name, over] of unconfigured) {
+      it(`503 not_configured for ${name}, without calling Stripe`, async () => {
+        // A test key on a deploy that cannot grant test payments would send
+        // real visitors to a checkout that takes their card and grants nothing.
+        const { env } = ctx({ ...READY, ...over });
+        const res = await get(env);
+        expect(res.status).toBe(503);
+        expect(await res.json()).toEqual({ error: "not_configured" });
+        expect(S.calls).toHaveLength(0);
+      });
+    }
+
+    const configured: [string, Record<string, unknown>][] = [
+      ["a test key WITH PLUS_ALLOW_TEST", { STRIPE_SECRET_KEY: "sk_test_kaleidoscope", PLUS_ALLOW_TEST: "true" }],
+      ["a live key without PLUS_ALLOW_TEST", { STRIPE_SECRET_KEY: "sk_live_kaleidoscope" }],
+      ["a restricted live key", { STRIPE_SECRET_KEY: "rk_live_kaleidoscope" }],
+    ];
+    for (const [name, over] of configured) {
+      it(`CONTROL: ${name} is configured`, async () => {
+        const { env } = ctx({ ...READY, ...over });
+        expect((await get(env)).status).toBe(200);
+        expect(checkoutCalls()).toHaveLength(1);
+      });
+    }
+  });
+
+  // A permanent condition must not burn the retry budget (minor).
   it("keeps answering not_configured however many times it is asked", async () => {
-    const { env } = ctx({ ...READY, LS_CHECKOUT_ID: "" });
+    const { env } = ctx({ ...READY, STRIPE_PRICE_ID: "" });
     for (let i = 0; i < 15; i++) {
       const res = await get(env);
       expect(res.status, `attempt ${i + 1}`).toBe(503);
       expect(await res.json()).toEqual({ error: "not_configured" });
     }
+    expect(S.calls).toHaveLength(0);
   });
 
-  it("503s cleanly when LS_STORE_ID or LS_CHECKOUT_ID is unset, rather than emitting a broken URL", async () => {
-    // Both ship as "" in wrangler.jsonc until the LS store leaves test mode.
-    for (const over of [{ LS_STORE_ID: "" }, { LS_CHECKOUT_ID: "" }, { LS_STORE_ID: "  " }]) {
-      const { env } = ctx({ ...READY, ...over });
-      const res = await get(env);
-      expect(res.status).toBe(503);
-      expect(await res.json()).toEqual({ error: "not_configured" });
-    }
-  });
-
-  it("rate-limits at 10/h", async () => {
+  it("rate-limits at 10/h, and the 11th does not reach Stripe", async () => {
     const { env } = ctx(READY);
     for (let i = 0; i < 10; i++) expect((await get(env)).status).toBe(200);
     expect((await get(env)).status).toBe(429);
+    expect(checkoutCalls()).toHaveLength(10);
   });
 
-  it("keeps the two LS identifiers in their own jobs", async () => {
-    // The bug this guards: one var used for both the URL and the webhook check.
-    // The URL must carry the checkout UUID and never the numeric variant id;
-    // an order carrying the UUID as its variant must NOT be attributed.
-    const { DB, env } = ctx({ ...READY, LS_WEBHOOK_SECRET: LS_SECRET });
-    const { url } = (await (await get(env)).json()) as { url: string };
-    expect(url).toContain(CHECKOUT_ID);
-    expect(url).not.toContain(VARIANT);
-
-    await postLs(
-      env,
-      JSON.stringify(
-        lsOrder({ item: { variant_id: CHECKOUT_ID } }),
-      ),
-    );
-    expect(rows(DB)).toHaveLength(0);
+  it("a Stripe error → 502 checkout_failed, logged without the key", async () => {
+    const { env } = ctx(READY);
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    S.checkout = () => jsonResponse(400, { error: { type: "invalid_request_error", code: "parameter_unknown" } });
+    const res = await get(env);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "checkout_failed" });
+    expect(err).toHaveBeenCalled();
+    const logged = JSON.stringify(err.mock.calls);
+    expect(logged).toContain("parameter_unknown");
+    expect(logged).not.toContain(SK);
   });
 
-  it("still 200s when LS_VARIANT_ID is unset — the URL does not depend on it", async () => {
-    // Deliberate asymmetry: a missing variant id breaks ATTRIBUTION (covered
-    // above: every order is rejected), not the ability to send someone to pay.
-    const { env } = ctx({ ...READY, LS_VARIANT_ID: "" });
-    expect((await get(env)).status).toBe(200);
+  it("a Stripe 500, a network failure, or a non-JSON 2xx → 502", async () => {
+    const { env } = ctx(READY);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const reply of [
+      () => jsonResponse(500, { error: { type: "api_error" } }),
+      () => {
+        throw new TypeError("fetch failed");
+      },
+      () => new Response("<html>", { status: 200 }),
+    ]) {
+      S.checkout = reply;
+      expect((await get(env)).status).toBe(502);
+    }
+  });
+
+  it("a reply with no url, or a url that is not https, → 502 rather than a broken redirect", async () => {
+    const { env } = ctx(READY);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const url of [undefined, null, "", "http://checkout.stripe.com/c/pay/x", "javascript:alert(1)"]) {
+      S.checkout = () => jsonResponse(200, { id: "cs_1", object: "checkout.session", url });
+      const res = await get(env);
+      expect(res.status, String(url)).toBe(502);
+      expect(await res.json()).toEqual({ error: "checkout_failed" });
+    }
   });
 });
 
@@ -1163,7 +1797,7 @@ describe("route mounting", () => {
     for (const [path, init] of [
       ["/api/billing/apple", { method: "POST" }],
       ["/api/billing/apple/notifications", { method: "POST" }],
-      ["/api/billing/lemonsqueezy", { method: "POST" }],
+      ["/api/billing/stripe", { method: "POST" }],
       ["/api/billing/checkout", {}],
     ] as const) {
       const res = await app.request(path, init, env as never);
@@ -1171,6 +1805,12 @@ describe("route mounting", () => {
     }
     // …and a genuinely unknown billing path still 404s.
     expect((await app.request("/api/billing/nope", {}, env as never)).status).toBe(404);
+  });
+
+  it("the Lemon Squeezy webhook is gone, not left answering", async () => {
+    const { env } = ctx();
+    const res = await app.request("/api/billing/lemonsqueezy", { method: "POST", body: "{}" }, env as never);
+    expect(res.status).toBe(404);
   });
 });
 
@@ -1216,24 +1856,36 @@ describe("a refunded purchase cannot be replayed back into existence", () => {
     expect(await hasPlus(env as never, "u1")).toBe(false);
   });
 
-  // M2. LS retries `order_created` for up to three days and the dashboard has a
-  // manual resend. The retry is byte-identical with a valid signature, so the
-  // tombstone is the only thing that can tell it from the original.
-  it("Lemon Squeezy: order_created → order_refunded → the retried order_created", async () => {
-    const { DB, env } = lsCtx();
-    const created = JSON.stringify(lsOrder());
+  // M2. Stripe retries a grant event for up to three days, and the dashboard
+  // (and `stripe events resend`) can send it again. The resend is correctly
+  // signed and freshly timestamped, so the tombstone is the only thing that
+  // can tell it from the original.
+  it("Stripe: completed → charge.refunded → the resent completed", async () => {
+    const { DB, env } = stripeCtx();
+    const created = JSON.stringify(checkoutEvent());
 
-    expect((await postLs(env, created)).status).toBe(200);
+    expect((await postStripe(env, created)).status).toBe(200);
     expect(await hasPlus(env as never, "u1")).toBe(true);
 
-    const refunded = JSON.stringify(lsOrder({ meta: { event_name: "order_refunded" } }));
-    expect((await postLs(env, refunded)).status).toBe(200);
+    expect((await post(env, refundEvent())).status).toBe(200);
     expect(await hasPlus(env as never, "u1")).toBe(false);
 
-    const retry = await postLs(env, created); // byte-identical replay
-    expect(retry.status).toBe(200); // 200 on purpose: a non-2xx makes LS retry
+    const callsBefore = S.calls.length;
+    const retry = await postStripe(env, created); // the same event, re-signed
+    expect(retry.status).toBe(200); // 200 on purpose: a non-2xx makes Stripe retry
     expect(await retry.json()).toEqual({ ok: true, ignored: true, reason: "revoked" });
     expect(await hasPlus(env as never, "u1")).toBe(false);
+    expect(liveRows(DB)).toHaveLength(0);
+    // Refused on our own tombstone, before any re-read was spent on it.
+    expect(S.calls.length).toBe(callsBefore);
+  });
+
+  it("Stripe: a LOST dispute is just as final", async () => {
+    const { DB, env } = stripeCtx();
+    await post(env, checkoutEvent());
+    await post(env, disputeEvent());
+    const retry = await post(env, checkoutEvent({ event: { type: "checkout.session.async_payment_succeeded" } }));
+    expect(await retry.json()).toEqual({ ok: true, ignored: true, reason: "revoked" });
     expect(liveRows(DB)).toHaveLength(0);
   });
 });
@@ -1265,21 +1917,29 @@ describe("a Sandbox entitlement lasts exactly as long as we allow Sandbox", () =
   });
 });
 
-// Minor list — two money-relevant checks that existed in the types and nowhere
-// in the code.
-describe("an order that is already refunded does not grant", () => {
-  it("refuses `refunded: true` even when the status still says paid", async () => {
-    const { DB, env } = lsCtx();
-    const body = JSON.stringify(lsOrder({ attributes: { refunded: true } }));
-    const res = await postLs(env, body);
+// Minor list — a purchase refunded BEFORE its grant was processed. The refund
+// event finds no row (and inserts no placeholder), so the tombstone cannot catch
+// the late grant; only the re-read of the payment can.
+describe("a purchase refunded before its grant arrives does not grant", () => {
+  it("refund first, delayed grant second: nothing is granted", async () => {
+    const { DB, env } = stripeCtx();
+    expect(await (await post(env, refundEvent())).json()).toEqual({ ok: true, removed: false });
+    expect(rows(DB)).toHaveLength(0);
+
+    // The grant event still says `paid` — it is a snapshot from before the refund.
+    S.pi = (id) => piReply(id, {}, { refunded: true, amount_refunded: 499 });
+    const res = await post(env, checkoutEvent());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, ignored: true, reason: "refunded" });
-    expect(liveRows(DB)).toHaveLength(0);
+    expect(rows(DB)).toHaveLength(0);
   });
 
-  it("CONTROL: the same order without the flag still grants", async () => {
-    const { DB, env } = lsCtx();
-    expect((await postLs(env, JSON.stringify(lsOrder()))).status).toBe(200);
+  it("CONTROL: the same two events, but the re-read shows the charge unrefunded: grants", async () => {
+    // Proves the refusal above comes from the re-read and not from the earlier
+    // refund event having left some trace behind.
+    const { DB, env } = stripeCtx();
+    await post(env, refundEvent());
+    expect((await post(env, checkoutEvent())).status).toBe(200);
     expect(liveRows(DB)).toHaveLength(1);
   });
 });
