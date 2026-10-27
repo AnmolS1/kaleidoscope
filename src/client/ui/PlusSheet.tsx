@@ -112,6 +112,17 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // `buy` leaves `busy` set as it navigates to Checkout (see there). Back from
+  // Stripe via the Back button, the browser may restore this page from the
+  // back/forward cache exactly as it was left — sheet open, "Unlocking…",
+  // disabled — and no code runs to clear it, so the only way to buy was a
+  // reload. `persisted` is true only for that restore.
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => e.persisted && setBusy(false);
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, []);
+
   // Focus management, patterned on SaveDialog: into the card on open, Tab
   // trapped inside it, focus back to the opener on close. The card itself is
   // the target rather than its first control, because the body swaps under the
@@ -172,7 +183,15 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
       // invites a second click that starts a second checkout.
       location.assign(url);
     } catch (err) {
-      setOutcome(plusOutcomeForError(err));
+      const o = plusOutcomeForError(err);
+      // 409 already_owned: this block is stale and the account owns Plus.
+      // Refresh it the way Restore does, so the layer cap and the account menu
+      // agree with the "You're in." the sheet is about to say.
+      if (o.kind === "purchased") {
+        await refreshOwned();
+        return;
+      }
+      setOutcome(o);
       setBusy(false);
     }
   }
@@ -180,6 +199,12 @@ function PlusSheetInner({ plus }: { plus: PlusInfo }) {
   async function restore() {
     setOutcome(null);
     setBusy(true);
+    await refreshOwned();
+  }
+
+  /** Re-read the entitlement, publish it, and land on what it says. Clears
+   *  `busy` on every path. */
+  async function refreshOwned() {
     try {
       const fresh = await refreshPlus();
       // 🔴 A null means THE SESSION IS GONE, not "no entitlement". It used to

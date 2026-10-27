@@ -17,7 +17,7 @@ import type { Context } from "hono";
 import type { AppEnv } from "../middleware";
 import { requireAuth, requireCsrf } from "../middleware";
 import { checkAll } from "../lib/ratelimit";
-import { getUserById } from "../lib/db";
+import { getUserById, hasPlus } from "../lib/db";
 import { envFlag } from "../lib/validate";
 import {
   verifyAppleJws,
@@ -80,6 +80,27 @@ const WEBHOOK_IP_RULE = { limit: 300, windowSec: 60 };
  */
 function logNoGrant(source: string, reason: string, detail: Record<string, unknown> = {}): void {
   console.warn("billing: no grant", { source, reason, ...detail });
+}
+
+/**
+ * Refusals that come AFTER the payment checks passed: someone paid, and there
+ * is no account to give it to. Logged as errors, not warnings — at warn level
+ * they sat among the routine refusals (unhandled event types, unpaid sessions)
+ * where nobody would ever look, and each one is a customer who paid for
+ * nothing until support finds it. Same rule as `logNoGrant`: ids only.
+ */
+const PAID_UNATTRIBUTABLE: ReadonlySet<string> = new Set([
+  "unattributed",
+  "attribution_mismatch",
+  "unknown_user",
+]);
+
+function logStripeRefusal(reason: string, detail: Record<string, unknown>): void {
+  if (PAID_UNATTRIBUTABLE.has(reason)) {
+    console.error("billing: PAID but not granted", { source: "stripe", reason, ...detail });
+  } else {
+    logNoGrant("stripe", reason, detail);
+  }
 }
 
 
@@ -389,6 +410,16 @@ billing.post("/stripe", async (c) => {
     // An unknown payment intent changes nothing and inserts nothing: there is
     // no placeholder row for a refund that arrives before its grant. That case
     // is closed by the grant path's re-read, which sees the refunded charge.
+    //
+    // Two narrower races are left open ON PURPOSE: a dispute LOST before the
+    // first grant succeeds, and a refund landing between the grant's re-read
+    // and its write. Both need the very first grant to still be failing when
+    // the refund or dispute resolves — refunds go through Link support and
+    // disputes take days to weeks, while grant retries stop after three days,
+    // and otherwise the window is milliseconds. Closing them would take either
+    // Disputes:Read on the restricted key (so the re-read can see a lost
+    // dispute) or placeholder tombstones for every refunded payment intent on
+    // the account, including other products'. Neither is worth it.
     const removed = await revokeEntitlement(c.env, "stripe", rev.paymentIntentId);
     return c.json({ ok: true, removed });
   }
@@ -403,7 +434,7 @@ billing.post("/stripe", async (c) => {
     // The one that loses money silently: a payment with no user to attach to
     // (a Payment Link made by hand in the dashboard carries none of our
     // metadata) answers 200 and is otherwise never heard of again.
-    logNoGrant("stripe", check.reason, { type, eventId, sessionId: objectId, paymentIntent: paymentIntentId });
+    logStripeRefusal(check.reason, { type, eventId, sessionId: objectId, paymentIntent: paymentIntentId });
     return c.json({ ok: true, ignored: true, reason: check.reason });
   }
   const ids = { eventId, sessionId: objectId, paymentIntent: check.paymentIntentId };
@@ -412,7 +443,7 @@ billing.post("/stripe", async (c) => {
   // resolves would raise a constraint error and turn into a 500, which Stripe
   // would then retry for days; check first and answer cleanly instead.
   if (!(await getUserById(c.env, check.userId))) {
-    logNoGrant("stripe", "unknown_user", { ...ids, userId: check.userId });
+    logStripeRefusal("unknown_user", { ...ids, userId: check.userId });
     return c.json({ ok: true, ignored: true, reason: "unknown_user" });
   }
 
@@ -430,9 +461,19 @@ billing.post("/stripe", async (c) => {
   // fetchPaymentState). Without a usable key we cannot, and granting unread
   // would reopen the refund-before-grant hole — so 503, and Stripe retries
   // until the key is fixed.
-  if (!keyMode((c.env.STRIPE_SECRET_KEY ?? "").trim())) {
+  const mode = keyMode((c.env.STRIPE_SECRET_KEY ?? "").trim());
+  if (!mode) {
     console.error("billing: STRIPE_SECRET_KEY unset or malformed; cannot confirm payment", ids);
     return c.json({ error: "not_configured" }, 503);
+  }
+  // A payment intent lives in exactly one mode, so a key in the other mode
+  // cannot read it: Stripe answers 404, the re-read throws, the route answers
+  // 503 — and Stripe retries, for three days, a delivery no retry can fix.
+  // Typically a test-mode endpoint left pointing at a deploy with the live key
+  // (or the reverse). Final, so 200; logged, because it is a deploy to fix.
+  if ((check.environment === "Production") !== (mode === "live")) {
+    logNoGrant("stripe", "key_mode_mismatch", { ...ids, eventMode: check.environment, keyMode: mode });
+    return c.json({ ok: true, ignored: true, reason: "key_mode_mismatch" });
   }
   let state: PaymentState;
   try {
@@ -499,6 +540,15 @@ billing.get("/checkout", requireAuth, requireCsrf, async (c) => {
   // the user was told to slow down about a thing that was never going to
   // happen, and the honest error was replaced by a misleading one.
   if (!checkoutConfigured(c.env)) return c.json({ error: "not_configured" }, 503);
+
+  // Already owned: no second sale. The client hides Unlock from an owner, but
+  // only by its own /api/me block — a second tab, or a webhook that landed
+  // after the page loaded, leaves a live buy button in front of someone who
+  // has paid, and Checkout would happily take the money twice. Same predicate
+  // and flags as /api/me, so the two never disagree about who owns it. Before
+  // the rate limit for the same reason as `not_configured`: it is permanent,
+  // and the client answers it with a refresh, not a retry.
+  if (await hasPlus(c.env, user.id)) return c.json({ error: "already_owned" }, 409);
 
   if (!(await checkAll(c.env, [{ key: `billing:checkout:${user.id}:h`, rule: BILLING_RULE }]))) {
     return c.json({ error: "rate_limited" }, 429);

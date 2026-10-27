@@ -134,6 +134,11 @@ export function plusOutcomeForError(err: unknown): PlusOutcome {
   if (err instanceof ApiError) {
     if (err.status === 401) return { kind: "sign-in" };
     if (err.status === 409 && err.code === "bound_elsewhere") return { kind: "bound-elsewhere" };
+    // The checkout route refused a second sale: this account already owns
+    // Plus and the client's block was stale (another tab, a webhook that landed
+    // after load). That is the purchased state, not an error — the sheet
+    // refreshes the block when it sees it, so the rest of the UI agrees.
+    if (err.status === 409 && err.code === "already_owned") return { kind: "purchased" };
     if (err.status === 429) return { kind: "error", message: RATE_LIMITED_MESSAGE };
     // Before the generic branch: 503 is "not on sale", which is a different
     // thing from "the network hiccuped" and deserves different advice.
@@ -178,11 +183,21 @@ export const CONFIRM_SLOW_MESSAGE =
  */
 export const CONFIRM_SCHEDULE_MS = [0, 1500, 3000, 6000] as const;
 
+/**
+ * How long one of those reads may take before it counts as "not yet".
+ *
+ * A failed read was already skipped, but a HUNG one — a stalled connection
+ * that never resolves or rejects — was awaited forever, leaving the phase on
+ * `pending` and both billing buttons disabled for the rest of the session.
+ */
+export const CONFIRM_READ_TIMEOUT_MS = 8000;
+
 export type ConfirmResult = "granted" | "signed-out" | "slow";
 
 export interface ConfirmDeps<T> {
-  /** One read of the entitlement. Null means the session is gone. */
-  read: () => Promise<T | null>;
+  /** One read of the entitlement. Null means the session is gone. The signal
+   *  aborts at the read's deadline; pass it on so the request is cancelled. */
+  read: (signal: AbortSignal) => Promise<T | null>;
   /** Whether a block shows the grant. */
   isActive: (block: T) => boolean;
   /** Called with every fresh block, so the caller can publish it. */
@@ -190,6 +205,20 @@ export interface ConfirmDeps<T> {
   now: () => number;
   sleep: (ms: number) => Promise<void>;
   schedule?: readonly number[];
+  /** A fresh deadline per read. Defaults to CONFIRM_READ_TIMEOUT_MS. */
+  deadline?: () => AbortSignal;
+}
+
+/** Settles with the promise, or rejects when the signal aborts — whichever is
+ *  first. Raced here rather than trusted to the reader: a reader that ignores
+ *  its signal must still not hold the poll. */
+function untilAborted<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 /**
@@ -200,7 +229,7 @@ export interface ConfirmDeps<T> {
  * Every path returns a result — the caller turns it into a terminal confirm
  * phase, and a phase stuck on `pending` would leave Unlock disabled for good.
  * A failed read is skipped rather than fatal: one dropped request is not a
- * reason to stop checking.
+ * reason to stop checking. A read past its deadline counts as failed.
  */
 export async function confirmPurchase<T>(d: ConfirmDeps<T>): Promise<ConfirmResult> {
   const start = d.now();
@@ -209,7 +238,8 @@ export async function confirmPurchase<T>(d: ConfirmDeps<T>): Promise<ConfirmResu
     if (wait > 0) await d.sleep(wait);
     let fresh: T | null;
     try {
-      fresh = await d.read();
+      const signal = d.deadline?.() ?? AbortSignal.timeout(CONFIRM_READ_TIMEOUT_MS);
+      fresh = await untilAborted(d.read(signal), signal);
     } catch {
       continue;
     }

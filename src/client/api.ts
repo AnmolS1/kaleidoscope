@@ -404,7 +404,8 @@ export function likeArtwork(id: string): Promise<{ likes: number }> {
  * `handleCheckoutReturn` in state.ts).
  *
  * Throws `ApiError` with the real status — 401 (session gone), 409
- * `bound_elsewhere`, 429 (10/h), 502 `checkout_failed` (Stripe refused or was
+ * `already_owned` (this account has Plus already; the sheet refreshes and
+ * shows "You're in."), 409 `bound_elsewhere`, 429 (10/h), 502 `checkout_failed` (Stripe refused or was
  * unreachable; nothing was charged, so it falls through to the generic
  * message), 503 (Plus dark or unconfigured). Each maps to a sheet state, so
  * callers must read `status`/`code`, not `ok`.
@@ -446,8 +447,8 @@ export async function fetchCheckoutUrl(): Promise<string> {
  * So the null is derived from `user` now, which is what actually carries the
  * answer, rather than from a field that happened to be absent.
  */
-export async function refreshPlus(): Promise<PlusInfo | null> {
-  const data = await request<MeResponse>("/api/me");
+export async function refreshPlus(signal?: AbortSignal): Promise<PlusInfo | null> {
+  const data = await request<MeResponse>("/api/me", { signal });
   if (data.csrf) csrfToken = data.csrf;
   if (data.turnstileSiteKey) turnstileSiteKey = data.turnstileSiteKey;
   if (!data.user) return null;

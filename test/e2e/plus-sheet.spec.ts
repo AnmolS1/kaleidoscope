@@ -356,6 +356,65 @@ test.describe("Plus sheet states", () => {
     await expect(sheet(page).locator(".note")).toContainText("Nothing was charged");
     await expect(sheet(page).locator(".note")).not.toContainText("Give it a few minutes");
   });
+
+  test("8. 409 already_owned — a stale block flips to You're in., not an error", async ({ page }) => {
+    // The page loaded before the grant (another tab bought it, or the webhook
+    // was late), so this client still offers Unlock. The server refuses the
+    // second sale; the sheet must say what is true and refresh the block.
+    let owned = false;
+    await signedInWithPlus(page, "plus-owned", () => ({ enabled: true, active: owned }));
+    const assertStatus = await checkoutFails(page, 409, { error: "already_owned" });
+    await openSheetFromMenu(page);
+    await expect(sheet(page)).toHaveAttribute("data-plus-state", "before");
+
+    owned = true;
+    const me = page.waitForResponse((r) => r.url().includes("/api/me"));
+    await sheet(page).locator(".plus-cta").click();
+    await assertStatus();
+    // The refresh really happened — the 409 alone is not the whole answer.
+    expect((await me).status()).toBe(200);
+
+    await expect(sheet(page)).toHaveAttribute("data-plus-state", "purchased");
+    await expect(sheet(page).getByText("You’re in.")).toBeVisible();
+    await expect(sheet(page).getByText(/Unlock for/)).toHaveCount(0);
+
+    // Published, not just displayed: the account menu stops offering a price.
+    await sheet(page).getByRole("button", { name: "Back to canvas" }).click();
+    await openAccountMenu(page);
+    await expect(accountRow(page).locator(".chip")).toHaveCount(0);
+  });
+
+  test("Back from Stripe through the bfcache: Unlock comes back", async ({ page }) => {
+    // `buy` leaves the button on "Unlocking…" as it navigates away, so a page
+    // restored from the back/forward cache came back exactly like that, with
+    // nothing left to clear it. A 204 navigation leaves this document in place
+    // in the same stuck state, without having to coax Chromium into a real
+    // bfcache round trip; the restore is then the event the browser fires.
+    await signedInWithPlus(page, "plus-bfcache", () => ({ enabled: true }));
+    await page.route("**/api/billing/checkout*", (route) =>
+      route.fulfill({ status: 200, json: { url: "/e2e-stub-204" } }),
+    );
+    await page.route("**/e2e-stub-204", (route) => route.fulfill({ status: 204 }));
+    await openSheetFromMenu(page);
+    const cta = sheet(page).locator(".plus-cta");
+    await cta.click();
+    await expect(cta).toHaveText("Unlocking…");
+    await expect(cta).toBeDisabled();
+
+    // CONTROL: an ordinary (non-restored) pageshow leaves it alone — the flag
+    // is what distinguishes "came back from the cache" from a first load.
+    await page.evaluate(() =>
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false })),
+    );
+    await expect(cta).toHaveText("Unlocking…");
+
+    await page.evaluate(() =>
+      window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })),
+    );
+    await expect(cta).toHaveText("Unlock for $4.99");
+    await expect(cta).toBeEnabled();
+    await expect(sheet(page)).toHaveAttribute("data-plus-state", "before");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -814,6 +814,7 @@ const WHSEC = "whsec_kaleidoscope_test_secret";
 /** A LIVE key, so `checkoutConfigured` passes without PLUS_ALLOW_TEST. Never a
  *  real key: every Stripe call in this file goes to the stub above. */
 const SK = "sk_live_kaleidoscope_test_only";
+const SK_TEST = "sk_test_kaleidoscope_test_only";
 const PRICE = "price_1KaleidoscopePlus";
 const PI = "pi_3KaleidoscopePlus01";
 const SESSION_ID = "cs_live_a1KaleidoscopePlus";
@@ -1171,6 +1172,10 @@ describe("POST /api/billing/stripe — checkout event checks", () => {
   for (const [name, over, reason] of cases) {
     it(`writes nothing for ${name} → ${reason}, and never calls Stripe`, async () => {
       const { DB, env } = stripeCtx();
+      // Every refusal logs (warn or error, by reason — asserted below); silenced
+      // here so the table's output stays readable.
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.spyOn(console, "error").mockImplementation(() => {});
       const res = await post(env, checkoutEvent(over));
       // 200 on purpose: Stripe retries non-2xx for three days and none of these
       // will ever succeed on a retry. The security assertion is the empty table.
@@ -1186,8 +1191,10 @@ describe("POST /api/billing/stripe — checkout event checks", () => {
     // Proves the test_mode rejections come from the FLAG and not from the
     // fixture being malformed. Asserted at the row level only: whether a Test
     // row COUNTS is liveEntitlement's decision, not this route's.
+    // A TEST key, because a test-mode payment can only be re-read with one
+    // (see "a key in the other mode" below).
     for (const over of [{ event: { livemode: false } }, { session: { livemode: false } }]) {
-      const { DB, env } = stripeCtx({ PLUS_ALLOW_TEST: "true" });
+      const { DB, env } = stripeCtx({ PLUS_ALLOW_TEST: "true", STRIPE_SECRET_KEY: SK_TEST });
       expect((await post(env, checkoutEvent(over))).status).toBe(200);
       expect(rows(DB)).toHaveLength(1);
       expect(rows(DB)[0]).toMatchObject({ source: "stripe", external_id: PI, environment: "Test" });
@@ -1208,22 +1215,93 @@ describe("POST /api/billing/stripe — checkout event checks", () => {
     expect(rows(DB)[0]).toMatchObject({ external_id: PI });
   });
 
-  it("logs a refusal with the event, session and payment intent ids — and never the email", async () => {
-    // A refusal that leaves no trace is money taken and nothing granted, with no
-    // way to find it again. The ids are what support needs to look it up in
-    // Stripe; the buyer's email is what the log must not carry.
+  // A PAID purchase we cannot attach to anyone is money taken and nothing
+  // granted. At warn level it sat among the routine refusals (unhandled event
+  // types, unpaid sessions) and nobody would ever go looking; at error level it
+  // is the line an alert can be written against. Each of these is only reached
+  // after the payment, mode and amount checks have passed.
+  const paidButUnattributable: [string, Parameters<typeof checkoutEvent>[0], string][] = [
+    ["no client_reference_id", { session: { client_reference_id: null } }, "unattributed"],
+    ["client_reference_id and metadata.user_id disagree", { metadata: { user_id: "u2" } }, "attribution_mismatch"],
+    [
+      "a user that no longer exists",
+      { session: { client_reference_id: "ghost" }, metadata: { user_id: "ghost" } },
+      "unknown_user",
+    ],
+  ];
+  for (const [name, over, reason] of paidButUnattributable) {
+    it(`logs ${name} (${reason}) as an ERROR with the event, session and payment intent ids — never the email`, async () => {
+      const { env } = stripeCtx();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = await post(env, checkoutEvent(over));
+      // Still 200: no retry will ever attribute it, so a retry is only noise.
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, ignored: true, reason });
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(warn).not.toHaveBeenCalled();
+      const logged = JSON.stringify(error.mock.calls);
+      expect(logged).toContain(EVENT_ID);
+      expect(logged).toContain(SESSION_ID);
+      expect(logged).toContain(PI);
+      expect(logged).toContain(reason);
+      expect(logged).not.toContain(BUYER_EMAIL);
+      expect(logged).not.toContain(WHSEC);
+      expect(logged).not.toContain(SK);
+    });
+  }
+
+  it("CONTROL: an UNPAID session is a routine refusal — a warning, not an error", async () => {
+    // Proves the error level is chosen by the reason, not applied to every
+    // refusal: an unpaid session took no money, and paging on it would bury
+    // the ones that did.
     const { env } = stripeCtx();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await post(env, checkoutEvent({ session: { client_reference_id: null } }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await post(env, checkoutEvent({ session: { payment_status: "unpaid" } }));
     expect(warn).toHaveBeenCalledTimes(1);
-    const logged = JSON.stringify(warn.mock.calls);
-    expect(logged).toContain(EVENT_ID);
-    expect(logged).toContain(SESSION_ID);
-    expect(logged).toContain(PI);
-    expect(logged).toContain("unattributed");
-    expect(logged).not.toContain(BUYER_EMAIL);
-    expect(logged).not.toContain(WHSEC);
-    expect(logged).not.toContain(SK);
+    expect(JSON.stringify(warn.mock.calls)).toContain("not_paid");
+    expect(error).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/billing/stripe — a key in the other mode", () => {
+  // A payment intent exists in exactly one mode, so a live key cannot read a
+  // test-mode payment and vice versa — Stripe answers 404, the route answers
+  // 503, and Stripe retries a delivery that can never succeed for three days.
+  // That is a deploy fact, not a transient one: answer it once, finally.
+  const directions: [string, Parameters<typeof checkoutEvent>[0], Record<string, unknown>][] = [
+    ["a LIVE event against a TEST key", {}, { STRIPE_SECRET_KEY: SK_TEST, PLUS_ALLOW_TEST: "true" }],
+    ["a TEST event against a LIVE key", { event: { livemode: false } }, { STRIPE_SECRET_KEY: SK, PLUS_ALLOW_TEST: "true" }],
+    ["a test SESSION in a live event, against a LIVE key", { session: { livemode: false } }, { STRIPE_SECRET_KEY: SK, PLUS_ALLOW_TEST: "true" }],
+    ["a LIVE event against a restricted TEST key", {}, { STRIPE_SECRET_KEY: "rk_test_kaleidoscope", PLUS_ALLOW_TEST: "true" }],
+  ];
+  for (const [name, over, vars] of directions) {
+    it(`${name} → 200 key_mode_mismatch, without calling Stripe`, async () => {
+      const { DB, env } = stripeCtx(vars);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const res = await post(env, checkoutEvent(over));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, ignored: true, reason: "key_mode_mismatch" });
+      expect(rows(DB)).toHaveLength(0);
+      expect(S.calls).toHaveLength(0);
+      // Logged, with ids: this is a misconfigured deploy someone has to fix.
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).toContain("key_mode_mismatch");
+      expect(logged).toContain(EVENT_ID);
+      expect(logged).not.toContain(SK_TEST);
+      expect(logged).not.toContain(SK);
+    });
+  }
+
+  it("CONTROL: matching modes both reach Stripe and grant", async () => {
+    // Live/live and test/test, from the same fixtures the mismatches perturb.
+    const live = stripeCtx({ STRIPE_SECRET_KEY: SK, PLUS_ALLOW_TEST: "true" });
+    expect(await (await post(live.env, checkoutEvent())).json()).toEqual({ ok: true, plus: true });
+    const test = stripeCtx({ STRIPE_SECRET_KEY: SK_TEST, PLUS_ALLOW_TEST: "true" });
+    expect(await (await post(test.env, checkoutEvent({ event: { livemode: false } }))).json())
+      .toEqual({ ok: true, plus: true });
+    expect(S.calls).toHaveLength(2);
   });
 });
 
@@ -1241,6 +1319,7 @@ describe("POST /api/billing/stripe — flow", () => {
 
   it("ignores a purchase for a user that no longer exists, without a 500 or a Stripe call", async () => {
     const { DB, env } = stripeCtx();
+    vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await post(env, checkoutEvent({ session: { client_reference_id: "ghost" }, metadata: { user_id: "ghost" } }));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, ignored: true, reason: "unknown_user" });
@@ -1742,6 +1821,66 @@ describe("GET /api/billing/checkout", () => {
     for (let i = 0; i < 10; i++) expect((await get(env)).status).toBe(200);
     expect((await get(env)).status).toBe(429);
     expect(checkoutCalls()).toHaveLength(10);
+  });
+
+  describe("someone who already owns Plus", () => {
+    // The client hides Unlock from an owner, but only from what its own
+    // /api/me block says — a second tab, a stale block, or a webhook that
+    // landed after the page loaded all leave a live buy button in front of
+    // someone who has already paid. The server is the only place that knows.
+    it("409 already_owned, without creating a Checkout Session", async () => {
+      const { DB, env } = ctx(READY);
+      seedRow(DB, { source: "stripe", externalId: PI });
+      const res = await get(env);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "already_owned" });
+      expect(S.calls).toHaveLength(0);
+    });
+
+    it("an Apple purchase counts too — Plus is one entitlement across platforms", async () => {
+      const { DB, env } = ctx(READY);
+      seedRow(DB, { source: "apple" });
+      expect((await get(env)).status).toBe(409);
+      expect(S.calls).toHaveLength(0);
+    });
+
+    it("is answered BEFORE the rate limit, so asking does not spend the budget", async () => {
+      // Ownership is permanent in the same way `not_configured` is, and the
+      // client's answer to it is a refresh, not a retry. Charging the budget for
+      // it would turn "you own this" into "slow down" for an owner who clicks.
+      const { DB, env } = ctx(READY);
+      seedRow(DB, { source: "stripe", externalId: PI });
+      for (let i = 0; i < 12; i++) expect((await get(env)).status, `attempt ${i + 1}`).toBe(409);
+      // Refunded: the full budget is still there.
+      DB._db.prepare("UPDATE entitlements SET revoked_at = 1").run();
+      for (let i = 0; i < 10; i++) expect((await get(env)).status, `after refund ${i + 1}`).toBe(200);
+    });
+
+    it("CONTROL: a REFUNDED purchase sells again", async () => {
+      const { DB, env } = ctx(READY);
+      seedRow(DB, { source: "stripe", externalId: PI });
+      DB._db.prepare("UPDATE entitlements SET revoked_at = 1").run();
+      expect((await get(env)).status).toBe(200);
+      expect(checkoutCalls()).toHaveLength(1);
+    });
+
+    it("CONTROL: another user's purchase does not block this one", async () => {
+      const { DB, env } = ctx(READY);
+      seedRow(DB, { source: "stripe", externalId: PI });
+      // s2 is u2; the row is u1's.
+      expect((await get(env, "s2")).status).toBe(200);
+    });
+
+    it("uses /api/me's flags: a Stripe Test row blocks only while PLUS_ALLOW_TEST is on", async () => {
+      // The same `liveEntitlement` predicate as /api/me, so the server never
+      // refuses a sale the client was shown as available, or the reverse.
+      const off = ctx(READY);
+      seedRow(off.DB, { source: "stripe", externalId: PI, environment: "Test" });
+      expect((await get(off.env)).status).toBe(200);
+      const on = ctx({ ...READY, STRIPE_SECRET_KEY: SK_TEST, PLUS_ALLOW_TEST: "true" });
+      seedRow(on.DB, { source: "stripe", externalId: PI, environment: "Test" });
+      expect((await get(on.env)).status).toBe(409);
+    });
   });
 
   it("a Stripe error → 502 checkout_failed, logged without the key", async () => {

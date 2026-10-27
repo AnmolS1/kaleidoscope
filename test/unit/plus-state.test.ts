@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "../../src/client/api";
 import {
   CONFIRMING_MESSAGE,
+  CONFIRM_READ_TIMEOUT_MS,
   CONFIRM_SCHEDULE_MS,
   CONFIRM_SLOW_MESSAGE,
   GENERIC_ERROR_MESSAGE,
@@ -98,6 +99,20 @@ describe("plusOutcomeForError — codes that have their own state never fall thr
     // retrying this one forever.
     expect(plusOutcomeForError(new ApiError(409, "bound_elsewhere", { error: "bound_elsewhere" })))
       .toEqual({ kind: "bound-elsewhere" });
+  });
+
+  it("409 already_owned → purchased, not an error", () => {
+    // The server refused a second sale because this account already owns
+    // Plus — the client's block was stale (another tab, a webhook that landed
+    // after load). The true answer is "You're in.", and the sheet refreshes the
+    // block so everything else agrees. An error here would invite a retry that
+    // gets the same 409 forever.
+    expect(plusOutcomeForError(new ApiError(409, "already_owned", { error: "already_owned" })))
+      .toEqual({ kind: "purchased" });
+  });
+
+  it("CONTROL: already_owned on any status but 409 is not trusted as ownership", () => {
+    expect(plusOutcomeForError(new ApiError(500, "already_owned")).kind).toBe("error");
   });
 
   it("a 409 that is NOT bound_elsewhere stays generic", () => {
@@ -296,6 +311,65 @@ describe("confirmPurchase — polls for the webhook's grant", () => {
     });
     expect(r).toBe("slow");
     expect(reads).toBe(CONFIRM_SCHEDULE_MS.length);
+  });
+
+  it("each read gets 8 s before it counts as \"not yet\"", () => {
+    expect(CONFIRM_READ_TIMEOUT_MS).toBe(8000);
+  });
+
+  it("a read that NEVER answers still ends, as slow — never stuck confirming", async () => {
+    // A hung /api/me (a stalled connection, a captive portal) never resolves
+    // and never rejects. Without a deadline the poll awaits it forever, the
+    // phase stays `pending`, and Unlock and Restore stay disabled for good.
+    const clock = fakeClock();
+    let reads = 0;
+    const signals: AbortSignal[] = [];
+    const r = await confirmPurchase<{ active: boolean }>({
+      read: (signal) => {
+        reads++;
+        signals.push(signal);
+        return new Promise(() => {});
+      },
+      isActive: (b) => b.active,
+      publish: () => {},
+      now: clock.now,
+      sleep: clock.sleep,
+      // Already expired, so the test does not wait 8 s per read.
+      deadline: () => AbortSignal.abort(new DOMException("timed out", "TimeoutError")),
+    });
+    expect(r).toBe("slow");
+    expect(reads).toBe(CONFIRM_SCHEDULE_MS.length);
+    // The signal reaches the reader, so the real one can cancel its fetch.
+    expect(signals.every((s) => s.aborted)).toBe(true);
+  });
+
+  it("a hung read is skipped, and the next one can still see the grant", async () => {
+    const clock = fakeClock();
+    let reads = 0;
+    const r = await confirmPurchase<{ active: boolean }>({
+      read: () => (++reads === 1 ? new Promise(() => {}) : Promise.resolve({ active: true })),
+      isActive: (b) => b.active,
+      publish: () => {},
+      now: clock.now,
+      sleep: clock.sleep,
+      // Only the first read's deadline has passed.
+      deadline: () => (reads === 0 ? AbortSignal.abort() : new AbortController().signal),
+    });
+    expect(r).toBe("granted");
+    expect(reads).toBe(2);
+  });
+
+  it("CONTROL: a read that answers in time is not cut off by its deadline", async () => {
+    const clock = fakeClock();
+    const r = await confirmPurchase<{ active: boolean }>({
+      read: () => Promise.resolve({ active: true }),
+      isActive: (b) => b.active,
+      publish: () => {},
+      now: clock.now,
+      sleep: clock.sleep,
+      deadline: () => new AbortController().signal,
+    });
+    expect(r).toBe("granted");
   });
 
   it("a lapsed session (null) stops at once and publishes nothing", async () => {

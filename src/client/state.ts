@@ -156,7 +156,9 @@ export async function handleCheckoutReturn(): Promise<void> {
   plusConfirm.value = "pending";
   announce(CONFIRMING_MESSAGE);
   const result = await confirmPurchase<PlusInfo>({
-    read: refreshPlus,
+    // The signal is the read's deadline: a hung /api/me is cancelled and
+    // counts as "not yet" rather than holding the sheet on "confirming".
+    read: (signal) => refreshPlus(signal),
     isActive: (p) => p.active,
     publish: (p) => {
       plus.value = p;
