@@ -40,14 +40,16 @@
     // here would arrive as a boolean and `PLUS_ENABLED === "true"` would fail
     // silently against it. src/worker/lib/validate.ts does the coercion.
     //
-    // PLUS_ENABLED stays "false" until the IAP is approved. While it is false no
-    // cap is enforced anywhere — a cap with no way to pay to lift it is just a
-    // broken product. CAP_EPOCH is set to the real timestamp in the SAME deploy
-    // that flips the flag; the placeholder below is already a valid integer
-    // because the parse fails CLOSED (NaN → 500), so a non-integer placeholder
-    // would take saves down the moment the flag flipped.
+    // PLUS_ENABLED went "true" on 2026-10-27, once the IAP was approved and the
+    // web checkout (Stripe) went on sale. While it is false no cap is enforced
+    // anywhere — a cap with no way to pay to lift it is just a broken product.
+    // CAP_EPOCH was set to the real timestamp in the SAME deploy that flipped
+    // the flag, so only pieces published from launch on count against the
+    // public cap. Before that it held a placeholder, which had to be a valid
+    // integer because the parse fails CLOSED (NaN → 500) — a non-integer would
+    // have taken saves down the moment the flag flipped.
     //
-    // 🔴 The placeholder is FAR FUTURE (2100-01-01), not 0.
+    // 🔴 The placeholder was FAR FUTURE (2100-01-01), not 0.
     //
     // `0` parses fine, so it is the one value that defeats the fail-closed
     // reasoning above: `capPolicy` returns {enforced:true, cap:10, epoch:0} and
@@ -58,7 +60,7 @@
     // counts yet, which is recoverable and invisible instead of a support
     // incident. `capEpochShipsWithFlag` in test/worker/config.test.ts refuses a
     // deploy where PLUS_ENABLED is true and this is still the placeholder.
-    "CAP_EPOCH": "4102444800000",
+    "CAP_EPOCH": "1793130447494",
     "FREE_PUBLIC_CAP": "10",
     "FREE_LAYER_CAP": "3",
     "PLUS_LAYER_CAP": "8",
@@ -75,7 +77,7 @@
     // So the review deploy runs SURFACE=true, ENABLED=false: the purchase is
     // findable and buyable, and nobody loses a layer or a public slot until the
     // caps are deliberately switched on with a real CAP_EPOCH.
-    "PLUS_ENABLED": "false",
+    "PLUS_ENABLED": "true",
     "PLUS_SURFACE_ENABLED": "true",
     "PLUS_ALLOW_SANDBOX": "true",
     // PLUS_ALLOW_TEST: accept Stripe TEST-mode payments as grants (recorded with
@@ -89,7 +91,7 @@
     // record). The price_… id of the LIVE Plus product: test-mode products and
     // prices are a separate dataset whose ids do not carry over to live. Empty
     // means "not on sale", and checkout answers 503 not_configured.
-    "STRIPE_PRICE_ID": ""
+    "STRIPE_PRICE_ID": "price_1UVFzE9pHa9kQ4y9LGbOL8QH"
   },
   "ai": { "binding": "AI" },
   "d1_databases": [
