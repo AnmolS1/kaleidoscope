@@ -394,7 +394,7 @@ billing.post("/stripe", async (c) => {
   }
 
   if (!GRANT_EVENTS.has(type)) {
-    logNoGrant("stripe", "event", { type, eventId });
+    logNoGrant("stripe", "event", { type, eventId, objectId, paymentIntent: paymentIntentId });
     return c.json({ ok: true, ignored: true, reason: "event" });
   }
 
